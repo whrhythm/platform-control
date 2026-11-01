@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     default_memory_mib: int = 8192
     default_storage_gib: int = 40
     default_resource_limit: int = 20
+    default_environment_storage_gib: int = 2
     oidc_required_scope: str = "platform-api"
     oidc_client_id: str = ""
     admin_group: str = "platform-admins"

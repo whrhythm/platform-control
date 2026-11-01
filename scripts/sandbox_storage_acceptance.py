@@ -3,6 +3,7 @@
 Creates only uniquely labelled test namespaces, PVCs, sandbox CRs and a
 negative-test Pod. Deletes only those namespaces after verifying ownership.
 No real user identities, source code, credentials, or model calls are involved.
+Requires KUBECONFIG and PLATFORM_KUBE_SERVER (a full URL with scheme, e.g. https://127.0.0.1:6443).
 """
 import json
 import os
@@ -12,7 +13,7 @@ import sys
 import time
 from pathlib import Path
 
-K = ['/snap/bin/kubectl', '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
+K = [os.environ.get('KUBECTL_BIN', '/usr/bin/kubectl'), '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
 run = secrets.token_hex(6)
 namespaces = {user: f'codechat-qa-{run}-{user}' for user in ('a', 'b')}
 owner = {'codechat.io/qa-run': run, 'codechat.io/purpose': 'sandbox-storage-test'}

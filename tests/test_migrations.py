@@ -22,7 +22,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0003_model_credentials"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004_user_environments"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:

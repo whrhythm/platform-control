@@ -7,13 +7,17 @@ import hashlib
 import json
 
 
-def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 5) -> dict:
+def identity_digest(issuer: str, subject: str) -> str:
+    identity = json.dumps([issuer, subject], ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(identity).hexdigest()
+
+
+def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 2) -> dict:
     if not isinstance(issuer, str) or not issuer or not isinstance(subject, str) or not subject:
         raise ValueError('A verified issuer and subject are required')
     if isinstance(storage_gib, bool) or not isinstance(storage_gib, int) or not 1 <= storage_gib <= 40:
         raise ValueError('Storage must be between 1 and 40 GiB')
-    identity = json.dumps([issuer, subject], ensure_ascii=False, separators=(',', ':')).encode()
-    digest = hashlib.sha256(identity).hexdigest()
+    digest = identity_digest(issuer, subject)
     ns = 'codechat-user-' + digest[:40]
     owner = {'codechat.io/user-hash': digest[:40], 'app.kubernetes.io/managed-by': 'platform-control'}
     metadata = lambda name: {'name': name, 'namespace': ns, 'labels': owner}

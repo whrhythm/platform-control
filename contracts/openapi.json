@@ -396,6 +396,118 @@
         }
       }
     },
+    "/v1/tenants/{tenant_id}/projects/{project_id}/environment": {
+      "post": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Request Environment",
+        "description": "Get or create the requesting user's dedicated execution environment. Identity comes only from the verified token; one environment per user, repeated requests return the same record. Plan only: no sandbox, volume or credential is created.",
+        "operationId": "request_environment_v1_tenants__tenant_id__projects__project_id__environment_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvironmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Get Environment",
+        "description": "View the requesting user's execution environment plan once requested through any project.",
+        "operationId": "get_environment_v1_tenants__tenant_id__projects__project_id__environment_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "tenant_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Tenant Id"
+            }
+          },
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Project Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvironmentOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/tenants/{tenant_id}/members": {
       "get": {
         "tags": [
@@ -1800,6 +1912,88 @@
           "created_at"
         ],
         "title": "TestOrderOut"
+      },
+      "UserEnvironmentOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "identity_hash": {
+            "type": "string",
+            "title": "Identity Hash"
+          },
+          "namespace": {
+            "type": "string",
+            "title": "Namespace"
+          },
+          "storage_gib": {
+            "type": "integer",
+            "title": "Storage Gib"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "first_tenant_id": {
+            "type": "string",
+            "title": "First Tenant Id"
+          },
+          "first_project_id": {
+            "type": "string",
+            "title": "First Project Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "executable": {
+            "type": "boolean",
+            "title": "Executable"
+          },
+          "runtime_requirement": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Runtime Requirement"
+          },
+          "plan": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Plan"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Blockers"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "identity_hash",
+          "namespace",
+          "storage_gib",
+          "status",
+          "first_tenant_id",
+          "first_project_id",
+          "created_at",
+          "mode",
+          "executable",
+          "runtime_requirement",
+          "plan",
+          "blockers"
+        ],
+        "title": "UserEnvironmentOut"
       },
       "ValidationError": {
         "properties": {

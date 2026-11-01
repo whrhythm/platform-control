@@ -14,6 +14,7 @@ FastAPI 的类型化路由为源，`scripts/export_openapi.py` 导出 `contracts
 | POST/GET `/v1/tenants/{t}/projects` | 创建/列出项目 |
 | GET `/v1/tenants/{t}/projects/{p}` | 校验归属后的项目详情 |
 | POST/GET `/v1/tenants/{t}/projects/{p}/resources` | 申请/列出资源 |
+| POST/GET `/v1/tenants/{t}/projects/{p}/environment` | 申请/查看当前用户专属运行环境（仅计划） |
 | DELETE `/v1/tenants/{t}/resources/{r}` | 取消从未 apply 的资源申请 |
 | GET `/v1/tenants/{t}/quota` | 总额度与容量预留（不是实际计费） |
 | GET `/v1/tenants/{t}/operations` | 最近任务，limit 1..200，默认 50 |
@@ -44,4 +45,10 @@ Content-Type: application/json
 `POST /v1/tenants/{tenant_id}/projects/{project_id}/cancel-plans` 仅允许租户 owner/admin 调用；锁定租户后原子取消该项目内尚未应用的所有 requested/planned 资源和对应操作，释放预留额度。重复调用返回零个新取消项；响应中的 `infrastructure_deleted` 始终为 false。如果存在已开通或未知状态资源、或操作记录缺失，整批拒绝并保留额度。此接口不删除项目、文件、Pod、数据库或存储桶；实际资源销毁尚未实现。
 
 `POST /v1/me/personal-tenant` 使用经过验证的 OIDC 身份查询或创建个人租户；重复请求返回同一租户，并发创建通过数据库唯一约束仲裁。该接口不接受客户端提供的用户身份。LibreChat 尚未调用此接口，注册时也不会自动调用。
+
+# 用户运行环境（仅计划）
+
+`POST /v1/tenants/{tenant_id}/projects/{project_id}/environment` 查询或创建**请求者本人**的专属运行环境记录：身份只取经过验证的 OIDC `(issuer, subject)`，请求体中的任何字段（issuer/subject/storage/namespace）全部忽略。每用户至多一条记录，由数据库唯一约束仲裁并发首请求；重复请求返回同一条记录（始终 200），审计只记录一次 `environment.create`。项目只作为“首次从哪里请求”的上下文（`first_tenant_id`/`first_project_id`）；同一用户的其他项目再次请求得到同一条记录。
+
+响应中的 `mode` 固定为 `plan`、`executable` 固定为 `false`；`plan` 列出计划对象（命名空间、ResourceQuota、单块 Longhorn PVC、default-deny NetworkPolicy），`blockers` 列出未实现的开通环节。**该接口不创建任何沙箱、Pod、卷或凭据**，`status` 在 apply adapter 落地前停留在 `requested`（生命周期 `requested → provisioning → ready`，另有 `suspended`/`deleted`）。每用户存储默认 2 GiB（免费额度），由 `PLATFORM_DEFAULT_ENVIRONMENT_STORAGE_GIB` 调整（1..40）。角色要求与项目一致：owner/admin/developer 可申请，viewer 403；环境属于用户而不是租户，租户 A 的成员在租户 B 的项目里请求，得到的仍是该成员自己的环境。
 

@@ -15,18 +15,19 @@ from sqlalchemy.orm import Session
 
 from .auth import Principal, current_principal
 from .database import engine, get_db
-from .models import AuditEvent, Membership, Operation, Project, Resource, Tenant, TestOrder
+from .models import AuditEvent, Membership, Operation, Project, Resource, Tenant, TestOrder, UserEnvironment
 from .schemas import AuditOut, MemberInput, MemberOut, OperationOut, QuotaInput, ResourceOut, ResourceRequest
 from .settings import get_settings
 from .litellm import LiteLLMError
 from .model_credentials import provision_model_key
+from .user_environments import identity_digest, plan_user_environment
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0003_model_credentials":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0004_user_environments":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -72,6 +73,42 @@ class TestOrderOut(BaseModel):
     tenant_id: str
     status: str
     created_at: datetime
+
+
+class UserEnvironmentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: str
+    identity_hash: str
+    namespace: str
+    storage_gib: int
+    status: str
+    first_tenant_id: str
+    first_project_id: str
+    created_at: datetime
+    mode: str
+    executable: bool
+    runtime_requirement: dict
+    plan: list[dict]
+    blockers: list[str]
+
+
+def environment_response(environment: UserEnvironment) -> UserEnvironmentOut:
+    plan = plan_user_environment(environment.issuer, environment.subject, storage_gib=environment.storage_gib)
+    return UserEnvironmentOut(
+        id=environment.id,
+        identity_hash=environment.identity_hash,
+        namespace=plan["namespace"],
+        storage_gib=environment.storage_gib,
+        status=environment.status,
+        first_tenant_id=environment.first_tenant_id,
+        first_project_id=environment.first_project_id,
+        created_at=environment.created_at,
+        mode=plan["mode"],
+        executable=plan["executable"],
+        runtime_requirement=plan["runtime_requirement"],
+        plan=plan["objects"],
+        blockers=plan["blockers"],
+    )
 
 
 def membership(db: Session, principal: Principal, tenant_id: str) -> Membership:
@@ -222,6 +259,39 @@ def get_project(tenant_id: str, project_id: str, principal: Principal = Depends(
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
     return project
+
+
+@app.post("/v1/tenants/{tenant_id}/projects/{project_id}/environment", response_model=UserEnvironmentOut, tags=["environments"], description="Get or create the requesting user's dedicated execution environment. Identity comes only from the verified token; one environment per user, repeated requests return the same record. Plan only: no sandbox, volume or credential is created.")
+def request_environment(tenant_id: str, project_id: str, principal: Principal = Depends(current_principal), db: Session = Depends(get_db)):
+    authorize(db, principal, tenant_id, {"owner", "admin", "developer"})
+    get_project(tenant_id, project_id, principal, db)
+    existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+    if existing is not None:
+        return environment_response(existing)
+    settings = get_settings()
+    environment = UserEnvironment(issuer=principal.issuer, subject=principal.subject, identity_hash=identity_digest(principal.issuer, principal.subject), storage_gib=settings.default_environment_storage_gib, first_tenant_id=tenant_id, first_project_id=project_id)
+    db.add(environment)
+    try:
+        db.flush()
+        audit(db, principal, tenant_id, "environment.create", environment.id)
+        db.commit()
+    except IntegrityError:
+        # The unique identity constraint arbitrates simultaneous first requests.
+        db.rollback()
+        existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+        if existing is None:
+            raise
+        return environment_response(existing)
+    return environment_response(environment)
+
+
+@app.get("/v1/tenants/{tenant_id}/projects/{project_id}/environment", response_model=UserEnvironmentOut, tags=["environments"], description="View the requesting user's execution environment plan once requested through any project.")
+def get_environment(tenant_id: str, project_id: str, principal: Principal = Depends(current_principal), db: Session = Depends(get_db)):
+    get_project(tenant_id, project_id, principal, db)
+    environment = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+    if environment is None:
+        raise HTTPException(status_code=404, detail="Environment not found")
+    return environment_response(environment)
 
 
 @app.get("/v1/tenants/{tenant_id}/members", response_model=list[MemberOut], tags=["members"])

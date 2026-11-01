@@ -90,6 +90,20 @@ def test_worker_and_cancellation_cannot_restore_cancelled_resource(postgres_harn
         assert client.get(path + "/quota", headers=auth).json()["reserved"]["storage_gib"] == 0
 
 
+def test_parallel_first_requests_create_one_environment(postgres_harness):
+    client, token = postgres_harness
+    auth, path, project = setup_tenant(client, token)
+    url = f"{path}/projects/{project}/environment"
+
+    def create(_):
+        return client.post(url, headers=auth)
+
+    with ThreadPoolExecutor(max_workers=10) as pool:
+        responses = list(pool.map(create, range(20)))
+    assert all(response.status_code == 200 for response in responses)
+    assert len({response.json()["id"] for response in responses}) == 1
+
+
 def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
     import httpx
     from cryptography.fernet import Fernet

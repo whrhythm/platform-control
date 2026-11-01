@@ -4,7 +4,7 @@
 
 推荐共享 LibreChat、控制面和 OpenHands SDK 任务编排服务，按需为每位用户分配隔离执行环境和 Longhorn 持久卷，不为每个用户部署完整的 Agent Canvas 产品。隔离环境内部可能需要运行轻量 Agent Server；这与给用户部署完整 OpenHands UI、服务栈不同。多个项目可以位于同一用户的磁盘中，项目文件、Agent 状态、测试文件和构建工作目录都计入该用户的存储额度。用户用完可以暂停计算并保留磁盘；需要彻底删除时，按明确确认和保留策略回收资源。
 
-这是目标设计，**当前尚未开通自动创建、访问、暂停或删除**。现有 `openhands/openhands-agent-canvas` 是单用户验证实例，不能用它承载多个用户。控制面已有资源计划只生成规划，不会创建实际工作环境。
+这是目标设计，**当前尚未开通自动创建、访问、暂停或删除**。现有 `openhands/openhands-agent-canvas` 是单用户验证实例，不能用它承载多个用户。控制面已有资源计划只生成规划，不会创建实际工作环境；用户运行环境入口（`POST /v1/tenants/{t}/projects/{p}/environment`）已提供，但同样是仅计划记录（`status=requested`、`executable=false`），不创建任何沙箱、卷或凭据。
 
 ## 隔离单位
 
@@ -31,7 +31,7 @@ flowchart LR
 
 每人一卷是逻辑磁盘隔离，Longhorn 仍共享节点物理磁盘，不等于每人独享一块物理硬盘或独享独立故障域。当前单节点也不具备节点高可用。PVC 以容量限制文件系统；实际物理占用还受副本、快照、备份、容器临时层和日志影响，必须同时监控 Longhorn 和节点剩余容量。工作卷、Agent 本地状态和临时项目资料共计入该卷配额；Pod 临时层、日志和未来外部数据库、对象存储另行设置限制和统计，不能仅凭 PVC 配额宣称覆盖所有空间。
 
-初版采用已有工作空间默认值：每用户 5 GiB（可由管理员调整），明确这是初始值而非承诺的永久套餐；节点容量不足时拒绝或排队，不能超配后假称可用。分配是按需发生，普通注册不会立刻启动一台实例。部署前须核对 Longhorn 实际可用容量、默认副本数和安全余量。
+初版免费额度为每用户 2 GiB（可由管理员调整，2026-11-01 由 5 GiB 下调），明确这是初始值而非承诺的永久套餐；节点容量不足时拒绝或排队，不能超配后假称可用。分配是按需发生，普通注册不会立刻启动一台实例。部署前须核对 Longhorn 实际可用容量、默认副本数和安全余量。
 
 ## 用户、项目与访问
 
@@ -65,3 +65,13 @@ flowchart LR
 - 当前 Agent Canvas 1.34.0 镜像内 `openhands-sdk`、`openhands-agent-server` 和 `openhands-workspace` 均为 1.58.1。临时测试通过覆盖镜像入口仅运行 Agent Server，使用另一个容器里的同版本 SDK 作为共享侧客户端：受保护会话接口无凭据被拒绝，`RemoteWorkspace` 可凭临时凭据远程执行命令并写入 Kata 挂载卷。临时 namespace、PV 和 Longhorn 卷已清理。这里复用了现有 Canvas 镜像进行兼容试验，并非已选定生产镜像或完整用户实例。
 - 可复现脚本：`platform-control/scripts/sandbox_storage_acceptance.py`、`platform-control/scripts/agent_server_acceptance.py`。需要显式 `KUBECONFIG` 和 `PLATFORM_KUBE_SERVER`，脚本只创建有唯一测试标记的临时资源并在完成后清理；不得在缺少备份或空间不足的集群盲目运行。
 - 尚未验证完整的 LibreChat → 项目授权 → Agent SDK/Server → LiteLLM 模型任务与实时事件流，也未验证不同用户对 Agent API/凭据的交叉攻击、用户恶意代码下的凭据隔离、Kata 子进程逃逸、磁盘写满、备份恢复或用户真实删除流程。Agent Sandbox 与 OpenHands 官方集成组件的版本配套、预热池动态绑定用户卷和生产轻量镜像也仍需验证。
+
+## 2026-11-01 集群技术验证与控制面入口
+
+- 在同一集群上复跑并新增验收，全部通过且确认清理彻底（无残留命名空间、PV、Longhorn 卷，结果 JSON 在 `release/`）：
+  - 双用户存储/网络隔离 + 暂停恢复：`sandbox_storage_acceptance.py`，7/7。
+  - Kata Agent Server + SDK `RemoteWorkspace`（无凭据拒绝、远程执行、写 Kata 挂载卷）：`agent_server_acceptance.py`，4/4。
+  - **资源销毁**（新增 `sandbox_teardown_acceptance.py`）：只删除用户 A——先暂停并确认 Pod 退出，再移除沙箱、删除 PVC，等待 PV 与 Longhorn 卷实际回收；随后验证用户 B 仍 Ready、原文件完整、HTTP 探测可用。6/6。
+- 验收脚本修正：kubectl 路径默认 `/usr/bin/kubectl`（`KUBECTL_BIN` 可覆盖）；`PLATFORM_KUBE_SERVER` 必须带 `https://` scheme，否则 kubectl v1.28 走明文 HTTP 被 API server 拒绝。ops 与 platform-control 两份拷贝保持逐字节一致。
+- 控制面新增用户运行环境入口（仅计划）：`UserEnvironment` 模型 + 迁移 `0004_user_environments`，`POST/GET /v1/tenants/{t}/projects/{p}/environment`。身份只取验证后的 token；每用户唯一（并发首请求由唯一约束仲裁，20 并发在一次性 Postgres 容器验证通过）；请求体字段全部忽略；响应 `executable=false` 并列出 blockers。API 单测 7 项 + 既有全量 42 通过；OpenAPI 契约已重新导出。
+- 仍未完成：集群中的 platform-api 镜像尚未包含该入口（需随下次发布升级镜像并 `alembic upgrade head`）；LibreChat 前端尚未调用；apply/deprovision adapter、代理鉴权、模型凭据中继、事件流、跨用户对抗、磁盘写满、备份恢复与真实删除流程仍未验证。

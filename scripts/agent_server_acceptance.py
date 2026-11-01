@@ -3,6 +3,7 @@
 The existing Canvas image is reused solely as a source of the matching server
 binary; its all-in-one entrypoint/UI is not started. Test credentials are random
 and never printed. This test does not call any LLM or touch user data.
+Requires KUBECONFIG and PLATFORM_KUBE_SERVER (a full URL with scheme, e.g. https://127.0.0.1:6443).
 """
 import json
 import os
@@ -11,7 +12,7 @@ import subprocess
 import time
 from pathlib import Path
 
-K = ['/snap/bin/kubectl', '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
+K = [os.environ.get('KUBECTL_BIN', '/usr/bin/kubectl'), '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
 run = secrets.token_hex(6)
 ns = f'codechat-agent-qa-{run}'
 labels = {'codechat.io/qa-run': run, 'codechat.io/purpose': 'agent-server-test'}

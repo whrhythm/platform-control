@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -76,6 +76,26 @@ class ModelCredential(Base):
     subject: Mapped[str] = mapped_column(String(255))
     encrypted_key: Mapped[str] = mapped_column(String(512))
     status: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class UserEnvironment(Base):
+    """One dedicated execution environment per verified user. Plan metadata only until an apply adapter exists."""
+
+    __tablename__ = "user_environments"
+    __table_args__ = (
+        UniqueConstraint("issuer", "subject"),
+        CheckConstraint("status IN ('requested', 'provisioning', 'ready', 'suspended', 'deleted')", name="ck_user_environments_status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    issuer: Mapped[str] = mapped_column(String(512))
+    subject: Mapped[str] = mapped_column(String(255))
+    identity_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    storage_gib: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="requested")
+    first_tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
+    first_project_id: Mapped[str] = mapped_column(String(36), index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
