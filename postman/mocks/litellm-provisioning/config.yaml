@@ -1,0 +1,11 @@
+version: 1
+id: cc5b9c33-839c-43d6-8f41-c04fe83f05a6
+name: litellm-provisioning
+slug: litellm-provisioning
+protocol: http
+interceptRequests: true
+port: 4500
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

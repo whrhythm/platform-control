@@ -1,0 +1,23 @@
+purpose:
+  stands_in_for: Local stateful model of the four LiteLLM user and key endpoints used by the provisioning adapter.
+  unblocks: Repeatable adapter verification without using real provider credentials or spending model budget.
+assumptions:
+  - id: user-key-contract
+    status: supported
+    claim: The deployed LiteLLM v1.109.0-dev.2 accepts user creation with auto_create_key false, supplied-key creation, and lookup by key hash for the tested model.
+    reason: The scoped live probe created and deleted a temporary user and key; this does not establish behavior of later versions or concurrent overspend.
+    verification: On 2026-10-31, the live adapter probe verified user ownership, 1 dollar budget and key ownership, then cleaned up without model calls. A separate Postman simulation exercised two identities and repeated lookups with synthetic credentials.
+    source: scripts/probe_litellm_adapter_tail.py; scripts/test_litellm_simulation.py; postman/mocks/litellm-provisioning/default.js
+    updated_at: '2026-10-31'
+  - id: unavailable-provider
+    status: supported
+    claim: The adapter returns a safe gateway_unavailable error when its configured service cannot be reached.
+    reason: The caller was executed against a local unused port; no provider behavior is implied.
+    verification: On 2026-10-31 scripts/test_litellm_simulation.py completed against the local simulation and a closed local port.
+    source: scripts/test_litellm_simulation.py
+    updated_at: '2026-10-31'
+fingerprints:
+  - id: local-run
+    date: '2026-10-31'
+    commit: null
+    cli: '1.74.0'

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main",
+  "description": "Local UI events only. No shell/filesystem command access from the frontend.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

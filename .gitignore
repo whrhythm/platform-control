@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+*.db
+.env
+node_modules/
+dist/
+build/
+target/
+*.spec
+desktop/src-tauri/binaries/*
+!desktop/src-tauri/binaries/.gitkeep
+control-plane.db-*
+release/
+
