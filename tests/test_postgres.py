@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from control_plane.database import get_db, make_engine
 from control_plane.main import app
 from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding, WorkspaceProvisioningIntent
-from control_plane.workspace_provisioning import provision_one, request_intent
+from control_plane.workspace_provisioning import observe_and_record_volume, provision_one, request_intent
 from control_plane.settings import get_settings
 from control_plane.worker import plan_one
 from test_resources import request, setup_tenant
@@ -181,6 +181,34 @@ def test_parallel_provisioners_only_one_sends_create(postgres_harness):
     finally:
         with sessions.begin() as db:
             intent = db.get(WorkspaceProvisioningIntent, env_id)
+            if intent is not None:
+                db.delete(intent)
+
+
+def test_parallel_volume_observations_keep_one_binding(postgres_harness):
+    from test_workspace_provisioning import FakeProvider
+
+    client, token = postgres_harness
+    auth, path, project = setup_tenant(client, token)
+    env_id = client.post(f'{path}/projects/{project}/environment', headers=auth).json()['id']
+    sessions = client.session_factory
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(4):
+        provision_one(sessions, provider, env_id)
+    provider.bind()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert list(pool.map(lambda _: observe_and_record_volume(sessions, provider, env_id), range(2))) == ['bound', 'bound']
+        with sessions() as db:
+            binding = db.get(WorkspaceVolumeBinding, env_id)
+            assert binding is not None and binding.volume_handle == 'volume-uid'
+    finally:
+        with sessions.begin() as db:
+            binding = db.get(WorkspaceVolumeBinding, env_id)
+            intent = db.get(WorkspaceProvisioningIntent, env_id)
+            if binding is not None:
+                db.delete(binding)
             if intent is not None:
                 db.delete(intent)
 

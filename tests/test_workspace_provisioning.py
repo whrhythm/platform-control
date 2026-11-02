@@ -4,8 +4,10 @@ import pytest
 from sqlalchemy.orm import sessionmaker
 
 from control_plane.database import make_engine
-from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceProvisioningIntent
-from control_plane.workspace_provisioning import UnsafeProviderResponse, provision_one, request_intent
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceProvisioningIntent, WorkspaceVolumeBinding
+from control_plane.workspace_binding import BindingMismatch
+from control_plane.user_environments import identity_digest
+from control_plane.workspace_provisioning import UnsafeProviderResponse, observe_and_record_volume, provision_one, request_intent
 
 
 @pytest.fixture
@@ -17,7 +19,7 @@ def store(tmp_path):
         tenant = Tenant(name='alice', owner_issuer='issuer', owner_subject='alice', project_limit=1)
         db.add(tenant)
         db.flush()
-        env = UserEnvironment(issuer='issuer', subject='alice', identity_hash='a' * 64, storage_gib=2,
+        env = UserEnvironment(issuer='issuer', subject='alice', identity_hash=identity_digest('issuer', 'alice'), storage_gib=2,
                               first_tenant_id=tenant.id, first_project_id='project')
         db.add(env)
         db.flush()
@@ -32,10 +34,13 @@ class FakeProvider:
         self.namespace = None
         self.quota = None
         self.policy = None
+        self.pvc = None
+        self.pv = None
 
     def create_namespace(self, manifest):
         self.calls.append('create_namespace')
         manifest['metadata']['uid'] = 'namespace-uid'
+        manifest['status'] = {'phase': 'Active'}
         self.namespace = deepcopy(manifest)
         return manifest
 
@@ -46,7 +51,22 @@ class FakeProvider:
     def create_pvc(self, manifest):
         self.calls.append('create_pvc')
         manifest['metadata']['uid'] = 'pvc-uid'
+        manifest['status'] = {'phase': 'Pending'}
+        self.pvc = deepcopy(manifest)
         return manifest
+
+    def inspect_claim_volume(self, expected_pvc_uid):
+        self.calls.append('inspect_claim_volume')
+        assert self.pvc['metadata']['uid'] == expected_pvc_uid
+        return deepcopy(self.pvc), deepcopy(self.pv)
+
+    def bind(self):
+        self.pvc['status']['phase'] = 'Bound'
+        self.pvc['spec']['volumeName'] = 'pv-qa'
+        self.pv = {'metadata': {'name': 'pv-qa', 'uid': 'pv-uid'}, 'status': {'phase': 'Bound'},
+                   'spec': {'storageClassName': 'codechat-workspace-retain', 'persistentVolumeReclaimPolicy': 'Retain',
+                            'claimRef': {'name': 'workspace-data', 'namespace': self.pvc['metadata']['namespace'], 'uid': 'pvc-uid'},
+                            'csi': {'driver': 'driver.longhorn.io', 'volumeHandle': 'volume-uid'}}}
 
     def create_resource_quota(self, manifest):
         self.calls.append('create_quota')
@@ -157,3 +177,83 @@ def test_ineligible_environment_cannot_start_next_step(store):
         db.get(UserEnvironment, env_id).status = 'suspended'
     assert provision_one(sessions, provider, env_id) == 'environment_not_eligible'
     assert provider.calls == ['create_namespace']
+
+
+def test_observation_records_only_a_verified_bound_volume_and_is_idempotent(store):
+    sessions, env_id = store
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(4):
+        provision_one(sessions, provider, env_id)
+    assert observe_and_record_volume(sessions, provider, env_id) == 'pending'
+    with sessions() as db:
+        assert db.get(WorkspaceVolumeBinding, env_id) is None
+    provider.bind()
+    assert observe_and_record_volume(sessions, provider, env_id) == 'bound'
+    assert observe_and_record_volume(sessions, provider, env_id) == 'bound'
+    with sessions() as db:
+        bound = db.get(WorkspaceVolumeBinding, env_id)
+        assert (bound.namespace_uid, bound.pvc_uid, bound.pv_uid, bound.volume_handle) == ('namespace-uid', 'pvc-uid', 'pv-uid', 'volume-uid')
+        assert db.get(UserEnvironment, env_id).status == 'requested'
+
+
+@pytest.mark.parametrize('failure', ['wrong_claim', 'wrong_policy', 'replaced_namespace', 'wrong_reclaim', 'wrong_volume'])
+def test_unsafe_observation_never_records_or_replaces_binding(store, failure):
+    sessions, env_id = store
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(4):
+        provision_one(sessions, provider, env_id)
+    provider.bind()
+    assert observe_and_record_volume(sessions, provider, env_id) == 'bound'
+    if failure == 'wrong_claim':
+        provider.pv['spec']['claimRef']['uid'] = 'another-pvc'
+    elif failure == 'wrong_policy':
+        provider.policy['spec']['ingress'] = [{}]
+    elif failure == 'replaced_namespace':
+        provider.namespace['metadata']['uid'] = 'replaced'
+    elif failure == 'wrong_reclaim':
+        provider.pv['spec']['persistentVolumeReclaimPolicy'] = 'Delete'
+    else:
+        provider.pv['spec']['csi']['volumeHandle'] = 'different-volume'
+    with pytest.raises((BindingMismatch, UnsafeProviderResponse)):
+        observe_and_record_volume(sessions, provider, env_id)
+    with sessions() as db:
+        assert db.get(WorkspaceVolumeBinding, env_id).volume_handle == 'volume-uid'
+
+
+def test_observation_rejects_changed_database_state_before_commit(store):
+    sessions, env_id = store
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(4):
+        provision_one(sessions, provider, env_id)
+    provider.bind()
+    original = provider.inspect_claim_volume
+
+    def inspect_then_suspend(uid):
+        result = original(uid)
+        with sessions.begin() as db:
+            db.get(UserEnvironment, env_id).status = 'suspended'
+        return result
+
+    provider.inspect_claim_volume = inspect_then_suspend
+    with pytest.raises(RuntimeError, match='changed during observation'):
+        observe_and_record_volume(sessions, provider, env_id)
+    with sessions() as db:
+        assert db.get(WorkspaceVolumeBinding, env_id) is None
+
+
+def test_inconsistent_environment_identity_is_never_bound(store):
+    sessions, env_id = store
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(4):
+        provision_one(sessions, provider, env_id)
+    provider.bind()
+    with sessions.begin() as db:
+        db.get(UserEnvironment, env_id).identity_hash = 'b' * 64
+    with pytest.raises(BindingMismatch, match='identity record'):
+        observe_and_record_volume(sessions, provider, env_id)
+    with sessions() as db:
+        assert db.get(WorkspaceVolumeBinding, env_id) is None

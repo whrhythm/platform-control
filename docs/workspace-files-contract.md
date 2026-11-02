@@ -50,3 +50,9 @@ The journal now has a restricted Kubernetes adapter but remains disconnected fro
 本地 Postman 模拟验证了真实 HTTP 适配器与创建流程、同名冲突和创建次序。真实集群测试在随机命名空间创建并读取配额与网络策略，PVC 只进行服务端 dry-run，测试命名空间通过 UID 前置条件删除。另用两个临时 Kata Pod 验证了基线可连接、目标入口拒绝阻断连接、恢复连接后来源出口拒绝也阻断连接，测试资源已清理；这只证明当前集群与该测试流量组合，不保证所有协议或其他策略组合。该验证不等于生产控制器可用：尚未部署、未做真实用户卷创建或卷绑定，无法从 LibreChat 使用。Kubernetes 官方说明：[网络策略](https://kubernetes.io/docs/concepts/services-networking/network-policies/)、[PVC API](https://kubernetes.io/docs/reference/kubernetes-api/core/persistent-volume-claim-v1/)。
 
 `scripts/workspace_provisioning_cluster_acceptance.py` 使用临时 SQLite 日志、随机测试身份及现有 kubectl 代理，在真实集群依序创建 namespace、quota、network policy 和保留策略的 Longhorn PVC，确认 PVC 绑定以及 PV 的声明 UID、驱动和回收策略。测试完成后，按资源 UID 和声明 UID 核验并回收临时 PVC、PV、Longhorn 卷及 namespace。此验证尚未运行生产 PostgreSQL 控制器，未将 PVC/PV 信息写入生产绑定表，也未验证用户文件恢复。
+
+## 卷绑定观察与持久记录（原型）
+
+`observe_and_record_volume` 只接受完成 PVC 创建日志的环境，重新读取并核对命名空间、配额和网络策略，然后根据已记录的 PVC UID 读取 PVC 及其指向的 PV。PVC 尚未绑定时返回 `pending`；PVC/PV 双向关联、Longhorn 驱动和 `Retain` 策略验证通过后，记录命名空间、PVC、PV 及后端卷标识。提交前再次锁定并核对数据库中的环境和操作状态；重复观察同一卷不会重复记录，已记录的卷身份发生变化时拒绝替换。
+
+本地模拟和真实集群临时卷均已验证上述流程，真实集群测试使用临时 SQLite，执行结束后回收测试卷。返回的 `bound` **仅表示这次观察到 PVC/PV 已绑定**，不代表 Longhorn 副本健康、文件可读写、用户环境就绪或数据已备份。Kubernetes 多次读取不是原子快照，使用卷前仍须重新核验并限制命名空间变更；现有原型没有接入生产 worker、RBAC 或真实用户，也没有自动恢复和销毁用户数据的流程。

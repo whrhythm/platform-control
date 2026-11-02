@@ -16,3 +16,10 @@ assumptions:
     verification: On 2026-11-02 two temporary Kata Pods confirmed baseline connectivity and that isolated ingress and egress each block the tested TCP connection; this does not cover all protocols or policy combinations.
     source: https://kubernetes.io/docs/concepts/services-networking/network-policies/
     updated_at: '2026-11-02'
+  - id: volume-binding
+    status: supported
+    claim: The adapter reads a PV only after checking the recorded PVC identity, then records matching retained Longhorn storage identifiers.
+    reason: The simulation tests HTTP integration; separate live testing exercised one synthetic volume and did not establish long-term storage health.
+    verification: Local simulation and temporary real-cluster PVC/PV test on 2026-11-02; wrong identities and unreachable service covered by tests.
+    source: scripts/test_workspace_kubernetes_simulation.py; scripts/workspace_provisioning_cluster_acceptance.py
+    updated_at: '2026-11-02'

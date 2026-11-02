@@ -12,8 +12,9 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from control_plane.kubernetes_workspace_provider import KubernetesWorkspaceProvider
-from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceProvisioningIntent
-from control_plane.workspace_provisioning import provision_one, request_intent
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceProvisioningIntent, WorkspaceVolumeBinding
+from control_plane.workspace_provisioning import provision_one, request_intent, observe_and_record_volume
+from control_plane.user_environments import identity_digest
 
 binary = os.environ.get('KUBECTL_BIN') or shutil.which('kubectl')
 if not binary:
@@ -54,7 +55,7 @@ try:
             tenant = Tenant(name='qa', owner_issuer='cluster-qa', owner_subject=subject, project_limit=1)
             db.add(tenant)
             db.flush()
-            env = UserEnvironment(issuer='cluster-qa', subject=subject, identity_hash=subject, storage_gib=2,
+            env = UserEnvironment(issuer='cluster-qa', subject=subject, identity_hash=identity_digest('cluster-qa', subject), storage_gib=2,
                                   first_tenant_id=tenant.id, first_project_id='qa')
             db.add(env)
             db.flush()
@@ -91,7 +92,13 @@ try:
         assert pv['spec']['persistentVolumeReclaimPolicy'] == 'Retain'
         assert pv['spec']['csi']['driver'] == 'driver.longhorn.io'
         volume = pv['spec']['csi']['volumeHandle']
-        print('PASS: journal created isolated test namespace, quota, policy and bound retained Longhorn volume')
+        assert observe_and_record_volume(sessions, provider, environment_id) == 'bound'
+        assert observe_and_record_volume(sessions, provider, environment_id) == 'bound'
+        with sessions() as db:
+            binding = db.get(WorkspaceVolumeBinding, environment_id)
+            assert (binding.namespace_uid, binding.pvc_uid, binding.pv_uid, binding.volume_handle) == (namespace_uid, pvc_uid, pv_uid, volume)
+            assert db.get(UserEnvironment, environment_id).status == 'requested'
+        print('PASS: journal created isolated test resources and recorded verified retained volume binding')
         engine.dispose()
 finally:
     if provider:

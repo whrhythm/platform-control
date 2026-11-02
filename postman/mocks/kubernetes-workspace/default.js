@@ -11,9 +11,12 @@ http.createServer(async (req, res) => {
   }
   const quotaRead = url.pathname.match(/^\/api\/v1\/namespaces\/([^/]+)\/resourcequotas\/([^/]+)$/);
   const policyRead = url.pathname.match(/^\/apis\/networking\.k8s\.io\/v1\/namespaces\/([^/]+)\/networkpolicies\/([^/]+)$/);
-  if (req.method === 'GET' && (quotaRead || policyRead)) {
-    const parts = quotaRead || policyRead;
-    const item = objects[(quotaRead ? 'ResourceQuota/' : 'NetworkPolicy/') + parts[1] + '/' + parts[2]];
+  const claimRead = url.pathname.match(/^\/api\/v1\/namespaces\/([^/]+)\/persistentvolumeclaims\/([^/]+)$/);
+  const volumeRead = url.pathname.match(/^\/api\/v1\/persistentvolumes\/([^/]+)$/);
+  if (req.method === 'GET' && (quotaRead || policyRead || claimRead || volumeRead)) {
+    const parts = quotaRead || policyRead || claimRead || volumeRead;
+    const kind = quotaRead ? 'ResourceQuota' : policyRead ? 'NetworkPolicy' : claimRead ? 'PersistentVolumeClaim' : 'PersistentVolume';
+    const item = objects[kind + '/' + (volumeRead ? parts[1] : parts[1] + '/' + parts[2])];
     return send(res, item ? 200 : 404, item || {});
   }
   const paths = [
@@ -31,7 +34,19 @@ http.createServer(async (req, res) => {
       const key = kind + '/' + (found[1] || '') + '/' + body.metadata.name;
       if (objects[key]) return send(res, 409, {});
       const item = {...body, metadata: {...body.metadata, uid: 'test-uid-' + kind}};
+      if (kind === 'Namespace') item.status = {phase: 'Active'};
       if (url.searchParams.get('dryRun') !== 'All') {
+        if (kind === 'PersistentVolumeClaim') {
+          const volumeName = 'pvc-' + found[1];
+          item.spec = {...item.spec, volumeName};
+          item.status = {phase: 'Bound'};
+          objects['PersistentVolume/' + volumeName] = {
+            metadata: {name: volumeName, uid: 'test-uid-pv'}, status: {phase: 'Bound'},
+            spec: {storageClassName: 'codechat-workspace-retain', persistentVolumeReclaimPolicy: 'Retain',
+              claimRef: {namespace: found[1], name: body.metadata.name, uid: item.metadata.uid},
+              csi: {driver: 'driver.longhorn.io', volumeHandle: 'test-volume-handle'}},
+          };
+        }
         objects[key] = item;
         if (kind === 'Namespace') objects['Namespace/' + body.metadata.name] = item;
         await pm.state.set('workspace_objects', objects);

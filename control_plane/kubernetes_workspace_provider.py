@@ -6,6 +6,7 @@ not provide delete, patch, apply, arbitrary paths, or end-user authorization.
 from copy import deepcopy
 import ipaddress
 import json
+import re
 import ssl
 from urllib.parse import quote, urlsplit
 
@@ -92,3 +93,24 @@ class KubernetesWorkspaceProvider:
 
     def read_network_policy(self) -> dict:
         return self._request('GET', f'apis/networking.k8s.io/v1/namespaces/{self.namespace}/networkpolicies/default-deny')
+
+    def inspect_claim_volume(self, expected_pvc_uid: str) -> tuple[dict, dict | None]:
+        """Read only the PV named by this workspace's previously created PVC."""
+        if not isinstance(expected_pvc_uid, str) or not expected_pvc_uid.strip():
+            raise ValueError('A recorded PVC UID is required')
+        pvc = self._request('GET', f'api/v1/namespaces/{self.namespace}/persistentvolumeclaims/workspace-data')
+        meta, spec = pvc.get('metadata', {}), pvc.get('spec', {})
+        labels = self.objects['PersistentVolumeClaim']['metadata']['labels']
+        if (meta.get('uid') != expected_pvc_uid or meta.get('name') != 'workspace-data' or
+                meta.get('namespace') != self.namespace or meta.get('deletionTimestamp') or
+                any(meta.get('labels', {}).get(key) != value for key, value in labels.items()) or
+                spec.get('storageClassName') != 'codechat-workspace-retain'):
+            raise KubernetesProviderError('Observed PVC does not match the recorded workspace')
+        if pvc.get('status', {}).get('phase') != 'Bound':
+            return pvc, None
+        volume_name = spec.get('volumeName')
+        if (not isinstance(volume_name, str) or len(volume_name) > 253 or
+                not re.fullmatch(r'[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?', volume_name)):
+            raise KubernetesProviderError('Observed PVC has invalid PV name')
+        pv = self._request('GET', 'api/v1/persistentvolumes/' + quote(volume_name, safe=''))
+        return pvc, pv

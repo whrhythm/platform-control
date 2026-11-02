@@ -9,8 +9,9 @@ from typing import Protocol
 
 from sqlalchemy import select
 
-from .models import UserEnvironment, WorkspaceProvisioningIntent
-from .user_environments import plan_user_environment
+from .models import UserEnvironment, WorkspaceProvisioningIntent, WorkspaceVolumeBinding
+from .user_environments import identity_digest, plan_user_environment
+from .workspace_binding import BindingMismatch, VolumeBinding, verify_volume_binding
 
 
 class CreateProvider(Protocol):
@@ -21,6 +22,7 @@ class CreateProvider(Protocol):
     def create_network_policy(self, manifest: dict) -> dict: ...
     def read_network_policy(self) -> dict: ...
     def create_pvc(self, manifest: dict) -> dict: ...
+    def inspect_claim_volume(self, expected_pvc_uid: str) -> tuple[dict, dict | None]: ...
 
 
 class UnsafeProviderResponse(ValueError):
@@ -154,3 +156,60 @@ def provision_one(session_factory, provider: CreateProvider, environment_id: str
         setattr(intent, field, uid)
         intent.state = next_state
     return next_state
+
+
+def observe_and_record_volume(session_factory, provider: CreateProvider, environment_id: str) -> str:
+    """Record the observed bound PV for a trusted, previously journalled PVC.
+
+    Returns ``pending`` or ``bound`` for storage only; it never marks the user
+    environment ready. No provider mutations occur. The caller must recheck
+    Kubernetes objects before using them because API reads are not atomic.
+    """
+    if getattr(provider, 'dry_run', False):
+        raise ValueError('Dry-run providers cannot record volume bindings')
+    with session_factory.begin() as db:
+        env = db.scalar(select(UserEnvironment).where(UserEnvironment.id == environment_id).with_for_update())
+        if env is None:
+            raise ValueError('Unknown environment')
+        intent = db.scalar(select(WorkspaceProvisioningIntent).where(WorkspaceProvisioningIntent.environment_id == environment_id).with_for_update())
+        if intent is None or intent.state != 'pvc_recorded' or not all((intent.namespace_uid, intent.quota_uid, intent.policy_uid, intent.pvc_uid)):
+            raise ValueError('Completed create journal is required')
+        if env.status != 'requested':
+            return 'environment_not_eligible'
+        if env.identity_hash != identity_digest(env.issuer, env.subject):
+            raise BindingMismatch('Environment identity record is inconsistent')
+        snapshot = (env.issuer, env.subject, env.storage_gib, env.identity_hash, intent.state, intent.namespace_uid,
+                    intent.quota_uid, intent.policy_uid, intent.pvc_uid)
+    issuer, subject, storage_gib, _, _, ns_uid, quota_uid, policy_uid, pvc_uid = snapshot
+    plan = plan_user_environment(issuer, subject, storage_gib=storage_gib)
+    objects = {obj['kind']: obj for obj in plan['objects']}
+    namespace = provider.read_namespace(plan['namespace'])
+    _metadata_match(namespace, objects['Namespace'], namespace_uid=ns_uid)
+    if namespace.get('status', {}).get('phase') != 'Active':
+        return 'pending'
+    _quota_match(provider.read_resource_quota(), objects['ResourceQuota'], quota_uid)
+    _policy_match(provider.read_network_policy(), objects['NetworkPolicy'], policy_uid)
+    pvc, pv = provider.inspect_claim_volume(pvc_uid)
+    if _pvc_match(pvc, objects['PersistentVolumeClaim']) != pvc_uid:
+        raise BindingMismatch('PVC UID changed')
+    if pv is None:
+        return 'pending'
+    binding = VolumeBinding(namespace_name=plan['namespace'], namespace_uid=ns_uid, pvc_uid=pvc_uid,
+                            pv_name=pv.get('metadata', {}).get('name'), pv_uid=pv.get('metadata', {}).get('uid'),
+                            volume_handle=pv.get('spec', {}).get('csi', {}).get('volumeHandle'))
+    if verify_volume_binding(issuer, subject, binding, namespace, pvc, pv) != 'ready':
+        return 'pending'
+    with session_factory.begin() as db:
+        env = db.scalar(select(UserEnvironment).where(UserEnvironment.id == environment_id).with_for_update())
+        intent = db.scalar(select(WorkspaceProvisioningIntent).where(WorkspaceProvisioningIntent.environment_id == environment_id).with_for_update())
+        if env is None or intent is None or env.status != 'requested' or snapshot != (
+                env.issuer, env.subject, env.storage_gib, env.identity_hash, intent.state, intent.namespace_uid,
+                intent.quota_uid, intent.policy_uid, intent.pvc_uid):
+            raise RuntimeError('Environment or provisioning journal changed during observation')
+        existing = db.get(WorkspaceVolumeBinding, environment_id)
+        if existing is not None:
+            if any(getattr(existing, key) != value for key, value in vars(binding).items()):
+                raise BindingMismatch('Recorded PV identity differs; refusing replacement')
+        else:
+            db.add(WorkspaceVolumeBinding(environment_id=environment_id, **vars(binding)))
+    return 'bound'
