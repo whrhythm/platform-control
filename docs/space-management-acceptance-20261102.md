@@ -10,6 +10,7 @@
 | --- | --- |
 | 个人磁盘用量 | 显示真实已用、额度、百分比和测量时间；说明尚未包含数据库、对象和镜像 |
 | 文本预览 | 上传普通文本，从文件行的预览图标打开浮窗；HTML 字符作为文本显示 |
+| 图片预览 | 真实上传 PNG，从预览图标打开后浏览器成功解码；验证后通过确认删除清理测试文件 |
 | 文本编辑 | 右侧编辑框加载实际文件，关闭未保存编辑时确认；保存后重新预览读到新内容 |
 | 文件删除 | 垃圾桶打开确认，确认后文件消失；不删除工程目录或应用 |
 | 构建失败 | 在示例 Dockerfile 临时加入 RUN false，从界面发布；显示构建失败及清理完成，上一版 v3 仍可访问 |
@@ -23,12 +24,14 @@
 
 本机截图和结果放在忽略提交的 release 目录：file-preview.png、file-editor.png、build-failure-feedback.png、deployment-failure-feedback.png、space-phase-a.png、space-phase-a-results.json；不提交浏览器会话、用户源码或凭据。
 
+最终界面复核：实际显示 Used 18.5 KiB / 2.0 GiB (<0.1%)，小用量不显示为零；编辑抽屉右边缘贴合视口、顶部为零，在减少动画设置下可用，正常 v3 服务保持不变。最终截图为 release/file-editor-final.png 和 release/space-phase-a-final.png。该用量是一次采样，不是固定展示值。
+
 ## 自动验证
 
 - 后端最终全量 pytest：136 通过、14 跳过；跳过项需要独立 PostgreSQL 或 Postman 配置。
 - 本地 Postman 真实 HTTP 回收模拟：7 项通过，包括指定 Job UID 的前台删除、首次失败缩至零、恢复上个镜像、拒绝同名替换对象，以及迟到状态不能覆盖新请求。
 - 一次性本地 PostgreSQL 16：9 项迁移/并发测试通过；未向集群业务数据库运行测试。
-- LibreChat 发行镜像中 data-provider、packages/api、client 类型检查通过；模型凭据 2 项、身份/文件 BFF 10 项、用户空间界面 16 项测试通过。
+- LibreChat 发行镜像中 data-provider、packages/api、packages/client、client 类型检查通过；模型凭据 2 项、身份/文件 BFF 10 项、共享抽屉/代码编辑组件 2 项、用户空间界面 16 项测试通过。文件/通知/发布界面与 BFF/共享接口的六个相关模块 ESLint 检查无错误和警告。
 - 管理端在独立本地目录执行 npm ci 和正式构建通过。
 - 执行 npm run lighthouse，前端构建通过，但性能检查环境缺少 openssl，尚无可用 LCP 报告，不能宣称性能门禁通过。
 
