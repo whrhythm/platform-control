@@ -28,8 +28,8 @@ def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 2) ->
     return {'mode': 'plan', 'executable': False, 'identity_hash': digest, 'namespace': ns, 'storage_gib': storage_gib,
             'runtime_requirement': {'runtime_class': 'kata-qemu-runtime-rs', 'dedicated_sandbox': True, 'workspace_pvc': 'workspace-data', 'shared_orchestration': True},
             'objects': [namespace, quota, pvc, isolation], 'blockers': [
-                'No apply or deprovision adapter, observed readiness, or user-level allocation record exists.',
-                'OpenHands SDK and Agent Sandbox version compatibility and persistent volume mounting are not yet verified.',
+                'No production apply or deprovision adapter or observed readiness exists; the user-level record is metadata only.',
+                'A temporary Agent Server and SDK compatibility probe passed; production integration and persistent user volume lifecycle remain unverified.',
                 'No authenticated access proxy, model credential relay, or reviewed network egress policy exists.',
                 'Project filesystem boundaries, retention, disk accounting and recovery remain unverified.',
             ]}

@@ -17,6 +17,15 @@ identities = [{'issuer': item['issuer'].rstrip('/') + '/', 'subject': item['subj
 if len({(i['issuer'], i['subject']) for i in identities}) != 2:
     raise RuntimeError('Expected distinct identities')
 
+# Preflight before revoking anything: newer control-plane versions have an
+# environment record, and cleanup must never implicitly delete a real sandbox.
+preflight = []
+for identity in identities:
+    issuer = sql.Literal(identity['issuer']).as_string()
+    subject = sql.Literal(identity['subject']).as_string()
+    preflight.append(f"DO $qa$ BEGIN IF EXISTS (SELECT 1 FROM user_environments WHERE issuer={issuer} AND subject={subject}) OR EXISTS (SELECT 1 FROM projects p JOIN tenants t ON p.tenant_id=t.id WHERE t.owner_issuer={issuer} AND t.owner_subject={subject}) OR EXISTS (SELECT 1 FROM resources r JOIN tenants t ON r.tenant_id=t.id WHERE t.owner_issuer={issuer} AND t.owner_subject={subject}) OR EXISTS (SELECT 1 FROM test_orders o JOIN tenants t ON o.tenant_id=t.id WHERE t.owner_issuer={issuer} AND t.owner_subject={subject}) THEN RAISE EXCEPTION 'QA identity owns resources; refusing automatic cleanup'; END IF; END $qa$;")
+remote(['kubectl', '-n', 'postgres', 'exec', '-i', 'postgres-1', '-c', 'postgres', '--', 'psql', '-X', '-q', '-v', 'ON_ERROR_STOP=1', '-U', 'postgres', '-d', 'platform_control'], '\n'.join(preflight))
+
 program = '''
 import hashlib,json,os,urllib.parse,urllib.request,urllib.error
 identities=json.loads(PAYLOAD)

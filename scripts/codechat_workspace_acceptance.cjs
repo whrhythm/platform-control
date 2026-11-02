@@ -27,9 +27,7 @@ async function login(browser, user) {
   await page.goto('https://chat.k3s.local:30443/login', {waitUntil: 'domcontentloaded', timeout: 60000});
   await page.getByRole('link', {name: 'Authentik'}).click();
   stage = 'identity-username';
-  await page.waitForTimeout(5000);
-  console.log('Identity page:', new URL(page.url()).pathname, (await page.locator('body').innerText()).slice(0, 240));
-  await page.getByRole('textbox', {name: /Email or Username|邮箱或用户名/}).fill(user.username, {timeout: 90000});
+  await page.getByPlaceholder(/Email or Username|邮箱或用户名/).fill(user.username, {timeout: 90000});
   await page.getByRole('button', {name: 'Log in', exact: true}).click();
   stage = 'identity-password';
   const password = page.getByPlaceholder('Please enter your password');

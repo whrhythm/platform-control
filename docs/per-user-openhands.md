@@ -31,7 +31,7 @@ flowchart LR
 
 每人一卷是逻辑磁盘隔离，Longhorn 仍共享节点物理磁盘，不等于每人独享一块物理硬盘或独享独立故障域。当前单节点也不具备节点高可用。PVC 以容量限制文件系统；实际物理占用还受副本、快照、备份、容器临时层和日志影响，必须同时监控 Longhorn 和节点剩余容量。工作卷、Agent 本地状态和临时项目资料共计入该卷配额；Pod 临时层、日志和未来外部数据库、对象存储另行设置限制和统计，不能仅凭 PVC 配额宣称覆盖所有空间。
 
-初版免费额度为每用户 2 GiB（可由管理员调整，2026-11-01 由 5 GiB 下调），明确这是初始值而非承诺的永久套餐；节点容量不足时拒绝或排队，不能超配后假称可用。分配是按需发生，普通注册不会立刻启动一台实例。部署前须核对 Longhorn 实际可用容量、默认副本数和安全余量。
+目前用户环境计划的默认值为每用户 2 GiB，可通过服务端配置调整；尚未实现管理员界面中的调整操作。该值不是承诺的永久套餐。真实资源开通前必须实现容量核对，节点容量不足时拒绝或排队。注册不会立刻启动沙箱。部署前须核对 Longhorn 实际可用容量、默认副本数和安全余量。
 
 ## 用户、项目与访问
 
@@ -72,6 +72,12 @@ flowchart LR
   - 双用户存储/网络隔离 + 暂停恢复：`sandbox_storage_acceptance.py`，7/7。
   - Kata Agent Server + SDK `RemoteWorkspace`（无凭据拒绝、远程执行、写 Kata 挂载卷）：`agent_server_acceptance.py`，4/4。
   - **资源销毁**（新增 `sandbox_teardown_acceptance.py`）：只删除用户 A——先暂停并确认 Pod 退出，再移除沙箱、删除 PVC，等待 PV 与 Longhorn 卷实际回收；随后验证用户 B 仍 Ready、原文件完整、HTTP 探测可用。6/6。
-- 验收脚本修正：kubectl 路径默认 `/usr/bin/kubectl`（`KUBECTL_BIN` 可覆盖）；`PLATFORM_KUBE_SERVER` 必须带 `https://` scheme，否则 kubectl v1.28 走明文 HTTP 被 API server 拒绝。ops 与 platform-control 两份拷贝保持逐字节一致。
+- 验收脚本优先使用 `KUBECTL_BIN`，否则自动从 `PATH` 查找 `kubectl`；`PLATFORM_KUBE_SERVER` 必须带 `https://` scheme，否则 kubectl v1.28 走明文 HTTP 被 API server 拒绝。ops 与 platform-control 两份拷贝保持一致。
 - 控制面新增用户运行环境入口（仅计划）：`UserEnvironment` 模型 + 迁移 `0004_user_environments`，`POST/GET /v1/tenants/{t}/projects/{p}/environment`。身份只取验证后的 token；每用户唯一（并发首请求由唯一约束仲裁，20 并发在一次性 Postgres 容器验证通过）；请求体字段全部忽略；响应 `executable=false` 并列出 blockers。API 单测 7 项 + 既有全量 42 通过；OpenAPI 契约已重新导出。
-- 仍未完成：集群中的 platform-api 镜像尚未包含该入口（需随下次发布升级镜像并 `alembic upgrade head`）；LibreChat 前端尚未调用；apply/deprovision adapter、代理鉴权、模型凭据中继、事件流、跨用户对抗、磁盘写满、备份恢复与真实删除流程仍未验证。
+- 2026-11-02 确认 ops 已发布包含该入口的 platform-api；LibreChat 前端尚未调用；apply/deprovision adapter、代理鉴权、模型凭据中继、事件流、跨用户对抗、磁盘写满、备份恢复与真实删除流程仍未验证。
+
+## 2026-11-02 回收验证
+
+再次以两位临时用户验证：停止和删除用户 A 的环境及 Longhorn 卷后，用户 B 的沙箱和文件仍可用；所有临时 namespace、PV 和卷均已清理。这不等同于平台已实现用户删除功能，也不覆盖备份与快照保留。
+
+控制面源码新增 `control_plane/sandbox_manifest.py`，根据服务端确定的身份生成 Agent Sandbox 候选清单；它要求镜像使用固定摘要，使用 Kata、独立 PVC 引用、非 root 及禁用默认 ServiceAccount token。单元测试及集群服务端 dry-run 校验通过。此模块只生成清单，不调用 Kubernetes，也没有接入生产环境入口；共享侧认证、网络策略、模型凭据、对账和清理尚未实现，不能直接作为可用环境。

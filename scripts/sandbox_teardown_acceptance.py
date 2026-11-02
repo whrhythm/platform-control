@@ -11,12 +11,16 @@ Requires KUBECONFIG and PLATFORM_KUBE_SERVER (a full URL with scheme, e.g. https
 import json
 import os
 import secrets
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-K = [os.environ.get('KUBECTL_BIN', '/usr/bin/kubectl'), '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
+kubectl_bin = os.environ.get('KUBECTL_BIN') or shutil.which('kubectl')
+if not kubectl_bin:
+    raise RuntimeError('kubectl not found; set KUBECTL_BIN to its absolute path')
+K = [kubectl_bin, '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
 run = secrets.token_hex(6)
 namespaces = {user: f'codechat-qa-{run}-{user}' for user in ('a', 'b')}
 owner = {'codechat.io/qa-run': run, 'codechat.io/purpose': 'sandbox-teardown-test'}

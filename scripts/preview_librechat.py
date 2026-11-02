@@ -1,10 +1,14 @@
 """Create/delete a header-routed preview isolated from the production Service."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 
-K = ['/snap/bin/kubectl', '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER'], '-n', 'librechat']
+kubectl_bin = os.environ.get('KUBECTL_BIN') or shutil.which('kubectl')
+if not kubectl_bin:
+    raise RuntimeError('kubectl not found; set KUBECTL_BIN to its absolute path')
+K = [kubectl_bin, '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER'], '-n', 'librechat']
 name = 'codechat-preview'
 resources = [('deployment', name), ('service', name), ('networkpolicy', name), ('networkpolicy', name + '-mongo'), ('apisixroute', name)]
 

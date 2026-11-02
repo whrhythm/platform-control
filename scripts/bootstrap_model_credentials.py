@@ -3,10 +3,14 @@ import base64
 import json
 import os
 import secrets
+import shutil
 import subprocess
 from cryptography.fernet import Fernet
 
-kubectl = ['/snap/bin/kubectl', '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
+kubectl_bin = os.environ.get('KUBECTL_BIN') or shutil.which('kubectl')
+if not kubectl_bin:
+    raise RuntimeError('kubectl not found; set KUBECTL_BIN to its absolute path')
+kubectl = [kubectl_bin, '--kubeconfig', os.environ['KUBECONFIG'], '--server', os.environ['PLATFORM_KUBE_SERVER']]
 
 
 def get(namespace, name):
