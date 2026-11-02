@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import datetime
 import hashlib
 import json
 import hmac
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Query, Response, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field
@@ -21,19 +22,31 @@ from .settings import get_settings
 from .litellm import LiteLLMError
 from .model_credentials import provision_model_key
 from .user_environments import identity_digest, plan_user_environment
+from .workspace_gateway import call_files
+from .models import WorkspaceFileService
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0008_projectless_space":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0009_workspace_files":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
 
 app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
+workspace_transfer_slots = asyncio.Semaphore(4)
 app.add_middleware(CORSMiddleware, allow_origins=[origin for origin in (get_settings().public_origin, get_settings().additional_public_origin) if origin], allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key"])
+
+
+@app.middleware('http')
+async def workspace_no_cache(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith('/internal/v1/workspace'):
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+    return response
 
 
 class TenantCreate(BaseModel):
@@ -255,6 +268,63 @@ def ensure_personal_environment(principal: Principal, tenant_id: str, db: Sessio
             db.add(WorkspaceProvisioningIntent(environment_id=environment.id, state='requested'))
             db.commit()
     return environment
+
+
+def workspace_service_principal(
+    service_token: str = Header(default='', alias='X-CodeChat-Service-Token'),
+    subject: str = Header(default='', alias='X-CodeChat-Subject'),
+) -> Principal:
+    settings = get_settings()
+    if (not settings.workspace_files_enabled or not settings.oidc_issuer or len(settings.librechat_service_token) < 32 or
+            not hmac.compare_digest(service_token, settings.librechat_service_token) or
+            not subject or len(subject) > 255 or any(ord(c) < 32 for c in subject)):
+        raise HTTPException(403, 'Workspace access unavailable')
+    return Principal(issuer=settings.oidc_issuer, subject=subject)
+
+
+@app.post('/internal/v1/workspace/ensure', tags=['workspace-files'])
+def ensure_workspace(principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    tenant = ensure_personal_tenant(principal, db)
+    environment = ensure_personal_environment(principal, tenant.id, db)
+    service = db.get(WorkspaceFileService, environment.id)
+    return {'status': service.status if service else 'preparing',
+            'storage_gib': environment.storage_gib}
+
+
+@app.get('/internal/v1/workspace/directories', tags=['workspace-files'])
+def workspace_directory(path: str = Query(default='', max_length=4096),
+                        principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    return call_files(db, principal, get_settings(), 'GET', '/v1/directories', path).json()
+
+
+@app.post('/internal/v1/workspace/directories', tags=['workspace-files'], status_code=201)
+def workspace_mkdir(path: str = Query(min_length=1, max_length=4096),
+                    principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    return call_files(db, principal, get_settings(), 'POST', '/v1/directories', path).json()
+
+
+@app.get('/internal/v1/workspace/file', tags=['workspace-files'])
+async def workspace_read(path: str = Query(min_length=1, max_length=4096),
+                   principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    from fastapi.concurrency import run_in_threadpool
+    async with workspace_transfer_slots:
+        result = await run_in_threadpool(call_files, db, principal, get_settings(), 'GET', '/v1/file', path)
+    return Response(result.content, media_type='application/octet-stream', headers={'Cache-Control': 'no-store'})
+
+
+@app.put('/internal/v1/workspace/file', tags=['workspace-files'], status_code=201)
+async def workspace_write(request: Request, path: str = Query(min_length=1, max_length=4096), overwrite: bool = False,
+                          principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    from fastapi.concurrency import run_in_threadpool
+    async with workspace_transfer_slots:
+        content = bytearray()
+        async for chunk in request.stream():
+            if len(content) + len(chunk) > 16 * 1024 * 1024:
+                raise HTTPException(413, 'File exceeds the transfer limit')
+            content.extend(chunk)
+        result = await run_in_threadpool(call_files, db, principal, get_settings(), 'PUT', '/v1/file', path,
+                                         body=bytes(content), overwrite=overwrite)
+    return result.json()
 
 
 @app.get("/v1/tenants", response_model=list[TenantOut], tags=["tenants"])

@@ -132,6 +132,15 @@ class WorkspaceProvisioningIntent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WorkspaceFileService(Base):
+    __tablename__ = 'workspace_file_services'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    encrypted_token: Mapped[str] = mapped_column(String(512))
+    resources: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(24), default='requested')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (

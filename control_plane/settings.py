@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     litellm_models: str = ""
     model_credential_encryption_key: str = ""
     librechat_service_token: str = ""
+    workspace_files_enabled: bool = False
+    workspace_service_image: str = ""
+    workspace_service_ca: str = "/etc/platform-ca/internal-ca.crt"
 
 
 @lru_cache
