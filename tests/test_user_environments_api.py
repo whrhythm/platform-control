@@ -86,6 +86,20 @@ def test_personal_environment_lookup_uses_verified_identity(harness):
     assert client.get('/v1/me/environment', headers=bob).status_code == 404
 
 
+def test_existing_project_environment_is_reused_on_login(harness):
+    from control_plane.auth import Principal
+    from control_plane.main import ensure_personal_environment
+
+    client, token = harness
+    alice, tenant_id, project_id = setup_project(client, token)
+    original = client.post(environment_url(tenant_id, project_id), headers=alice).json()
+    with client.session_factory() as db:
+        principal = Principal(issuer='https://identity.example.test/application/o/platform/', subject='alice')
+        result = ensure_personal_environment(principal, tenant_id, db)
+        assert result.id == original['id']
+        assert result.first_project_id == project_id
+
+
 def test_environment_is_scoped_to_the_requesting_user(harness):
     client, token = harness
     alice, tenant_id, project_id = setup_project(client, token)

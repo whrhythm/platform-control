@@ -95,7 +95,7 @@ class UserEnvironment(Base):
     storage_gib: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="requested")
     first_tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
-    first_project_id: Mapped[str] = mapped_column(String(36), index=True)
+    first_project_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 

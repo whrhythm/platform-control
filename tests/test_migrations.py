@@ -24,7 +24,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007_workspace_isolation"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0008_projectless_space"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:
@@ -45,7 +45,7 @@ def test_downgrade_cannot_discard_recorded_volume_identity(tmp_path, monkeypatch
     config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
     engine = make_engine(url)
     try:
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0007_workspace_isolation')
         with Session(engine) as db:
             tenant = Tenant(name='test', owner_issuer='issuer', owner_subject='alice', project_limit=1)
             db.add(tenant)
@@ -74,7 +74,7 @@ def test_downgrade_cannot_discard_inflight_creation(tmp_path, monkeypatch):
     config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
     engine = make_engine(url)
     try:
-        command.upgrade(config, 'head')
+        command.upgrade(config, '0007_workspace_isolation')
         with Session(engine) as db:
             tenant = Tenant(name='test', owner_issuer='issuer', owner_subject='alice', project_limit=1)
             db.add(tenant)
@@ -89,6 +89,59 @@ def test_downgrade_cannot_discard_inflight_creation(tmp_path, monkeypatch):
             command.downgrade(config, '0005_workspace_bindings')
         with engine.connect() as connection:
             assert connection.scalar(text('SELECT state FROM workspace_provisioning_intents')) == 'namespace_inflight'
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0007_workspace_isolation'
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+
+
+def test_projectless_environment_blocks_unsafe_downgrade(tmp_path, monkeypatch):
+    url = f"sqlite:///{tmp_path / 'projectless.db'}"
+    monkeypatch.setenv('PLATFORM_DATABASE_URL', url)
+    get_settings.cache_clear()
+    config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
+    engine = make_engine(url)
+    try:
+        command.upgrade(config, 'head')
+        with Session(engine) as db:
+            tenant = Tenant(name='test', owner_issuer='issuer', owner_subject='alice', project_limit=1)
+            db.add(tenant)
+            db.flush()
+            db.add(UserEnvironment(issuer='issuer', subject='alice', identity_hash='a' * 64,
+                                   storage_gib=2, first_tenant_id=tenant.id, first_project_id=None))
+            db.commit()
+        with pytest.raises(RuntimeError, match='without a project'):
+            command.downgrade(config, '0007_workspace_isolation')
+        with engine.connect() as connection:
+            assert connection.scalar(text('SELECT COUNT(*) FROM user_environments')) == 1
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+
+
+def test_sqlite_upgrade_refuses_to_rebuild_referenced_environments(tmp_path, monkeypatch):
+    url = f"sqlite:///{tmp_path / 'referenced.db'}"
+    monkeypatch.setenv('PLATFORM_DATABASE_URL', url)
+    get_settings.cache_clear()
+    config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
+    engine = make_engine(url)
+    try:
+        command.upgrade(config, '0007_workspace_isolation')
+        with Session(engine) as db:
+            tenant = Tenant(name='test', owner_issuer='issuer', owner_subject='alice', project_limit=1)
+            db.add(tenant)
+            db.flush()
+            env = UserEnvironment(issuer='issuer', subject='alice', identity_hash='a' * 64, storage_gib=2,
+                                  first_tenant_id=tenant.id, first_project_id='project')
+            db.add(env)
+            db.flush()
+            db.add(WorkspaceProvisioningIntent(environment_id=env.id, state='requested'))
+            db.commit()
+        with pytest.raises(RuntimeError, match='SQLite migration requires'):
+            command.upgrade(config, 'head')
+        with engine.connect() as connection:
+            assert connection.scalar(text('SELECT COUNT(*) FROM user_environments')) == 1
+            assert connection.scalar(text('SELECT COUNT(*) FROM workspace_provisioning_intents')) == 1
             assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0007_workspace_isolation'
     finally:
         engine.dispose()

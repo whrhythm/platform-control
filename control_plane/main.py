@@ -27,7 +27,7 @@ from .user_environments import identity_digest, plan_user_environment
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0007_workspace_isolation":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0008_projectless_space":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -83,7 +83,7 @@ class UserEnvironmentOut(BaseModel):
     storage_gib: int
     status: str
     first_tenant_id: str
-    first_project_id: str
+    first_project_id: str | None
     created_at: datetime
     mode: str
     executable: bool
@@ -218,11 +218,37 @@ def provision_litellm_key(response: Response, service_token: str = Header(defaul
         raise HTTPException(status_code=403, detail='Service authentication failed')
     response.headers['Cache-Control'] = 'no-store'
     tenant = ensure_personal_tenant(principal, db)
+    ensure_personal_environment(principal, tenant.id, db)
     try:
         key = provision_model_key(db, principal, settings, tenant.id)
     except LiteLLMError:
         raise HTTPException(status_code=503, detail='Model credential unavailable') from None
     return {'key': key, 'issuer': principal.issuer, 'subject': principal.subject}
+
+
+def ensure_personal_environment(principal: Principal, tenant_id: str, db: Session) -> UserEnvironment:
+    """Create an identity-bound plan during login; no storage is provisioned here."""
+    existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+    if existing is not None:
+        return existing
+    environment = UserEnvironment(
+        issuer=principal.issuer, subject=principal.subject,
+        identity_hash=identity_digest(principal.issuer, principal.subject),
+        storage_gib=get_settings().default_environment_storage_gib,
+        first_tenant_id=tenant_id, first_project_id=None,
+    )
+    db.add(environment)
+    try:
+        db.flush()
+        audit(db, principal, tenant_id, 'environment.create', environment.id)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+        if existing is None:
+            raise
+        return existing
+    return environment
 
 
 @app.get("/v1/tenants", response_model=list[TenantOut], tags=["tenants"])

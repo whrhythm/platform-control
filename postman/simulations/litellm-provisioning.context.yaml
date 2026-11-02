@@ -16,6 +16,13 @@ assumptions:
     verification: On 2026-10-31 scripts/test_litellm_simulation.py completed against the local simulation and a closed local port.
     source: scripts/test_litellm_simulation.py
     updated_at: '2026-10-31'
+  - id: login-plan-reuse
+    status: supported
+    claim: Repeated authenticated login provisioning creates one project-independent environment plan while reusing the same model credential.
+    reason: The local API and real HTTP adapter were exercised against the synthetic stateful LiteLLM mock; no user disk or live provider was involved.
+    verification: On 2026-11-02 tests/test_login_simulation.py passed with the local simulation and the simulation logged eight HTTP requests; a reserved closed port also verified that repeated provider failures leave one requested plan. Separate disposable PostgreSQL tests exercised concurrent logins.
+    source: tests/test_login_simulation.py; tests/test_postgres.py; postman/mocks/litellm-provisioning/default.js
+    updated_at: '2026-11-02'
 fingerprints:
   - id: local-run
     date: '2026-10-31'

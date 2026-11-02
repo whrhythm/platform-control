@@ -1967,7 +1967,14 @@
             "title": "First Tenant Id"
           },
           "first_project_id": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "First Project Id"
           },
           "created_at": {

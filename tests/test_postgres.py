@@ -7,6 +7,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import make_url
+from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 
@@ -236,3 +237,41 @@ def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
     assert len({response.json()['key'] for response in responses}) == 1
     assert fake.calls.count(('POST', '/user/new')) == 1
     assert fake.calls.count(('POST', '/key/generate')) == 1
+    with client.session_factory.begin() as db:
+        environments = db.scalars(select(UserEnvironment).where(UserEnvironment.subject == 'parallel-user')).all()
+        assert len(environments) == 1
+        assert environments[0].first_project_id is None
+        assert environments[0].status == 'requested'
+        # This fixture uses a guarded, disposable local database only.
+        db.delete(environments[0])
+
+
+def test_projectless_migration_preserves_existing_workspace_binding(postgres_harness):
+    client, _token = postgres_harness
+    sessions = client.session_factory
+    config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
+    with sessions.begin() as db:
+        tenant = Tenant(name='migration', owner_issuer='issuer', owner_subject='migration', project_limit=1)
+        db.add(tenant)
+        db.flush()
+        env = UserEnvironment(issuer='issuer', subject='migration', identity_hash='b' * 64,
+                              storage_gib=2, first_tenant_id=tenant.id, first_project_id='existing-project')
+        db.add(env)
+        db.flush()
+        env_id = env.id
+        db.add(WorkspaceProvisioningIntent(environment_id=env_id, state='pvc_recorded'))
+        db.add(WorkspaceVolumeBinding(environment_id=env_id, namespace_name='existing', namespace_uid='ns',
+                                      pvc_uid='pvc', pv_name='pv', pv_uid='pv-uid', volume_handle='handle'))
+    try:
+        command.downgrade(config, '0007_workspace_isolation')
+        command.upgrade(config, 'head')
+        with sessions() as db:
+            assert db.get(UserEnvironment, env_id).first_project_id == 'existing-project'
+            assert db.get(WorkspaceProvisioningIntent, env_id).state == 'pvc_recorded'
+            assert db.get(WorkspaceVolumeBinding, env_id).volume_handle == 'handle'
+    finally:
+        with sessions.begin() as db:
+            for model in (WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                record = db.get(model, env_id)
+                if record is not None:
+                    db.delete(record)

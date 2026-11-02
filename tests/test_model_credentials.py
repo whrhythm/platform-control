@@ -3,7 +3,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import select
 
 from control_plane import model_credentials
-from control_plane.models import AuditEvent, ModelCredential
+from control_plane.models import AuditEvent, ModelCredential, UserEnvironment, WorkspaceVolumeBinding
 from control_plane.settings import get_settings
 from test_litellm import FakeGateway
 
@@ -36,6 +36,16 @@ def test_login_provisions_isolated_keys_once_and_does_not_restore_revoked(harnes
         assert len(records) == 2 and all(record.status == 'ready' for record in records)
         assert all(a.json()['key'] not in record.encrypted_key for record in records)
         assert len(db.scalars(select(AuditEvent).where(AuditEvent.action == 'model_credential.created')).all()) == 2
+        environments = db.scalars(select(UserEnvironment)).all()
+        assert len(environments) == 2
+        assert {environment.subject for environment in environments} == {'alice', 'bob'}
+        assert all(environment.first_project_id is None and environment.status == 'requested' for environment in environments)
+        assert db.scalars(select(WorkspaceVolumeBinding)).all() == []
+        assert len(db.scalars(select(AuditEvent).where(AuditEvent.action == 'environment.create')).all()) == 2
+    personal = client.get('/v1/me/environment', headers={'Authorization': 'Bearer ' + token('alice')})
+    assert personal.status_code == 200
+    assert personal.json()['first_project_id'] is None
+    assert personal.json()['mode'] == 'plan' and personal.json()['executable'] is False
     fake.keys.clear()  # Simulate an administrator's explicit key revocation.
     assert client.post(path, headers=hdr('alice')).status_code == 503
     assert not fake.keys
