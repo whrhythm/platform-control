@@ -38,7 +38,16 @@ class Settings(BaseSettings):
     workspace_service_image: str = ""
     workspace_agent_image: str = ""
     workspace_agent_max_iterations: int = 40
+    workspace_agent_max_seconds: int = 180
+    workspace_python_base_image: str = ""
     workspace_service_ca: str = "/etc/platform-ca/internal-ca.crt"
+    publisher_enabled: bool = False
+    buildkit_image: str = ""
+    harbor_url: str = "https://harbor.k3s.local"
+    harbor_username: str = "codechat-provisioner"
+    harbor_password: str = ""
+    application_origin: str = "http://192.168.10.30.sslip.io:30097"
+    default_application_limit: int = 3
 
 
 @lru_cache

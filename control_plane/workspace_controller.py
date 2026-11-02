@@ -35,7 +35,8 @@ def prepare_service(session_factory, provider, env_id, settings):
         identity_hash = env.identity_hash
     objects = file_service_objects(provider.namespace, identity_hash, settings.workspace_service_image, token,
         agent_image=settings.workspace_agent_image, llm_url=settings.litellm_url,
-        llm_model=settings.litellm_models.split(',')[0], max_iterations=settings.workspace_agent_max_iterations)
+        llm_model=settings.litellm_models.split(',')[0], max_iterations=settings.workspace_agent_max_iterations,
+        publisher_enabled=settings.publisher_enabled, max_seconds=settings.workspace_agent_max_seconds)
     for obj in objects:
         key = obj['kind']
         path = resource_path(provider.namespace, key)

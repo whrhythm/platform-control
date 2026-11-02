@@ -25,19 +25,22 @@ from .user_environments import identity_digest, plan_user_environment
 from .workspace_gateway import call_files
 from .models import WorkspaceFileService
 from .programming import router as programming_router
+from .programming import model_principal
+from .applications import create_router as create_application_router
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0009_workspace_files":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0010_application_delivery":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
 
 app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
 app.include_router(programming_router)
+app.include_router(create_application_router(model_principal, prefix='/agent/v1'))
 workspace_transfer_slots = asyncio.Semaphore(4)
 app.add_middleware(CORSMiddleware, allow_origins=[origin for origin in (get_settings().public_origin, get_settings().additional_public_origin) if origin], allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key"])
 
@@ -282,6 +285,9 @@ def workspace_service_principal(
             not subject or len(subject) > 255 or any(ord(c) < 32 for c in subject)):
         raise HTTPException(403, 'Workspace access unavailable')
     return Principal(issuer=settings.oidc_issuer, subject=subject)
+
+
+app.include_router(create_application_router(workspace_service_principal))
 
 
 @app.post('/internal/v1/workspace/ensure', tags=['workspace-files'])

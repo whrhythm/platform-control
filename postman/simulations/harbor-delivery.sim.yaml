@@ -1,0 +1,6 @@
+simulation: harbor-delivery
+routing: path
+mocks:
+  - name: harbor-delivery
+    routeKey: harbor
+    path: ../mocks/harbor-delivery/config.yaml

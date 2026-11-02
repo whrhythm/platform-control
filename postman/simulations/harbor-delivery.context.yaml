@@ -1,0 +1,30 @@
+purpose:
+  stands_in_for: The installed Harbor v2.15.4 project creation, project lookup and project-level robot creation endpoints.
+  unblocks: Repeatable project/credential journalling checks without creating real users, spending money or granting administrator credentials to a runtime.
+assumptions:
+  - id: project-robot-contract
+    status: contradicted
+    claim: A non-admin project owner can create a private project and a project-level robot with a supplied secret and pull/push permissions.
+    reason: Although the installed Swagger includes a secret field, the live creation response returned a different generated secret. The original stand-in accepted a supplied value and did not represent this behavior.
+    verification: On 2026-11-02 the ordinary publisher created the real private project and project-level robot. The mismatching returned secret triggered review before any application existed. Only that exact unused robot was refreshed and encrypted; no administrator credential was copied to a runtime. Full image publication is tracked separately.
+    source: control_plane/registry.py; scripts/bootstrap_application_delivery.py; release/harbor-swagger.json
+    updated_at: '2026-11-02'
+  - id: durable-credential-journal
+    status: supported
+    claim: The adapter records intent before external writes, encrypts the provider-generated secret from the creation response, and does not repeat completed writes or automatically retry uncertain writes.
+    reason: The earlier candidate-secret model was corrected after live evidence contradicted it. The updated mock generates a different secret, and the adapter stores that returned value in encrypted form.
+    verification: On 2026-11-02 both local and updated Postman variants passed; repeated provisioning reused the binding, and an in-flight record prevented further writes. A live token check separately verified pull of the shared base and pull/push of the user's private repository without printing credentials.
+    source: tests/test_application_delivery.py; control_plane/registry.py; postman/mocks/harbor-delivery/default.js
+    updated_at: '2026-11-02'
+  - id: buildctl-token-ca
+    status: supported
+    claim: The buildctl authentication client must trust the internal CA independently of the BuildKit daemon's registry CA setting.
+    reason: The first real build exported its context but failed fetching the Harbor token with x509 unknown authority, despite the daemon registry CA being configured.
+    verification: On 2026-11-02 build-a875e0e5e2ad4aecac3bc14e failed before building with a token-client TLS error. SSL_CERT_FILE was added to subsequent build jobs; the live retry is recorded in delivery acceptance.
+    source: control_plane/application_runtime.py; docs/application-delivery-contract.md
+    updated_at: '2026-11-02'
+fingerprints:
+  - id: local-contract
+    date: '2026-11-02'
+    commit: null
+    cli: '1.74.0'

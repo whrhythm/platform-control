@@ -6,6 +6,46 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/context": {
+      "get": {
+        "summary": "Build Context",
+        "description": "Export a bounded project build context containing regular files only.",
+        "operationId": "build_context_v1_context_get",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/directories": {
       "get": {
         "summary": "List Directory",

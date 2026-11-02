@@ -6,13 +6,13 @@
 
 已实现：JWT/JWKS 与 API scope 校验、个人租户、成员角色、平台管理员、项目、五类资源申请、容量预留、幂等键、事务审计、计划 worker、Kubernetes/数据库/对象存储计划、浏览器管理界面与 OpenAPI 契约。
 
-**当前 worker 只生成计划，不开通真实资源。** `requested` 表示已受理，`planned` 表示已生成方案；两者都不表示工作空间已启动。现有共享 OpenHands 不会被分配给多个用户。
+原有资源申请 worker 仍只生成计划：`requested` 表示已受理，`planned` 表示已生成方案。个人空间、编程执行和应用交付由独立控制器处理，不以计划状态冒充运行状态。用户登录后复用一份持久磁盘，文件服务和 OpenHands SDK 工具在该磁盘中工作；没有为每位用户部署完整 OpenHands Web 服务。
 
 本地新增的测试订单仅供模拟：设置 `PLATFORM_TEST_PAYMENTS_ENABLED=true` 和 `PLATFORM_REQUIRE_PROJECT_ENTITLEMENT=true` 后，租户所有者或管理员可创建测试订单，只有平台管理员可模拟确认，确认后该租户才能创建项目。关闭模拟支付后测试订单不能授予项目权益；这不是实际支付、回调验签、订阅或生产计费实现。默认两个开关均为 false，保持旧环境行为；要验证付费门槛须在隔离测试环境同时打开。更改数据库前须先运行 Alembic 迁移并备份。
 
 项目资源回收目前仅限尚未开通的申请：项目所有者或管理员可批量取消项目中全部 requested/planned 计划并释放预留；若发现任何已开通或状态未知的资源，则整批拒绝，必须等待未来真实销毁流程。该接口不删除 Kubernetes 资源或项目数据。
 
-已部署到 k3s 的 `platform-system`，镜像通过内部 Harbor 分发，配置由 ops 仓库与 Argo CD 管理。已通过真实 Authentik PKCE 双用户登录、集群 PostgreSQL 17 的 TLS/权限检查、资源规划闭环、跨租户 API 拒绝和 API Pod 替换后的数据持久化验收。实际 Kata 工作空间、OpenHands 执行、数据库/MinIO 开通、项目发布与用量归集仍待实现。
+已部署到 k3s 的 `platform-system`，镜像通过内部 Harbor 分发，配置由 ops 仓库与 Argo CD 管理。普通用户入口为 LibreChat，控制平台保留管理员和资源治理职责。已实现聊天编程、个人文件上传/下载、Kata 构建、私有 Harbor 镜像及应用交付控制器；验收事实与未完成事项见下方记录。项目数据库/MinIO 自动开通、真实支付、套餐用量统一计费和生产级隔离验收仍待完成。
 
 平台地址：`https://platform.k3s.local:30443/`。首次访问需要配置两个域名和内部 CA，详见使用手册；不要直接用 IP 登录。
 
@@ -23,6 +23,9 @@
 - [部署、桌面进程边界及验收计划](docs/delivery.md)
 - [API 行为](docs/api.md)
 - [已执行验证及待验收项](docs/verification.md)
+- [实际聊天编程验收](docs/programming-acceptance-20261102.md)
+- [应用发布与失败处理约定](docs/application-delivery-contract.md)
+- [使用手册](docs/user-guide.md)
 - [OpenAPI](contracts/openapi.json)
 
 ## 本地运行

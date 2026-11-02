@@ -2,7 +2,9 @@
 
 FastAPI 的类型化路由为源，`scripts/export_openapi.py` 导出 `contracts/openapi.json`。接口改变时同时更新导出文件。`/docs` 是交互文档；生产部署应限制文档访问范围。
 
-除 `/healthz`、`/v1/config`、框架文档和静态页面外，所有业务接口必须携带 `Authorization: Bearer <access_token>`。不接收 X-User/X-Tenant/X-Role 作为身份。无有效 OIDC 配置返回 503；没有 token 或验签/claims/API scope 不通过返回 401。
+`/v1` 业务接口携带 `Authorization: Bearer <access_token>`，健康检查和公共配置等除外。不接收 X-User/X-Tenant/X-Role 作为身份。无有效 OIDC 配置返回 503；没有 token 或验签/claims/API scope 不通过返回 401。
+
+LibreChat 同源 BFF 使用独立的服务身份断言调用 `/internal/v1/workspace`；`/agent/v1` 使用平台自动发放并向 LiteLLM 校验的用户 virtual key，不能用它访问管理员 API。应用发布、任务去重、生命周期和失败约定见 [应用契约](application-delivery-contract.md)。
 
 | 接口 | 行为 |
 | --- | --- |

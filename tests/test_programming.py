@@ -15,7 +15,7 @@ from control_plane.programming import agent_prompt, resolve_space
 from control_plane.litellm import LiteLLMGateway
 from control_plane.settings import Settings
 from control_plane.user_environments import identity_digest
-from control_plane.workspace_agent_service import create_app
+from control_plane.workspace_agent_service import create_app, delivery_reply
 from control_plane.workspace_runtime import file_service_objects
 
 
@@ -51,8 +51,44 @@ def test_runner_failure_is_visible_and_never_retried(tmp_path):
     payload = {'task_id': 'c' * 64, 'prompt': 'create hello', 'api_key': 'sk-' + 'k' * 48}
     headers = {'Authorization': 'Bearer ' + 's' * 48}
     response = client.post('/v1/run', json=payload, headers=headers)
-    assert '编程任务未完成' in response.text and 'provider echoed' not in response.text
+    assert '本轮编程未完成' in response.text and 'provider echoed' not in response.text
     assert client.post('/v1/run', json=payload, headers=headers).status_code == 409
+
+
+def test_runner_timeout_finishes_stream_and_requests_cancellation(tmp_path):
+    import threading
+    stopped = threading.Event()
+    def slow(prompt, key, workspace, url, model, emit, limit, cancel):
+        assert cancel.wait(3)
+        stopped.set()
+        return 'cancelled'
+    client = TestClient(create_app(tmp_path, tmp_path / 'state', 's' * 48, 'http://models/v1', 'model',
+                                   runner=slow, max_seconds=0.05))
+    response = client.post('/v1/run', json={'task_id': 'd' * 64, 'prompt': 'work', 'api_key': 'sk-' + 'k' * 48},
+                           headers={'Authorization': 'Bearer ' + 's' * 48})
+    assert '超过时间限制' in response.text and '[DONE]' in response.text
+    assert stopped.wait(2)
+
+
+def test_restarted_runner_marks_only_unfinished_task_as_interrupted(tmp_path):
+    import json
+    state = tmp_path / 'state'
+    state.mkdir()
+    (state / ('a' * 64 + '.json')).write_text('{"status":"running"}')
+    (state / ('b' * 64 + '.json')).write_text('{"status":"completed","text":"kept"}')
+    create_app(tmp_path, state, 's' * 48, 'http://models/v1', 'model')
+    assert json.loads((state / ('a' * 64 + '.json')).read_text())['status'] == 'interrupted'
+    assert json.loads((state / ('b' * 64 + '.json')).read_text())['text'] == 'kept'
+
+
+def test_publication_receipt_finishes_turn_without_claiming_deployment_success():
+    import json
+    value = {'id': '0dc75d4e-20cb-4a6a-ae7f-b17fc0b1041c', 'status': 'building'}
+    reply = delivery_reply('tool output\nCODECHAT_DELIVERY_RESULT ' + json.dumps(value))
+    assert '后台继续执行' in reply and '不代表发布成功' in reply
+    assert '未自动重复发布' in delivery_reply('CODECHAT_DELIVERY_RESULT ' + json.dumps({**value, 'status': 'failed'}))
+    assert delivery_reply('CODECHAT_DELIVERY_RESULT invalid') is None
+    assert delivery_reply('CODECHAT_DELIVERY_RESULT ' + json.dumps({**value, 'id': 'not-an-id'})) is None
 
 
 def test_programming_manifest_mounts_same_disk_and_upgrade_changes_revision():

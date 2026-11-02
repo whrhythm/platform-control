@@ -12,13 +12,14 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 
 from .database import get_db
+from .auth import Principal
 from .models import ModelCredential, UserEnvironment, WorkspaceFileService, WorkspaceVolumeBinding
 from .settings import get_settings
 
 router = APIRouter(prefix='/agent/v1', tags=['programming'])
 
 
-async def resolve_space(db, settings, key, client, *, require_runtime=True):
+async def resolve_identity(db, settings, key, client):
     if not key.startswith('sk-') or not 35 <= len(key) <= 512:
         raise HTTPException(401, 'Invalid model credential')
     try:
@@ -43,6 +44,12 @@ async def resolve_space(db, settings, key, client, *, require_runtime=True):
         raise HTTPException(503, 'Model identity is unavailable') from None
     if not hmac.compare_digest(actual, key) or env is None or env.status in ('deleted', 'suspended'):
         raise HTTPException(401, 'Model identity is not linked')
+    return env
+
+
+async def resolve_space(db, settings, key, client, *, require_runtime=True):
+    env = await resolve_identity(db, settings, key, client)
+    cipher = Fernet(settings.model_credential_encryption_key.encode())
     service = db.get(WorkspaceFileService, env.id)
     binding = db.get(WorkspaceVolumeBinding, env.id)
     ns = 'codechat-user-' + env.identity_hash[:40]
@@ -57,7 +64,15 @@ async def resolve_space(db, settings, key, client, *, require_runtime=True):
     return ns, token
 
 
-def agent_prompt(messages):
+async def model_principal(authorization: str = Header(default=''), db=Depends(get_db), settings=Depends(get_settings)):
+    if not authorization.startswith('Bearer ') or not settings.litellm_master_key:
+        raise HTTPException(401, 'Model credential required')
+    async with httpx.AsyncClient(timeout=10, trust_env=False) as client:
+        env = await resolve_identity(db, settings, authorization[7:], client)
+    return Principal(issuer=env.issuer, subject=env.subject)
+
+
+def agent_prompt(messages, *, python_base=''):
     if not isinstance(messages, list) or not 1 <= len(messages) <= 200:
         raise HTTPException(400, 'Text conversation required')
     history = []
@@ -74,12 +89,21 @@ def agent_prompt(messages):
         history.append(f"{message['role']}: {content}")
     if messages[-1].get('role') != 'user':
         raise HTTPException(400, 'A user instruction is required')
+    platform = ('需要发布时，使用终端执行 python -m control_plane.publish_cli publish <工程相对目录>。'
+                '该工具提交后台构建、推送和部署任务，提交后立即结束本轮对话并报告任务ID和当前状态。'
+                '严禁循环查询、反复重新发布或创建后台重试脚本；失败后报告失败并等待用户新指令。'
+                '不得为了绕过平台构建错误删除、简化或替换用户Dockerfile及业务代码。'
+                '提交成功不等于发布成功，只有平台状态running且有真实地址时才能称已发布。'
+                '可用 python -m control_plane.publish_cli list 查询应用，或 start/stop/delete <应用ID> 管理生命周期。'
+                '不要尝试连接宿主 Docker daemon，不要读取或展示环境中的平台/模型凭据。')
+    if python_base:
+        platform += '新建 Python Dockerfile 时优先使用集群内部基础镜像：' + python_base + '。'
     return ('你是 CodeChat 的 OpenHands 编程助手。用户的持久个人文件位于当前工作目录。'
             '根据最后一条用户指令实际读取、创建、修改文件并运行必要的测试；不要只展示代码。'
             '先查看现有文件，避免覆盖无关项目。在用户要求的新工程子目录工作。'
             '依赖缓存和构建产物放在个人工作目录中。不要声称未执行的测试、镜像构建或部署已成功。'
             '用中文简要回答实际修改的相对路径、测试结果及下一步。以下是聊天上下文，最后一条为本次任务：\n\n'
-            + '\n\n'.join(history))
+            + platform + '\n\n' + '\n\n'.join(history))
 
 
 @router.post('/chat/completions')
@@ -114,7 +138,7 @@ async def completions(request: Request, authorization: str = Header(default=''),
         if model == 'OpenHands':
             if body.get('stream') is not True:
                 raise HTTPException(400, 'Programming requires streaming chat')
-            prompt = agent_prompt(body.get('messages'))
+            prompt = agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image)
             task_id = hashlib.sha256((x_codechat_conversation + '\n' + prompt).encode()).hexdigest()
             target = f'https://workspace-files.{namespace}.svc:8091/v1/run'
             payload = {'task_id': task_id, 'prompt': prompt, 'api_key': authorization[7:]}

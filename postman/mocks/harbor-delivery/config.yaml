@@ -1,0 +1,11 @@
+version: 1
+id: 4b2afcab-0889-4872-b020-196294ea901c
+name: harbor-delivery
+slug: harbor-delivery
+protocol: http
+interceptRequests: true
+port: 4501
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

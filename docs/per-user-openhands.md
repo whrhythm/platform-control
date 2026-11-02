@@ -1,10 +1,10 @@
-# 每用户独立 OpenHands 和磁盘设计
+# 共享 OpenHands 能力与个人执行空间
 
 ## 目标与当前状态
 
 推荐共享 LibreChat、控制面和 OpenHands SDK 任务编排服务，按需为每位用户分配隔离执行环境和 Longhorn 持久卷，不为每个用户部署完整的 Agent Canvas 产品。隔离环境内部可能需要运行轻量 Agent Server；这与给用户部署完整 OpenHands UI、服务栈不同。多个项目可以位于同一用户的磁盘中，项目文件、Agent 状态、测试文件和构建工作目录都计入该用户的存储额度。用户用完可以暂停计算并保留磁盘；需要彻底删除时，按明确确认和保留策略回收资源。
 
-这是目标设计，**当前尚未开通自动创建、访问、暂停或删除**。现有 `openhands/openhands-agent-canvas` 是单用户验证实例，不能用它承载多个用户。控制面已有资源计划只生成规划，不会创建实际工作环境；用户运行环境入口（`POST /v1/tenants/{t}/projects/{p}/environment`）已提供，但同样是仅计划记录（`status=requested`、`executable=false`），不创建任何沙箱、卷或凭据。
+截至 2026-11-02，登录自动准备或复用个人 Kata 文件/编程执行环境与 PVC，LibreChat 直接调用轻量 OpenHands SDK 执行进程；不使用完整 Agent Canvas 的多人共享会话，也不为每位用户部署完整 OpenHands 产品。真实编码、上传、测试、构建发布及应用启停已验收，见 [交付记录](application-delivery-acceptance-20261102.md)。下文包含原始目标设计；旧 `/v1/tenants/{t}/projects/{p}/environment` 仍是计划接口，不能与实际空间控制器混淆。个人磁盘暂停/销毁全流程尚未完成 UI 验收。
 
 ## 隔离单位
 

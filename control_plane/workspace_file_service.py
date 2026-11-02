@@ -16,6 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .workspace_files import InvalidWorkspacePath, UploadTooLarge, WorkspaceFiles
+from .workspace_snapshot import snapshot
 
 
 def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024 * 1024, max_inflight: int = 4) -> FastAPI:
@@ -29,6 +30,7 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
         pass
     token_bytes = service_token.encode('utf-8')
     transfers = asyncio.Semaphore(max_inflight)
+    snapshots = asyncio.Semaphore(1)
     app = FastAPI(title='Internal workspace files', version='0.1.0',
                   description='Service-authenticated single-volume API. The caller must verify user identity and workspace ownership before proxying. Not for direct browser access.',
                   docs_url=None, redoc_url=None, openapi_url=None)
@@ -65,6 +67,16 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
     @app.get('/healthz', include_in_schema=False)
     def health():
         return {'status': 'ok'}
+
+    @app.get('/v1/context', dependencies=[Depends(authenticate)], response_class=Response,
+             description='Export a bounded project build context containing regular files only.')
+    async def build_context(path: str = Query(min_length=1, max_length=255)):
+        try:
+            async with snapshots:
+                content = await run_in_threadpool(snapshot, files, path)
+            return Response(content, media_type='application/x-tar')
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
 
     @app.get('/v1/directories', dependencies=[Depends(authenticate)], description='List one directory in the pre-authorized workspace. An empty path selects its root.', responses={400: {'description': 'Invalid path'}, 401: {'description': 'Service authentication required'}, 404: {'description': 'Directory not found'}, 503: {'description': 'Workspace unavailable'}})
     async def list_directory(path: str = Query(default='', max_length=4096)):

@@ -5,7 +5,7 @@ import json
 
 
 def file_service_objects(namespace: str, identity_hash: str, image: str, token: str, *, agent_image='',
-                         llm_url='', llm_model='', max_iterations=40) -> list[dict]:
+                         llm_url='', llm_model='', max_iterations=40, publisher_enabled=False, max_seconds=180) -> list[dict]:
     if not re.fullmatch(r'[0-9a-f]{64}', identity_hash) or namespace != 'codechat-user-' + identity_hash[:40]:
         raise ValueError('Invalid workspace identity')
     if not re.fullmatch(r'[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}', image):
@@ -81,6 +81,7 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
              'ports': [{'protocol': 'TCP', 'port': 443}, {'protocol': 'TCP', 'port': 80}]},
         ]
         pod = objects[-1]['spec']['template']['spec']
+        pod['hostAliases'] = [{'ip': '192.168.10.30', 'hostnames': ['platform.k3s.local']}]
         pod['initContainers'][0]['command'][-1] = (
             "from pathlib import Path; "
             "[Path('/workspace/'+p).mkdir(mode=0o700, exist_ok=True) for p in ('files','agent')]"
@@ -96,6 +97,9 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
                 'WORKSPACE_TLS_CERT': '/tls/tls.crt', 'WORKSPACE_TLS_KEY': '/tls/tls.key',
                 'AGENT_LLM_URL': llm_url.rstrip('/') + '/v1', 'AGENT_LLM_MODEL': llm_model,
                 'AGENT_MAX_ITERATIONS': max_iterations,
+                'AGENT_MAX_SECONDS': max_seconds,
+                'CODECHAT_DELIVERY_URL': 'https://platform.k3s.local:30443/agent/v1',
+                'CODECHAT_DELIVERY_CA': '/tls/ca.crt',
             }.items()],
             'workingDir': '/workspace/files', 'ports': [{'containerPort': 8091, 'name': 'agent'}],
             'resources': {'requests': {'cpu': '250m', 'memory': '768Mi'}, 'limits': {'cpu': '2', 'memory': '2Gi'}},
@@ -105,6 +109,23 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
             'volumeMounts': [{'name': 'data', 'mountPath': '/workspace'},
                              {'name': 'tls', 'mountPath': '/tls', 'readOnly': True}],
         })
+    if publisher_enabled:
+        objects.insert(0, {'apiVersion': 'rbac.authorization.k8s.io/v1', 'kind': 'RoleBinding',
+            'metadata': meta('application-controller'),
+            'roleRef': {'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'ClusterRole', 'name': 'codechat-user-applications'},
+            'subjects': [{'kind': 'ServiceAccount', 'name': 'application-controller', 'namespace': 'platform-system'}]})
+        policy = next(obj for obj in objects if obj['kind'] == 'NetworkPolicy')
+        policy['spec']['ingress'].append({'from': [
+            {'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'codechat-builds'}},
+             'podSelector': {'matchLabels': {'codechat.io/component': 'build', 'codechat.io/user-hash': identity_hash[:40]}}}],
+            'ports': [{'protocol': 'TCP', 'port': 8090}]})
+        if 'Egress' not in policy['spec']['policyTypes']:
+            policy['spec']['policyTypes'].append('Egress')
+        policy['spec'].setdefault('egress', []).extend([
+            {'to': [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'apisix'}}}],
+             'ports': [{'protocol': 'TCP', 'port': 9443}]},
+            {'to': [{'ipBlock': {'cidr': '192.168.10.30/32'}}], 'ports': [{'protocol': 'TCP', 'port': 30443}]},
+        ])
     template = objects[-1]['spec']['template']
     revision = hashlib.sha256(json.dumps(template, sort_keys=True).encode()).hexdigest()
     template['metadata']['annotations'] = {'codechat.io/runtime-revision': revision}
@@ -115,7 +136,8 @@ def resource_path(namespace: str, kind: str) -> str:
     if not re.fullmatch(r'codechat-user-[0-9a-f]{40}', namespace):
         raise ValueError('Invalid workspace namespace')
     prefix = {'Secret': 'api/v1', 'Service': 'api/v1', 'Certificate': 'apis/cert-manager.io/v1',
-              'NetworkPolicy': 'apis/networking.k8s.io/v1', 'Deployment': 'apis/apps/v1'}[kind]
+              'NetworkPolicy': 'apis/networking.k8s.io/v1', 'Deployment': 'apis/apps/v1',
+              'RoleBinding': 'apis/rbac.authorization.k8s.io/v1'}[kind]
     plural = {'Secret': 'secrets', 'Service': 'services', 'Certificate': 'certificates',
-              'NetworkPolicy': 'networkpolicies', 'Deployment': 'deployments'}[kind]
+              'NetworkPolicy': 'networkpolicies', 'Deployment': 'deployments', 'RoleBinding': 'rolebindings'}[kind]
     return f'{prefix}/namespaces/{namespace}/{plural}'

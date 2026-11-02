@@ -185,3 +185,33 @@ class AuditEvent(Base):
     target_id: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
+
+class UserRegistry(Base):
+    __tablename__ = 'user_registries'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    project_name: Mapped[str] = mapped_column(String(63), unique=True)
+    project_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    robot_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    robot_name: Mapped[str] = mapped_column(String(255))
+    pull_secret_uid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    encrypted_secret: Mapped[str] = mapped_column(String(1024))
+    status: Mapped[str] = mapped_column(String(32), default='requested')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class UserApplication(Base):
+    __tablename__ = 'user_applications'
+    __table_args__ = (UniqueConstraint('environment_id', 'project_path'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    project_path: Mapped[str] = mapped_column(String(255))
+    revision: Mapped[str] = mapped_column(String(36), default=uuid)
+    status: Mapped[str] = mapped_column(String(32), default='queued')
+    desired_state: Mapped[str] = mapped_column(String(16), default='running')
+    resources: Mapped[dict] = mapped_column(JSON, default=dict)
+    image: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
