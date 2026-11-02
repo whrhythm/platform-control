@@ -7,6 +7,7 @@ Requires Linux/POSIX directory FDs and O_NOFOLLOW; fail closed elsewhere.
 """
 from contextlib import contextmanager
 import os
+import hashlib
 import secrets
 import stat
 from typing import Iterable
@@ -17,6 +18,10 @@ class InvalidWorkspacePath(ValueError):
 
 
 class UploadTooLarge(ValueError):
+    pass
+
+
+class FileVersionConflict(ValueError):
     pass
 
 
@@ -76,7 +81,8 @@ class WorkspaceFiles:
                         continue
                     if len(entries) >= self.max_entries:
                         raise ValueError('Directory entry limit exceeded')
-                    entries.append({'name': entry.name, 'kind': kind, 'size': info.st_size if kind == 'file' else None})
+                    entries.append({'name': entry.name, 'kind': kind, 'size': info.st_size if kind == 'file' else None,
+                                    'etag': self.version(info) if kind == 'file' else None})
         return sorted(entries, key=lambda item: item['name'])
 
     def create_directory(self, path: str) -> None:
@@ -85,7 +91,15 @@ class WorkspaceFiles:
             os.mkdir(parts[-1], mode=0o700, dir_fd=directory)
             os.fsync(directory)
 
+    @staticmethod
+    def version(info):
+        value = f'{info.st_dev}:{info.st_ino}:{info.st_size}:{info.st_mtime_ns}:{info.st_ctime_ns}'
+        return '"' + hashlib.sha256(value.encode()).hexdigest() + '"'
+
     def read_file(self, path: str) -> bytes:
+        return self.read_versioned(path)[0]
+
+    def read_versioned(self, path: str) -> tuple[bytes, str]:
         parts = self._parts(path)
         with self._directory(parts[:-1]) as directory:
             descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=directory)
@@ -99,11 +113,13 @@ class WorkspaceFiles:
                     data = source.read(self.max_file_bytes + 1)
                 if len(data) > self.max_file_bytes:
                     raise UploadTooLarge('File exceeds the configured transfer limit')
-                return data
+                if self.version(info) != self.version(os.fstat(descriptor)):
+                    raise FileVersionConflict('File changed while being read')
+                return data, self.version(info)
             finally:
                 os.close(descriptor)
 
-    def write_file(self, path: str, chunks: Iterable[bytes], *, overwrite: bool = False) -> int:
+    def write_file(self, path: str, chunks: Iterable[bytes], *, overwrite: bool = False, expected_version: str = '') -> int:
         parts = self._parts(path)
         with self._directory(parts[:-1]) as directory:
             temporary = self._temp_prefix + secrets.token_hex(16)
@@ -128,6 +144,8 @@ class WorkspaceFiles:
                         existing = None
                     if existing is not None and (not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1):
                         raise InvalidWorkspacePath('Only singly linked regular files can be overwritten')
+                    if expected_version and (existing is None or self.version(existing) != expected_version):
+                        raise FileVersionConflict('File changed since it was opened')
                     os.replace(temporary, parts[-1], src_dir_fd=directory, dst_dir_fd=directory)
                 else:
                     # link() atomically refuses a pre-existing destination, including a symlink.
@@ -140,3 +158,14 @@ class WorkspaceFiles:
                     os.unlink(temporary, dir_fd=directory)
                 except FileNotFoundError:
                     pass
+
+    def delete_file(self, path: str, expected_version: str):
+        parts = self._parts(path)
+        with self._directory(parts[:-1]) as directory:
+            info = os.stat(parts[-1], dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise InvalidWorkspacePath('Only singly linked regular files can be deleted')
+            if not expected_version or self.version(info) != expected_version:
+                raise FileVersionConflict('File changed since it was listed')
+            os.unlink(parts[-1], dir_fd=directory)
+            os.fsync(directory)

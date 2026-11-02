@@ -46,6 +46,7 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
                           'command': ['python', '-m', 'control_plane.workspace_file_service'],
                           'envFrom': [{'secretRef': {'name': 'workspace-files-auth'}}],
                           'env': [{'name': 'WORKSPACE_ROOT', 'value': '/workspace/files'},
+                                  {'name': 'WORKSPACE_USAGE_ROOT', 'value': '/workspace'},
                                   {'name': 'WORKSPACE_SERVICE_HOST', 'value': '0.0.0.0'},
                                   {'name': 'WORKSPACE_TLS_CERT', 'value': '/tls/tls.crt'},
                                   {'name': 'WORKSPACE_TLS_KEY', 'value': '/tls/tls.key'},
@@ -92,6 +93,9 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
             'env': [{'name': name, 'value': str(value)} for name, value in {
                 'WORKSPACE_ROOT': '/workspace/files', 'AGENT_STATE_DIR': '/workspace/agent/tasks',
                 'HOME': '/workspace/agent', 'PIP_CACHE_DIR': '/workspace/agent/cache/pip',
+                'PYTHONUSERBASE': '/workspace/agent/python', 'UV_CACHE_DIR': '/workspace/agent/cache/uv',
+                'PYTHONNOUSERSITE': '1',
+                'XDG_CACHE_HOME': '/workspace/agent/cache',
                 'npm_config_cache': '/workspace/agent/cache/npm',
                 'WORKSPACE_SERVICE_HOST': '0.0.0.0', 'WORKSPACE_SERVICE_PORT': '8091',
                 'WORKSPACE_TLS_CERT': '/tls/tls.crt', 'WORKSPACE_TLS_KEY': '/tls/tls.key',

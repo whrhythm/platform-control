@@ -18,8 +18,10 @@ def test_directories_upload_binary_read_and_explicit_overwrite(workspace):
     files.create_directory('project')
     assert files.write_file('project/app.bin', [b'\x00abc', b'\xff']) == 5
     assert files.read_file('project/app.bin') == b'\x00abc\xff'
-    assert files.list_directory() == [{'name': 'project', 'kind': 'directory', 'size': None}]
-    assert files.list_directory('project') == [{'name': 'app.bin', 'kind': 'file', 'size': 5}]
+    assert files.list_directory() == [{'name': 'project', 'kind': 'directory', 'size': None, 'etag': None}]
+    entries = files.list_directory('project')
+    assert [{k: v for k, v in entry.items() if k != 'etag'} for entry in entries] == [{'name': 'app.bin', 'kind': 'file', 'size': 5}]
+    assert entries[0]['etag'] == files.read_versioned('project/app.bin')[1]
     with pytest.raises(FileExistsError):
         files.write_file('project/app.bin', [b'unsafe-overwrite'])
     assert files.read_file('project/app.bin') == b'\x00abc\xff'

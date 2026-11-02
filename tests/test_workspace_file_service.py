@@ -65,6 +65,62 @@ def test_files_are_isolated_and_overwrites_are_explicit(clients):
     assert a.get(url, params={'path': 'project/main.py'}, headers=headers(TOKEN_A)).content == b'changed'
 
 
+def test_editor_version_conflict_preserves_newer_agent_content_and_delete_requires_current_version(clients):
+    a, _, root, _ = clients
+    (root / 'app.py').write_text('original')
+    first = a.get('/v1/file?path=app.py', headers=headers(TOKEN_A))
+    old_version = first.headers['etag']
+    (root / 'app.py').write_text('newer agent content')
+    stale_headers = {**headers(TOKEN_A), 'If-Match': old_version}
+    assert a.put('/v1/file?path=app.py&overwrite=true', content=b'editor', headers=stale_headers).status_code == 409
+    assert a.delete('/v1/file?path=app.py', headers=stale_headers).status_code == 409
+    assert (root / 'app.py').read_text() == 'newer agent content'
+    assert a.delete('/v1/file?path=app.py', headers=headers(TOKEN_A)).status_code == 422
+    current = a.get('/v1/file?path=app.py', headers=headers(TOKEN_A)).headers['etag']
+    assert a.put('/v1/file?path=app.py&overwrite=true', content=b'edited', headers={**headers(TOKEN_A), 'If-Match': current}).status_code == 201
+    current = a.get('/v1/file?path=app.py', headers=headers(TOKEN_A)).headers['etag']
+    assert a.delete('/v1/file?path=app.py', headers={**headers(TOKEN_A), 'If-Match': current}).status_code == 200
+    assert not (root / 'app.py').exists()
+
+
+def test_large_file_can_be_deleted_without_loading_it_and_links_are_never_deleted(clients, tmp_path):
+    a, _, root, _ = clients
+    (root / 'large.bin').write_bytes(b'x' * 100)
+    outside = tmp_path / 'keep'
+    outside.write_text('keep')
+    (root / 'link').symlink_to(outside)
+    entry = a.get('/v1/directories', headers=headers(TOKEN_A)).json()['entries'][0]
+    assert entry['name'] == 'large.bin'
+    assert a.get('/v1/file?path=large.bin', headers=headers(TOKEN_A)).status_code == 413
+    versioned = {**headers(TOKEN_A), 'If-Match': entry['etag']}
+    assert a.delete('/v1/file?path=link', headers=versioned).status_code == 400
+    assert a.delete('/v1/file?path=large.bin', headers=versioned).status_code == 200
+    assert outside.read_text() == 'keep'
+
+
+def test_usage_includes_hidden_dependencies_and_cache_without_following_external_links(tmp_path):
+    from control_plane.workspace_usage import measure_usage
+    volume = tmp_path / 'volume'
+    files = volume / 'files'
+    files.mkdir(parents=True)
+    cache = volume / 'agent' / 'cache'
+    cache.mkdir(parents=True)
+    (files / '.venv').mkdir()
+    (files / '.venv' / 'lib.py').write_bytes(b'x' * 20)
+    (cache / 'wheel.whl').write_bytes(b'x' * 30)
+    outside = tmp_path / 'outside'
+    outside.write_bytes(b'x' * 100)
+    (files / 'link').symlink_to(outside)
+    os.link(cache / 'wheel.whl', cache / 'same-wheel')
+    result = measure_usage(str(volume))
+    assert result['used_bytes'] == 50 and result['physical_available_bytes'] > 0
+    with TestClient(create_app(str(files), TOKEN_A, usage_root=str(volume))) as client:
+        assert client.get('/v1/usage').status_code == 401
+        assert client.get('/v1/usage', headers=headers(TOKEN_A)).json()['used_bytes'] == 50
+        client.put('/v1/file?path=new', content=b'abc', headers=headers(TOKEN_A))
+        assert client.get('/v1/usage', headers=headers(TOKEN_A)).json()['used_bytes'] == 53
+
+
 def test_invalid_path_links_and_oversize_do_not_leak_or_modify_data(clients, tmp_path):
     a, _, root, _ = clients
     outside = tmp_path / 'secret'

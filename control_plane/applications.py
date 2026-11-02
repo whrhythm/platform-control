@@ -13,7 +13,10 @@ from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
 
 
 def application_out(app):
-    return {key: getattr(app, key) for key in ('id', 'project_path', 'status', 'desired_state', 'image', 'url', 'error_code', 'observation')}
+    result = {key: getattr(app, key) for key in ('id', 'project_path', 'status', 'desired_state', 'image', 'url', 'error_code', 'observation')}
+    result['cleanup'] = app.resources.get('cleanup')
+    result['previous_url'] = app.resources.get('last_good', {}).get('url') if app.status == 'failed' and app.resources.get('cleanup', {}).get('runtime') == 'previous_release' else None
+    return result
 
 
 def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
@@ -51,6 +54,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(409, 'Wait for the lifecycle operation')
         if app and app.status in ('queued', 'preparing', 'building', 'deploying'):
             return application_out(app)
+        if app and app.status == 'failed' and app.resources.get('cleanup', {}).get('status') != 'complete':
+            raise HTTPException(409, 'Wait for failed release cleanup')
         if app and app.error_code and 'requires_review' in app.error_code:
             raise HTTPException(409, 'Previous operation requires administrator review')
         if app is None:
@@ -62,7 +67,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             db.add(app)
         else:
             app.revision = str(uuid4())
-            app.resources = {'workloads': app.resources.get('workloads', {}), 'request_id': x_codechat_task_id}
+            app.resources = {'workloads': app.resources.get('workloads', {}), 'request_id': x_codechat_task_id,
+                             'last_good': app.resources.get('last_good', {})}
             app.status, app.desired_state, app.error_code = 'queued', 'running', None
         db.flush()
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,

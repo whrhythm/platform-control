@@ -1,0 +1,18 @@
+purpose:
+  stands_in_for: Narrow Kubernetes Job delete and Deployment patch operations used by failed release cleanup.
+  unblocks: HTTP serialization, UID preconditions, foreground deletion request, rollback/scale-down and repeatable cleanup checks without deleting user data.
+assumptions:
+  - id: scoped-mutations
+    status: supported
+    claim: Cleanup deletes only a journalled Job UID and either restores the last successful Deployment template or scales the first failed release to zero.
+    reason: Contract is constrained to owned Job/Deployment paths; unsupported operations return 501.
+    verification: On 2026-11-02 seven tests passed with the real Postman HTTP simulation, including first-release scale-down, last-good rollback, replaced-UID rejection, stale state protection and current-revision readiness. Real UI failure acceptance is recorded separately.
+    source: control_plane/application_controller.py; Kubernetes DeleteOptions and JSON Patch API
+    updated_at: '2026-11-02'
+  - id: asynchronous-garbage-collection
+    status: supported
+    claim: Real foreground garbage collection removes build pods and eventually their credential ownerReferences before cleanup is considered finished.
+    reason: This mock removes a Job immediately and does not model asynchronous garbage collection, admission policies, RBAC or real application readiness.
+    verification: On 2026-11-02 the existing user published an intentionally failing build and an intentionally failing startup through LibreChat. Cleanup reached complete, the previous release served v3, failed Pods disappeared and only the final successful build Pod remained; this live observation does not turn the mock into a scheduling simulator.
+    source: https://kubernetes.io/docs/concepts/architecture/garbage-collection/
+    updated_at: '2026-11-02'

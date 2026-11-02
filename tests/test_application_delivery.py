@@ -143,7 +143,7 @@ def test_same_chat_cannot_rebuild_after_failure_but_new_user_request_can(tmp_pat
         db.add(env)
         db.flush()
         app = UserApplication(environment_id=env.id, project_path='demo', status='failed',
-                              error_code='build_failed', resources={'request_id': 'a' * 64})
+                              error_code='build_failed', resources={'request_id': 'a' * 64, 'cleanup': {'status': 'complete'}})
         db.add(app)
         db.flush()
         identifier, original_revision = app.id, app.revision

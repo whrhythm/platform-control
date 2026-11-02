@@ -26,6 +26,8 @@
 - [实际聊天编程验收](docs/programming-acceptance-20261102.md)
 - [应用发布与失败处理约定](docs/application-delivery-contract.md)
 - [使用手册](docs/user-guide.md)
+- [文件、任务能力、统一容量与套餐演进方案](docs/product-evolution-20261102.md)
+- [个人空间完善阶段 A 验收](docs/space-management-acceptance-20261102.md)
 - [OpenAPI](contracts/openapi.json)
 
 ## 本地运行

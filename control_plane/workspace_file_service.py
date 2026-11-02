@@ -9,17 +9,20 @@ import asyncio
 import errno
 import hmac
 import os
+import threading
+import time
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response, Security
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, Security
 from fastapi.concurrency import run_in_threadpool
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from .workspace_files import InvalidWorkspacePath, UploadTooLarge, WorkspaceFiles
+from .workspace_files import FileVersionConflict, InvalidWorkspacePath, UploadTooLarge, WorkspaceFiles
+from .workspace_usage import measure_usage
 from .workspace_snapshot import snapshot
 
 
-def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024 * 1024, max_inflight: int = 4) -> FastAPI:
+def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024 * 1024, max_inflight: int = 4, usage_root: str | None = None) -> FastAPI:
     if not isinstance(service_token, str) or len(service_token.encode('utf-8')) < 32:
         raise ValueError('A randomly generated service token of at least 32 bytes is required')
     if max_inflight < 1 or max_inflight > 16:
@@ -31,6 +34,10 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
     token_bytes = service_token.encode('utf-8')
     transfers = asyncio.Semaphore(max_inflight)
     snapshots = asyncio.Semaphore(1)
+    usage_lock, usage_cache = threading.Lock(), {}
+    def invalidate_usage():
+        with usage_lock:
+            usage_cache.pop('at', None)
     app = FastAPI(title='Internal workspace files', version='0.1.0',
                   description='Service-authenticated single-volume API. The caller must verify user identity and workspace ownership before proxying. Not for direct browser access.',
                   docs_url=None, redoc_url=None, openapi_url=None)
@@ -47,6 +54,8 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
             raise HTTPException(status_code=401, detail='Authentication required', headers={'WWW-Authenticate': 'Bearer'})
 
     def sanitized_error(error: Exception):
+        if isinstance(error, FileVersionConflict):
+            return HTTPException(409, 'File changed; reload before saving or deleting')
         if isinstance(error, InvalidWorkspacePath):
             return HTTPException(400, 'Invalid workspace path')
         if isinstance(error, UploadTooLarge):
@@ -67,6 +76,16 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
     @app.get('/healthz', include_in_schema=False)
     def health():
         return {'status': 'ok'}
+
+    @app.get('/v1/usage', dependencies=[Depends(authenticate)])
+    def usage():
+        with usage_lock:
+            if time.monotonic() - usage_cache.get('at', -60) >= 30:
+                try:
+                    usage_cache.update(value=measure_usage(usage_root or root), at=time.monotonic())
+                except (OSError, ValueError):
+                    raise HTTPException(503, 'Storage usage is temporarily unavailable') from None
+            return usage_cache['value']
 
     @app.get('/v1/context', dependencies=[Depends(authenticate)], response_class=Response,
              description='Export a bounded project build context containing regular files only.')
@@ -101,8 +120,8 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
     async def read_file(path: str = Query(min_length=1, max_length=4096)):
         try:
             async with transfers:
-                data = await run_in_threadpool(files.read_file, path)
-                return Response(content=data, media_type='application/octet-stream')
+                data, version = await run_in_threadpool(files.read_versioned, path)
+                return Response(content=data, media_type='application/octet-stream', headers={'ETag': version})
         except (OSError, ValueError) as error:
             raise sanitized_error(error) from None
 
@@ -110,7 +129,8 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
              description='Upload raw bytes up to the configured per-transfer limit. Existing files are preserved unless overwrite=true; concurrent overwrites are last-writer-wins.',
              responses={400: {'description': 'Invalid path'}, 401: {'description': 'Service authentication required'}, 404: {'description': 'Parent directory not found'}, 409: {'description': 'Destination already exists'}, 413: {'description': 'Transfer limit exceeded'}, 507: {'description': 'Storage full'}},
              openapi_extra={'requestBody': {'required': True, 'content': {'application/octet-stream': {'schema': {'type': 'string', 'format': 'binary'}}}}})
-    async def write_file(request: Request, path: str = Query(min_length=1, max_length=4096), overwrite: bool = False):
+    async def write_file(request: Request, path: str = Query(min_length=1, max_length=4096), overwrite: bool = False,
+                         if_match: str = Header(default='', max_length=66, pattern=r'^(?:"[0-9a-f]{64}")?$')):
         # Buffering is bounded by both per-file size and the concurrency limit.
         # Until streaming is implemented, reject oversized bodies before publish.
         try:
@@ -120,8 +140,20 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
                     if len(body) + len(chunk) > max_file_bytes:
                         raise UploadTooLarge('Transfer exceeds the allowed size')
                     body.extend(chunk)
-                count = await run_in_threadpool(files.write_file, path, [bytes(body)], overwrite=overwrite)
+                count = await run_in_threadpool(files.write_file, path, [bytes(body)], overwrite=overwrite, expected_version=if_match)
+                await run_in_threadpool(invalidate_usage)
                 return {'size': count}
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
+    @app.delete('/v1/file', dependencies=[Depends(authenticate)])
+    async def delete_file(path: str = Query(min_length=1, max_length=4096),
+                          if_match: str = Header(min_length=66, max_length=66, pattern=r'^"[0-9a-f]{64}"$')):
+        try:
+            async with transfers:
+                await run_in_threadpool(files.delete_file, path, if_match)
+                await run_in_threadpool(invalidate_usage)
+                return {'deleted': True}
         except (OSError, ValueError) as error:
             raise sanitized_error(error) from None
 
@@ -157,7 +189,8 @@ def server_options(environment: dict[str, str]) -> dict:
 def main():
     import uvicorn
     options = server_options(os.environ)
-    app = create_app(os.environ['WORKSPACE_ROOT'], os.environ['WORKSPACE_SERVICE_TOKEN'])
+    app = create_app(os.environ['WORKSPACE_ROOT'], os.environ['WORKSPACE_SERVICE_TOKEN'],
+                     usage_root=os.environ.get('WORKSPACE_USAGE_ROOT'))
     uvicorn.run(app, **options)
 
 

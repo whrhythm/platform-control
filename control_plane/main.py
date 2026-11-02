@@ -305,6 +305,17 @@ def workspace_directory(path: str = Query(default='', max_length=4096),
     return call_files(db, principal, get_settings(), 'GET', '/v1/directories', path).json()
 
 
+@app.get('/internal/v1/workspace/usage', tags=['workspace-files'])
+def workspace_usage(principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    from .workspace_gateway import own_environment
+    env = own_environment(db, principal)
+    result = call_files(db, principal, get_settings(), 'GET', '/v1/usage', '').json()
+    result['quota_bytes'] = env.storage_gib * 1024 ** 3
+    result['available_bytes'] = max(0, result['quota_bytes'] - result['used_bytes'])
+    # This is the current personal volume, not a fabricated cross-provider total.
+    return result
+
+
 @app.post('/internal/v1/workspace/directories', tags=['workspace-files'], status_code=201)
 def workspace_mkdir(path: str = Query(min_length=1, max_length=4096),
                     principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
@@ -317,13 +328,17 @@ async def workspace_read(path: str = Query(min_length=1, max_length=4096),
     from fastapi.concurrency import run_in_threadpool
     async with workspace_transfer_slots:
         result = await run_in_threadpool(call_files, db, principal, get_settings(), 'GET', '/v1/file', path)
-    return Response(result.content, media_type='application/octet-stream', headers={'Cache-Control': 'no-store'})
+    return Response(result.content, media_type='application/octet-stream', headers={
+        'Cache-Control': 'no-store', **({'ETag': result.headers['etag']} if 'etag' in result.headers else {})})
 
 
 @app.put('/internal/v1/workspace/file', tags=['workspace-files'], status_code=201)
 async def workspace_write(request: Request, path: str = Query(min_length=1, max_length=4096), overwrite: bool = False,
+                          if_match: str = Header(default='', max_length=66, pattern=r'^(?:"[0-9a-f]{64}")?$'),
                           principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
     from fastapi.concurrency import run_in_threadpool
+    if overwrite and not if_match:
+        raise HTTPException(428, 'Reload the file before saving')
     async with workspace_transfer_slots:
         content = bytearray()
         async for chunk in request.stream():
@@ -331,8 +346,15 @@ async def workspace_write(request: Request, path: str = Query(min_length=1, max_
                 raise HTTPException(413, 'File exceeds the transfer limit')
             content.extend(chunk)
         result = await run_in_threadpool(call_files, db, principal, get_settings(), 'PUT', '/v1/file', path,
-                                         body=bytes(content), overwrite=overwrite)
+                                         body=bytes(content), overwrite=overwrite, if_match=if_match)
     return result.json()
+
+
+@app.delete('/internal/v1/workspace/file', tags=['workspace-files'])
+def workspace_delete(path: str = Query(min_length=1, max_length=4096),
+                     if_match: str = Header(min_length=66, max_length=66, pattern=r'^"[0-9a-f]{64}"$'),
+                     principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    return call_files(db, principal, get_settings(), 'DELETE', '/v1/file', path, if_match=if_match).json()
 
 
 @app.get("/v1/tenants", response_model=list[TenantOut], tags=["tenants"])

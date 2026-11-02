@@ -1,5 +1,6 @@
 """Observed build/push/deploy reconciliation. No user source or credentials in logs."""
 from copy import deepcopy
+from types import SimpleNamespace
 import base64
 import json
 import logging
@@ -27,6 +28,16 @@ class DeliveryError(RuntimeError):
     pass
 
 
+class RevisionChanged(RuntimeError):
+    pass
+
+
+def deployment_ready(actual):
+    status = actual.get('status', {})
+    return (status.get('observedGeneration', 0) >= actual['metadata'].get('generation', 1) and
+            all(status.get(field, 0) == 1 for field in ('replicas', 'updatedReplicas', 'readyReplicas', 'availableReplicas')))
+
+
 class Cluster:
     def __init__(self, client):
         self.client = client
@@ -52,9 +63,9 @@ class Cluster:
         if response.status_code != 200:
             raise DeliveryError('provider_update_requires_review')
 
-    def delete(self, path, uid):
+    def delete(self, path, uid, *, foreground=False):
         response = self.client.request('DELETE', path, json={'apiVersion': 'v1', 'kind': 'DeleteOptions',
-            'preconditions': {'uid': uid}, 'propagationPolicy': 'Background'})
+            'preconditions': {'uid': uid}, 'propagationPolicy': 'Foreground' if foreground else 'Background'})
         if response.status_code not in (200, 202, 404):
             raise DeliveryError('provider_delete_requires_review')
 
@@ -68,11 +79,58 @@ def check_owned(actual, desired, uid=None):
     return meta['uid']
 
 
-def change_app(sessions, identifier, **fields):
+def change_app(sessions, identifier, *, expected_revision=None, expected_desired=None, **fields):
     with sessions.begin() as db:
         app = db.scalar(select(UserApplication).where(UserApplication.id == identifier).with_for_update())
+        if ((expected_revision is not None and app.revision != expected_revision) or
+                (expected_desired is not None and app.desired_state != expected_desired)):
+            raise RevisionChanged()
         for key, value in fields.items():
             setattr(app, key, value)
+
+
+def cleanup_failure(app, env, cluster, settings):
+    """Reclaim only recorded compute; keep files and any last successful release."""
+    state = deepcopy(app.resources)
+    state['cleanup'] = {'status': 'pending'}
+    job = state.get('job', {})
+    if job.get('uid') and job.get('name'):
+        path = object_path('codechat-builds', 'Job', job['name'])
+        actual = cluster.get(path)
+        if actual:
+            meta = actual.get('metadata', {})
+            if (meta.get('uid') != job['uid'] or meta.get('labels', {}).get('codechat.io/app-id') != app.id):
+                raise DeliveryError('cleanup_identity_requires_review')
+            if not meta.get('deletionTimestamp'):
+                cluster.delete(path, job['uid'], foreground=True)
+            return state
+    step = state.get('workloads', {}).get('Deployment', {})
+    if step.get('uid'):
+        good = state.get('last_good', {})
+        fallback = bool(good.get('image') and good.get('revision'))
+        target = SimpleNamespace(id=app.id, image=good['image'] if fallback else app.image,
+                                 revision=good['revision'] if fallback else app.revision,
+                                 desired_state='running' if fallback else 'stopped')
+        desired = application_objects(target, env, settings)[-1]
+        path = object_path(desired['metadata']['namespace'], 'Deployment', desired['metadata']['name'])
+        actual = cluster.get(path)
+        if actual:
+            check_owned(actual, desired, step['uid'])
+            operations = []
+            if actual['spec'].get('replicas') != desired['spec']['replicas']:
+                operations.append({'op': 'replace', 'path': '/spec/replicas', 'value': desired['spec']['replicas']})
+            if fallback and actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/revision') != good['revision']:
+                operations.append({'op': 'replace', 'path': '/spec/template', 'value': desired['spec']['template']})
+            if operations:
+                cluster.patch(path, actual, operations)
+                return state
+            observed = actual.get('status', {})
+            if (observed.get('observedGeneration', 0) < actual['metadata'].get('generation', 1) or
+                    (not deployment_ready(actual) if fallback else observed.get('replicas', 0) != 0)):
+                return state
+        state['cleanup']['runtime'] = 'previous_release' if fallback else 'stopped'
+    state['cleanup']['status'] = 'complete'
+    return state
 
 
 def provision_pull_secret(sessions, env, registry, cluster, settings, cipher):
@@ -103,15 +161,32 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         env = db.get(UserEnvironment, app.environment_id)
         registry = db.get(UserRegistry, env.id)
         binding, files = db.get(WorkspaceVolumeBinding, env.id), db.get(WorkspaceFileService, env.id)
-        if registry and registry.status == 'requires_review':
+        if app.status != 'failed' and registry and registry.status == 'requires_review':
             raise DeliveryError('registry_requires_review')
-        if (not registry or registry.status != 'ready' or not registry.pull_secret_uid or
+        if app.status != 'failed' and (not registry or registry.status != 'ready' or not registry.pull_secret_uid or
                 not binding or binding.namespace_name != 'codechat-user-' + env.identity_hash[:40] or
                 not files or files.status != 'ready' or env.status in ('deleted', 'suspended')):
             return
+        if app.status == 'failed' and (not binding or binding.namespace_name != 'codechat-user-' + env.identity_hash[:40]):
+            return
     state = deepcopy(app.resources)
+    def update(**fields):
+        fields.setdefault('expected_revision', app.revision)
+        fields.setdefault('expected_desired', app.desired_state)
+        return change_app(sessions, app_id, **fields)
+    if app.status == 'failed':
+        if state.get('cleanup', {}).get('status') == 'complete':
+            return
+        try:
+            cleaned = cleanup_failure(app, env, cluster, settings)
+        except (DeliveryError, httpx.HTTPError):
+            cleaned = deepcopy(state)
+            cleaned['cleanup'] = {'status': 'pending', 'error_code': 'cleanup_requires_attention'}
+        restored = cleaned.get('cleanup', {}).get('runtime') == 'previous_release' and cleaned.get('cleanup', {}).get('status') == 'complete'
+        update(resources=cleaned, **({'image': cleaned['last_good']['image']} if restored else {}))
+        return
     if app.status == 'queued':
-        change_app(sessions, app_id, status='preparing')
+        update(status='preparing')
         app.status = 'preparing'
     if app.status == 'preparing':
         if any(value.get('state') == 'inflight' for value in (state.get('job', {}), state.get('secret', {}))):
@@ -121,18 +196,18 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
             cipher.decrypt(files.encrypted_token.encode()).decode(), Path(settings.workspace_service_ca).read_text())
         if not state.get('job'):
             state['job'] = {'state': 'inflight'}
-            change_app(sessions, app_id, resources=deepcopy(state))
+            update(resources=deepcopy(state))
             actual = cluster.create(job)
             state['job'] = {'state': 'created', 'uid': check_owned(actual, job), 'name': job['metadata']['name']}
-            change_app(sessions, app_id, resources=deepcopy(state))
+            update(resources=deepcopy(state))
         if not state.get('secret'):
             secret['metadata']['ownerReferences'] = [{'apiVersion': 'batch/v1', 'kind': 'Job',
                 'name': state['job']['name'], 'uid': state['job']['uid']}]
             state['secret'] = {'state': 'inflight'}
-            change_app(sessions, app_id, resources=deepcopy(state))
+            update(resources=deepcopy(state))
             actual = cluster.create(secret)
             state['secret'] = {'state': 'created', 'uid': check_owned(actual, secret)}
-            change_app(sessions, app_id, resources=deepcopy(state), status='building')
+            update(resources=deepcopy(state), status='building')
         return
     if app.status == 'building':
         job = state.get('job', {})
@@ -148,7 +223,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
             raise DeliveryError('pushed_image_verify_failed')
         image = f'{urlsplit(settings.harbor_url).netloc}/{registry.project_name}/{app_name(app)}@{digest}'
-        change_app(sessions, app_id, image=image, status='deploying')
+        update(image=image, status='deploying')
         return
     if app.status in ('deploying', 'running', 'stopped', 'failed', 'changing'):
         objects = application_objects(app, env, settings)
@@ -164,7 +239,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                     cluster.delete(path, step['uid'])
                     workloads[kind] = {'state': 'deleting', 'uid': step['uid']}
                     state['workloads'] = deepcopy(workloads)
-                    change_app(sessions, app_id, resources=deepcopy(state))
+                    update(resources=deepcopy(state))
                 elif step and step.get('state') == 'deleting':
                     actual = cluster.get(path)
                     if actual:
@@ -172,18 +247,18 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                         return
                     workloads[kind] = {'state': 'deleted'}
                     state['workloads'] = deepcopy(workloads)
-                    change_app(sessions, app_id, resources=deepcopy(state))
+                    update(resources=deepcopy(state))
                 continue
             if not app.image or app.status == 'failed' and app.desired_state == 'running':
                 return
             if not step or step.get('state') == 'deleted':
                 workloads[kind] = {'state': 'inflight'}
                 state['workloads'] = deepcopy(workloads)
-                change_app(sessions, app_id, resources=deepcopy(state))
+                update(resources=deepcopy(state))
                 actual = cluster.create(desired)
                 workloads[kind] = {'state': 'created', 'uid': check_owned(actual, desired)}
                 state['workloads'] = deepcopy(workloads)
-                change_app(sessions, app_id, resources=deepcopy(state))
+                update(resources=deepcopy(state))
             else:
                 actual = cluster.get(path)
                 if not actual:
@@ -192,7 +267,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                 if kind == 'ApisixRoute' and actual['spec'] != desired['spec']:
                     cluster.patch(path, actual, [{'op': 'replace', 'path': '/spec', 'value': desired['spec']}])
                     if app.desired_state == 'running':
-                        change_app(sessions, app_id, status='deploying', url=None)
+                        update(status='deploying', url=None)
                     return
                 if kind == 'Deployment':
                     operations = []
@@ -205,13 +280,13 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                         return
         if app.desired_state == 'deleted':
             if all(step.get('state') == 'deleted' for step in workloads.values()):
-                change_app(sessions, app_id, status='deleted', url=None, observation=None)
+                update(status='deleted', url=None, observation=None)
             return
         if app.desired_state == 'stopped':
             desired = objects[-1]
             actual = cluster.get(object_path(desired['metadata']['namespace'], 'Deployment', desired['metadata']['name']))
             if actual and not actual.get('status', {}).get('replicas', 0):
-                change_app(sessions, app_id, status='stopped', observation=None)
+                update(status='stopped', observation=None)
             return
         deployment = objects[-1]
         namespace, name = deployment['metadata']['namespace'], deployment['metadata']['name']
@@ -223,7 +298,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         if any(condition.get('status') == 'False' and condition.get('reason') == 'ProgressDeadlineExceeded'
                           for condition in actual.get('status', {}).get('conditions', [])):
             raise DeliveryError('application_start_failed')
-        if actual.get('status', {}).get('availableReplicas', 0) != 1:
+        if not deployment_ready(actual):
             return
         route = cluster.get(object_path(namespace, 'ApisixRoute', name))
         if not route or not any(item.get('type') == 'Accepted' and item.get('status') == 'True' and
@@ -241,7 +316,9 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
             observation = observe(cluster, namespace, app.id)
         except (httpx.HTTPError, ValueError, KeyError):
             observation = None
-        change_app(sessions, app_id, status='running', error_code=None, observation=observation,
+        state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/'}
+        update(expected_revision=app.revision, expected_desired=app.desired_state,
+                   status='running', error_code=None, observation=observation, resources=state,
                    url=application_origin(app, settings) + '/')
 
 
@@ -285,11 +362,20 @@ def main():
             with SessionLocal() as db:
                 identifiers = list(db.scalars(select(UserApplication.id).where(UserApplication.status != 'deleted')))
             for identifier in identifiers:
+                with SessionLocal() as db:
+                    requested = db.get(UserApplication, identifier)
+                    expected_revision, expected_desired = requested.revision, requested.desired_state
                 try:
                     reconcile_application(SessionLocal, identifier, cluster, harbor, settings)
+                except RevisionChanged:
+                    continue
                 except Exception as error:
                     code = str(error) if isinstance(error, DeliveryError) else 'delivery_requires_review'
-                    change_app(SessionLocal, identifier, status='failed', error_code=code)
+                    try:
+                        change_app(SessionLocal, identifier, expected_revision=expected_revision, expected_desired=expected_desired,
+                                   status='failed', error_code=code)
+                    except RevisionChanged:
+                        continue
                     logger.warning('Application=%s state=%s (%s)', identifier, code, type(error).__name__)
         time.sleep(5)
 

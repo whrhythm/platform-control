@@ -6,6 +6,27 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/v1/usage": {
+      "get": {
+        "summary": "Usage",
+        "operationId": "usage_v1_usage_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ]
+      }
+    },
     "/v1/context": {
       "get": {
         "summary": "Build Context",
@@ -250,6 +271,18 @@
               "default": false,
               "title": "Overwrite"
             }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 66,
+              "pattern": "^(?:\"[0-9a-f]{64}\")?$",
+              "default": "",
+              "title": "If-Match"
+            }
           }
         ],
         "responses": {
@@ -297,6 +330,60 @@
               "schema": {
                 "type": "string",
                 "format": "binary"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete File",
+        "operationId": "delete_file_v1_file_delete",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "if-match",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 66,
+              "maxLength": 66,
+              "pattern": "^\"[0-9a-f]{64}\"$",
+              "title": "If-Match"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           }

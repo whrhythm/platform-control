@@ -1,0 +1,6 @@
+simulation: kubernetes-delivery
+routing: path
+mocks:
+  - name: kubernetes-delivery
+    routeKey: cluster
+    path: ../mocks/kubernetes-delivery/config.yaml

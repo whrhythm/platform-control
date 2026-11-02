@@ -34,7 +34,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
         'type': 'Opaque', 'stringData': {'config.json': json.dumps(config), 'workspace-token': workspace_token, 'ca.crt': ca,
             'buildkitd.toml': f'[registry."{registry_host}"]\n  ca = ["/credentials/ca.crt"]\n'}}
     job = {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': metadata,
-        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 900, 'ttlSecondsAfterFinished': 3600,
+        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 900, 'ttlSecondsAfterFinished': settings.build_job_retention_seconds,
             'template': {'metadata': {'labels': owner}, 'spec': {
                 'runtimeClassName': settings.runtime_class, 'automountServiceAccountToken': False,
                 'restartPolicy': 'Never', 'securityContext': {'fsGroup': 10001},

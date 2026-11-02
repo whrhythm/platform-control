@@ -20,7 +20,7 @@ def own_environment(db, principal):
     return env
 
 
-def call_files(db, principal, settings, method: str, endpoint: str, path: str, *, body=None, overwrite=False):
+def call_files(db, principal, settings, method: str, endpoint: str, path: str, *, body=None, overwrite=False, if_match=''):
     env = own_environment(db, principal)
     binding = db.get(WorkspaceVolumeBinding, env.id)
     service = db.get(WorkspaceFileService, env.id)
@@ -35,7 +35,7 @@ def call_files(db, principal, settings, method: str, endpoint: str, path: str, *
         with httpx.Client(base_url=f'https://workspace-files.{namespace}.svc:8090', verify=context,
                           timeout=30, trust_env=False, follow_redirects=False) as client:
             response = client.request(method, endpoint, params={'path': path, 'overwrite': str(overwrite).lower()},
-                                      headers={'Authorization': 'Bearer ' + token}, content=body)
+                                      headers={'Authorization': 'Bearer ' + token, **({'If-Match': if_match} if if_match else {})}, content=body)
     except (httpx.HTTPError, InvalidToken, ValueError, OSError):
         raise HTTPException(503, 'Personal files are temporarily unavailable') from None
     if response.status_code not in (200, 201):
@@ -44,7 +44,8 @@ def call_files(db, principal, settings, method: str, endpoint: str, path: str, *
     if len(response.content) > 16 * 1024 * 1024:
         raise HTTPException(413, 'File exceeds the transfer limit')
     action = {('PUT', '/v1/file'): 'workspace.file.upload', ('GET', '/v1/file'): 'workspace.file.download',
-              ('POST', '/v1/directories'): 'workspace.directory.create'}.get((method, endpoint))
+              ('POST', '/v1/directories'): 'workspace.directory.create',
+              ('DELETE', '/v1/file'): 'workspace.file.delete'}.get((method, endpoint))
     if action:
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action=action, target_id=env.id))

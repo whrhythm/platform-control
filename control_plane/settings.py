@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     harbor_password: str = ""
     application_origin: str = "http://192.168.10.30.sslip.io:30097"
     default_application_limit: int = 3
+    build_job_retention_seconds: int = 300
 
 
 @lru_cache
