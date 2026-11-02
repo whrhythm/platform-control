@@ -1,0 +1,330 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Internal workspace files",
+    "description": "Service-authenticated single-volume API. The caller must verify user identity and workspace ownership before proxying. Not for direct browser access.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/v1/directories": {
+      "get": {
+        "summary": "List Directory",
+        "description": "List one directory in the pre-authorized workspace. An empty path selects its root.",
+        "operationId": "list_directory_v1_directories_get",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096,
+              "default": "",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path"
+          },
+          "401": {
+            "description": "Service authentication required"
+          },
+          "404": {
+            "description": "Directory not found"
+          },
+          "503": {
+            "description": "Workspace unavailable"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Directory",
+        "description": "Create one directory. Parents must already exist; existing entries are never overwritten.",
+        "operationId": "create_directory_v1_directories_post",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path"
+          },
+          "401": {
+            "description": "Service authentication required"
+          },
+          "404": {
+            "description": "Parent directory not found"
+          },
+          "409": {
+            "description": "Destination already exists"
+          },
+          "507": {
+            "description": "Storage full"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/file": {
+      "get": {
+        "summary": "Read File",
+        "description": "Read a regular file up to the configured per-transfer limit; responses are not cacheable.",
+        "operationId": "read_file_v1_file_get",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path"
+          },
+          "401": {
+            "description": "Service authentication required"
+          },
+          "404": {
+            "description": "File not found"
+          },
+          "413": {
+            "description": "Transfer limit exceeded"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Write File",
+        "description": "Upload raw bytes up to the configured per-transfer limit. Existing files are preserved unless overwrite=true; concurrent overwrites are last-writer-wins.",
+        "operationId": "write_file_v1_file_put",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "overwrite",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Overwrite"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path"
+          },
+          "401": {
+            "description": "Service authentication required"
+          },
+          "404": {
+            "description": "Parent directory not found"
+          },
+          "409": {
+            "description": "Destination already exists"
+          },
+          "413": {
+            "description": "Transfer limit exceeded"
+          },
+          "507": {
+            "description": "Storage full"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/octet-stream": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "WorkspaceServiceToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}

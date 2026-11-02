@@ -20,6 +20,7 @@ namespaces = {user: f'codechat-files-qa-{run}-{user}' for user in ('a', 'b')}
 owner = {'codechat.io/qa-run': run, 'codechat.io/purpose': 'workspace-files-test'}
 root = Path(__file__).resolve().parents[1]
 source = (root / 'control_plane/workspace_files.py').read_text()
+service_source = (root / 'control_plane/workspace_file_service.py').read_text()
 result_path = root / 'release/workspace-files-cluster-acceptance.json'
 created = set()
 volumes = set()
@@ -124,6 +125,47 @@ assert f.read_file('project/source.py') == b'user-b'
 print('WORKSPACE_CHECK_OK')
 ''')
     checks += ['separate_user_volumes', 'upload_read_and_limits', 'symlink_escape_denied', 'multi_linked_file_denied']
+    # Exercise the real internal HTTP service in the Kata guest. The service is
+    # loopback-only and uses synthetic per-test credentials, never user secrets.
+    runner = '''
+import sys, types, uvicorn
+package=types.ModuleType('control_plane'); package.__path__=[]; sys.modules['control_plane']=package
+module=types.ModuleType('control_plane.workspace_files'); sys.modules[module.__name__]=module
+exec(FILES_SOURCE, module.__dict__)
+service=types.ModuleType('control_plane.workspace_file_service'); service.__package__='control_plane'; sys.modules[service.__name__]=service
+exec(SERVICE_SOURCE, service.__dict__)
+app=service.create_app('/workspace', 'cluster-test-token-'+'x'*32, max_file_bytes=32)
+uvicorn.run(app, host='127.0.0.1', port=18090, access_log=False, log_level='warning')
+'''.replace('FILES_SOURCE', repr(source)).replace('SERVICE_SOURCE', repr(service_source))
+    http_check = '''
+import subprocess, sys, time, urllib.error, urllib.request
+server=subprocess.Popen([sys.executable, '-c', RUNNER], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+base='http://127.0.0.1:18090'
+client=urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+    for _ in range(60):
+        try:
+            with client.open(base+'/healthz', timeout=1): break
+        except OSError:
+            if server.poll() is not None: raise RuntimeError('File API exited before readiness')
+            time.sleep(1)
+    else: raise RuntimeError('File API did not start')
+    try: client.open(base+'/v1/directories', timeout=5)
+    except urllib.error.HTTPError as error: assert error.code==401
+    else: raise AssertionError('Unauthorized access accepted')
+    auth={'Authorization': 'Bearer '+'cluster-test-token-'+'x'*32}
+    request=urllib.request.Request(base+'/v1/file?path=api-file', data=b'cluster-ok', headers=auth, method='PUT')
+    with client.open(request, timeout=5) as response: assert response.status==201
+    request=urllib.request.Request(base+'/v1/file?path=api-file', headers=auth)
+    with client.open(request, timeout=5) as response: assert response.read()==b'cluster-ok'
+finally:
+    server.terminate()
+    try: server.wait(timeout=10)
+    except subprocess.TimeoutExpired: server.kill(); server.wait()
+print('WORKSPACE_CHECK_OK')
+'''.replace('RUNNER', repr(runner))
+    run_program(namespaces['a'], pods['a'], http_check)
+    checks.append('kata_internal_http_auth_and_transfer')
     old = pods['a']
     call('-n', namespaces['a'], 'patch', 'sandbox', 'workspace', '--type=merge', '-p', '{"spec":{"operatingMode":"Suspended"}}')
     call('-n', namespaces['a'], 'wait', '--for=delete', 'pod/' + old, '--timeout=120s', timeout=130)
