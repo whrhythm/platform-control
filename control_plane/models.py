@@ -119,11 +119,15 @@ class WorkspaceProvisioningIntent(Base):
     """Durable create-only journal; in-flight writes require manual resolution."""
     __tablename__ = "workspace_provisioning_intents"
     __table_args__ = (
-        CheckConstraint("state IN ('requested', 'namespace_inflight', 'namespace_recorded', 'pvc_inflight', 'pvc_recorded')", name="ck_workspace_provisioning_state"),
+        CheckConstraint("state IN ('requested', 'namespace_inflight', 'namespace_recorded', 'quota_inflight', 'quota_recorded', 'policy_inflight', 'policy_recorded', 'pvc_inflight', 'pvc_recorded')", name="ck_workspace_provisioning_state"),
+        UniqueConstraint('quota_uid', name='uq_workspace_intent_quota_uid'),
+        UniqueConstraint('policy_uid', name='uq_workspace_intent_policy_uid'),
     )
     environment_id: Mapped[str] = mapped_column(ForeignKey("user_environments.id"), primary_key=True)
     state: Mapped[str] = mapped_column(String(32), default="requested")
     namespace_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    quota_uid: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    policy_uid: Mapped[str | None] = mapped_column(String(128), nullable=True)
     pvc_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

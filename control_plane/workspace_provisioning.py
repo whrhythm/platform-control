@@ -16,6 +16,10 @@ from .user_environments import plan_user_environment
 class CreateProvider(Protocol):
     def create_namespace(self, manifest: dict) -> dict: ...
     def read_namespace(self, name: str) -> dict: ...
+    def create_resource_quota(self, manifest: dict) -> dict: ...
+    def read_resource_quota(self) -> dict: ...
+    def create_network_policy(self, manifest: dict) -> dict: ...
+    def read_network_policy(self) -> dict: ...
     def create_pvc(self, manifest: dict) -> dict: ...
 
 
@@ -66,6 +70,23 @@ def _pvc_match(actual: dict, expected: dict) -> str:
     return uid
 
 
+def _quota_match(actual: dict, expected: dict, uid: str | None = None) -> str:
+    found = _metadata_match(actual, expected, namespace_uid=uid)
+    hard = actual.get('spec', {}).get('hard', {})
+    if any(hard.get(k) != v for k, v in expected['spec']['hard'].items()):
+        raise UnsafeProviderResponse('Quota does not match expected limits')
+    return found
+
+
+def _policy_match(actual: dict, expected: dict, uid: str | None = None) -> str:
+    found = _metadata_match(actual, expected, namespace_uid=uid)
+    spec = actual.get('spec', {})
+    if (spec.get('podSelector') != {} or set(spec.get('policyTypes', [])) != {'Ingress', 'Egress'} or
+            spec.get('ingress', []) or spec.get('egress', [])):
+        raise UnsafeProviderResponse('Network policy is not default deny')
+    return found
+
+
 def provision_one(session_factory, provider: CreateProvider, environment_id: str) -> str:
     """Perform at most one external create, or return an existing state.
 
@@ -81,18 +102,25 @@ def provision_one(session_factory, provider: CreateProvider, environment_id: str
         if intent is None:
             raise ValueError('Provisioning intent is missing')
         state = intent.state
-        if state in {'namespace_inflight', 'pvc_inflight', 'pvc_recorded'}:
+        if state in {'namespace_inflight', 'quota_inflight', 'policy_inflight', 'pvc_inflight', 'pvc_recorded'}:
             return state
         if env.status != 'requested':
             return 'environment_not_eligible'
         plan = plan_user_environment(env.issuer, env.subject, storage_gib=env.storage_gib)
         namespace = next(obj for obj in plan['objects'] if obj['kind'] == 'Namespace')
         pvc = next(obj for obj in plan['objects'] if obj['kind'] == 'PersistentVolumeClaim')
+        quota = next(obj for obj in plan['objects'] if obj['kind'] == 'ResourceQuota')
+        policy = next(obj for obj in plan['objects'] if obj['kind'] == 'NetworkPolicy')
+        recorded_namespace_uid = intent.namespace_uid
+        recorded_quota_uid = intent.quota_uid
+        recorded_policy_uid = intent.policy_uid
         if state == 'requested':
             intent.state = 'namespace_inflight'
-            recorded_namespace_uid = None
         elif state == 'namespace_recorded' and intent.namespace_uid:
-            recorded_namespace_uid = intent.namespace_uid
+            intent.state = 'quota_inflight'
+        elif state == 'quota_recorded' and intent.namespace_uid and intent.quota_uid:
+            intent.state = 'policy_inflight'
+        elif state == 'policy_recorded' and intent.namespace_uid and intent.quota_uid and intent.policy_uid:
             intent.state = 'pvc_inflight'
         else:
             raise ValueError('Invalid provisioning state')
@@ -105,9 +133,18 @@ def provision_one(session_factory, provider: CreateProvider, environment_id: str
     else:
         observed = provider.read_namespace(namespace['metadata']['name'])
         _metadata_match(observed, namespace, namespace_uid=recorded_namespace_uid)
-        actual = provider.create_pvc(deepcopy(pvc))
-        uid = _pvc_match(actual, pvc)
-        next_state, field, expected_state = 'pvc_recorded', 'pvc_uid', 'pvc_inflight'
+        if state == 'namespace_recorded':
+            uid = _quota_match(provider.create_resource_quota(deepcopy(quota)), quota)
+            next_state, field, expected_state = 'quota_recorded', 'quota_uid', 'quota_inflight'
+        elif state == 'quota_recorded':
+            _quota_match(provider.read_resource_quota(), quota, recorded_quota_uid)
+            uid = _policy_match(provider.create_network_policy(deepcopy(policy)), policy)
+            next_state, field, expected_state = 'policy_recorded', 'policy_uid', 'policy_inflight'
+        else:
+            _quota_match(provider.read_resource_quota(), quota, recorded_quota_uid)
+            _policy_match(provider.read_network_policy(), policy, recorded_policy_uid)
+            uid = _pvc_match(provider.create_pvc(deepcopy(pvc)), pvc)
+            next_state, field, expected_state = 'pvc_recorded', 'pvc_uid', 'pvc_inflight'
 
     with session_factory.begin() as db:
         env = db.scalar(select(UserEnvironment).where(UserEnvironment.id == environment_id).with_for_update())

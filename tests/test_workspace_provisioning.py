@@ -30,6 +30,8 @@ class FakeProvider:
     def __init__(self):
         self.calls = []
         self.namespace = None
+        self.quota = None
+        self.policy = None
 
     def create_namespace(self, manifest):
         self.calls.append('create_namespace')
@@ -46,6 +48,26 @@ class FakeProvider:
         manifest['metadata']['uid'] = 'pvc-uid'
         return manifest
 
+    def create_resource_quota(self, manifest):
+        self.calls.append('create_quota')
+        manifest['metadata']['uid'] = 'quota-uid'
+        self.quota = deepcopy(manifest)
+        return manifest
+
+    def read_resource_quota(self):
+        self.calls.append('read_quota')
+        return deepcopy(self.quota)
+
+    def create_network_policy(self, manifest):
+        self.calls.append('create_policy')
+        manifest['metadata']['uid'] = 'policy-uid'
+        self.policy = deepcopy(manifest)
+        return manifest
+
+    def read_network_policy(self):
+        self.calls.append('read_policy')
+        return deepcopy(self.policy)
+
 
 def test_journal_then_create_once_and_keep_environment_plan_only(store):
     sessions, env_id = store
@@ -53,12 +75,14 @@ def test_journal_then_create_once_and_keep_environment_plan_only(store):
     assert request_intent(sessions, env_id) == 'requested'
     assert request_intent(sessions, env_id) == 'requested'
     assert provision_one(sessions, provider, env_id) == 'namespace_recorded'
+    assert provision_one(sessions, provider, env_id) == 'quota_recorded'
+    assert provision_one(sessions, provider, env_id) == 'policy_recorded'
     assert provision_one(sessions, provider, env_id) == 'pvc_recorded'
     assert provision_one(sessions, provider, env_id) == 'pvc_recorded'
-    assert provider.calls == ['create_namespace', 'read_namespace', 'create_pvc']
+    assert provider.calls == ['create_namespace', 'read_namespace', 'create_quota', 'read_namespace', 'read_quota', 'create_policy', 'read_namespace', 'read_quota', 'read_policy', 'create_pvc']
     with sessions() as db:
         intent = db.get(WorkspaceProvisioningIntent, env_id)
-        assert (intent.namespace_uid, intent.pvc_uid) == ('namespace-uid', 'pvc-uid')
+        assert (intent.namespace_uid, intent.quota_uid, intent.policy_uid, intent.pvc_uid) == ('namespace-uid', 'quota-uid', 'policy-uid', 'pvc-uid')
         assert db.get(UserEnvironment, env_id).status == 'requested'
 
 
@@ -89,13 +113,15 @@ def test_replaced_namespace_stops_before_creating_pvc(store):
     with pytest.raises(UnsafeProviderResponse):
         provision_one(sessions, provider, env_id)
     assert provider.calls == ['create_namespace', 'read_namespace']
-    assert provision_one(sessions, provider, env_id) == 'pvc_inflight'
+    assert provision_one(sessions, provider, env_id) == 'quota_inflight'
 
 
 def test_pvc_uncertain_outcome_never_retries(store):
     sessions, env_id = store
     provider = FakeProvider()
     request_intent(sessions, env_id)
+    provision_one(sessions, provider, env_id)
+    provision_one(sessions, provider, env_id)
     provision_one(sessions, provider, env_id)
 
     def timeout_after_write(manifest):
@@ -107,6 +133,19 @@ def test_pvc_uncertain_outcome_never_retries(store):
         provision_one(sessions, provider, env_id)
     assert provision_one(sessions, provider, env_id) == 'pvc_inflight'
     assert provider.calls.count('create_pvc') == 1
+
+
+def test_weakened_policy_stops_before_pvc_creation(store):
+    sessions, env_id = store
+    provider = FakeProvider()
+    request_intent(sessions, env_id)
+    for _ in range(3):
+        provision_one(sessions, provider, env_id)
+    provider.policy['spec']['egress'] = [{}]
+    with pytest.raises(UnsafeProviderResponse):
+        provision_one(sessions, provider, env_id)
+    assert 'create_pvc' not in provider.calls
+    assert provision_one(sessions, provider, env_id) == 'pvc_inflight'
 
 
 def test_ineligible_environment_cannot_start_next_step(store):

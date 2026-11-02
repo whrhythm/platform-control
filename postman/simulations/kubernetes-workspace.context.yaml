@@ -1,0 +1,18 @@
+purpose:
+  stands_in_for: A narrow synthetic Kubernetes API for workspace namespace, quota, network policy and PVC creation.
+  unblocks: Testing real HTTP adapter calls and conflict handling without affecting the cluster.
+assumptions:
+  - id: create-only
+    status: supported
+    claim: Workspace objects use create-only POST operations; an existing name is a conflict and is never adopted.
+    reason: The simulation intentionally models create and conflict; it is not proof of every real Kubernetes failure mode.
+    verification: Local synthetic HTTP simulation and a separate real-cluster test of the journal creating and cleaning a synthetic retained volume on 2026-11-02. Failure injection against a live API remains unverified.
+    source: https://kubernetes.io/docs/reference/kubernetes-api/core/persistent-volume-claim-v1/
+    updated_at: '2026-11-02'
+  - id: isolation-enforcement
+    status: supported
+    claim: NetworkPolicy declarations alone do not establish that traffic is isolated.
+    reason: Enforcement depends on the cluster networking implementation and additional policies.
+    verification: On 2026-11-02 two temporary Kata Pods confirmed baseline connectivity and that isolated ingress and egress each block the tested TCP connection; this does not cover all protocols or policy combinations.
+    source: https://kubernetes.io/docs/concepts/services-networking/network-policies/
+    updated_at: '2026-11-02'

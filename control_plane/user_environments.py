@@ -32,5 +32,5 @@ def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 2) ->
                 'A temporary Agent Server and SDK compatibility probe passed; production integration and persistent user volume lifecycle remain unverified.',
                 'No authenticated access proxy, model credential relay, or reviewed network egress policy exists.',
                 'Project filesystem boundaries, retention, disk accounting and recovery remain unverified.',
-                'The retained storage class requires live verification; retained volumes are not backups and require a controlled recovery and deletion workflow.',
+                'A live retained-volume probe passed; retained volumes are not backups and require controlled recovery and deletion workflows.',
             ]}

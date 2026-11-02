@@ -1,0 +1,6 @@
+simulation: kubernetes-workspace
+routing: path
+mocks:
+  - name: kubernetes-workspace
+    routeKey: k8s
+    path: ../mocks/kubernetes-workspace/config.yaml

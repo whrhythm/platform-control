@@ -39,4 +39,14 @@ Migration `0006_workspace_intents` adds a journal keyed by environment. The inte
 
 A timeout, conflict, process failure, malformed response or a failed commit after a provider call leaves an in-flight state. This is deliberately an **unknown outcome**, not proof that the provider failed, and it requires manual investigation; no automatic recovery, retry, adoption or deletion is implemented. Failed reads before a PVC create also conservatively leave `pvc_inflight`. A downgrade refuses to discard journal entries. Database owner-level operations can still modify or delete records; this is not tamper-proof audit storage.
 
-The provider is only a Python protocol and test double: there is no Kubernetes client, controller, RBAC, deployment, authenticated trigger, quota or network-policy application. Before enabling it, the production controller must create and verify isolation and quotas, use strict create-only operations and admission/RBAC that prevent namespace deletion/recreation between verification and PVC creation, reconcile PV readiness and persist bindings, and implement audited operator recovery for unknown outcomes. No live user resources have been created by this prototype.
+The journal now has a restricted Kubernetes adapter but remains disconnected from any production worker or authenticated trigger. Before enabling it, the production controller requires admission/RBAC that prevent namespace deletion/recreation between verification and PVC creation, PV readiness and binding persistence, and audited operator recovery for unknown outcomes. No live user resources have been created by this prototype.
+
+## 2026-11-02 Kubernetes 适配与隔离顺序
+
+`KubernetesWorkspaceProvider` 只允许为绑定身份生成的指定资源执行创建或读取，不支持任意路径、更新或删除。正常连接要求 HTTPS、证书校验和有限超时；仅测试可以显式启用回环地址 HTTP。集群执行器目前没有部署，也没有获得集群 RBAC。
+
+迁移 `0007_workspace_isolation` 为配额和网络策略增加执行记录。原型按 namespace → quota → default-deny network policy → PVC 的顺序操作，每次先提交执行状态；创建 PVC 前重新核对配额和网络策略的 UID、配置及命名空间 UID。状态为 in-flight 时不会重复调用。策略被替换或放宽会停止流程。默认拒绝不保证 DNS 和模型服务可达，也无法单凭策略对象证明网络插件已执行规则；策略可叠加，必须防止用户创建放行策略。
+
+本地 Postman 模拟验证了真实 HTTP 适配器与创建流程、同名冲突和创建次序。真实集群测试在随机命名空间创建并读取配额与网络策略，PVC 只进行服务端 dry-run，测试命名空间通过 UID 前置条件删除。另用两个临时 Kata Pod 验证了基线可连接、目标入口拒绝阻断连接、恢复连接后来源出口拒绝也阻断连接，测试资源已清理；这只证明当前集群与该测试流量组合，不保证所有协议或其他策略组合。该验证不等于生产控制器可用：尚未部署、未做真实用户卷创建或卷绑定，无法从 LibreChat 使用。Kubernetes 官方说明：[网络策略](https://kubernetes.io/docs/concepts/services-networking/network-policies/)、[PVC API](https://kubernetes.io/docs/reference/kubernetes-api/core/persistent-volume-claim-v1/)。
+
+`scripts/workspace_provisioning_cluster_acceptance.py` 使用临时 SQLite 日志、随机测试身份及现有 kubectl 代理，在真实集群依序创建 namespace、quota、network policy 和保留策略的 Longhorn PVC，确认 PVC 绑定以及 PV 的声明 UID、驱动和回收策略。测试完成后，按资源 UID 和声明 UID 核验并回收临时 PVC、PV、Longhorn 卷及 namespace。此验证尚未运行生产 PostgreSQL 控制器，未将 PVC/PV 信息写入生产绑定表，也未验证用户文件恢复。

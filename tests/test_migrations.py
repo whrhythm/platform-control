@@ -24,7 +24,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0006_workspace_intents"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0007_workspace_isolation"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:
@@ -85,11 +85,11 @@ def test_downgrade_cannot_discard_inflight_creation(tmp_path, monkeypatch):
             db.flush()
             db.add(WorkspaceProvisioningIntent(environment_id=env.id, state='namespace_inflight'))
             db.commit()
-        with pytest.raises(RuntimeError, match='Cannot remove nonempty'):
+        with pytest.raises(RuntimeError, match='Cannot downgrade nonempty'):
             command.downgrade(config, '0005_workspace_bindings')
         with engine.connect() as connection:
             assert connection.scalar(text('SELECT state FROM workspace_provisioning_intents')) == 'namespace_inflight'
-            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0006_workspace_intents'
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0007_workspace_isolation'
     finally:
         engine.dispose()
         get_settings.cache_clear()
