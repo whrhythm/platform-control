@@ -23,6 +23,13 @@ assumptions:
     verification: On 2026-11-02 tests/test_login_simulation.py passed with the local simulation and the simulation logged eight HTTP requests; a reserved closed port also verified that repeated provider failures leave one requested plan. Separate disposable PostgreSQL tests exercised concurrent logins.
     source: tests/test_login_simulation.py; tests/test_postgres.py; postman/mocks/litellm-provisioning/default.js
     updated_at: '2026-11-02'
+  - id: programming-key-identity
+    status: supported
+    claim: The programming gateway resolves a supplied virtual key through hash lookup and verifies the encrypted platform credential and recorded personal volume before routing.
+    reason: A real HTTP lookup against the existing stateful Postman mock was followed by platform database ownership checks. This does not establish real model inference or deployment readiness.
+    verification: On 2026-11-02 tests/test_programming.py passed six tests, including its Postman variant; the simulation logged seven requests including the gateway key lookup.
+    source: tests/test_programming.py; control_plane/programming.py; postman/mocks/litellm-provisioning/default.js
+    updated_at: '2026-11-02'
 fingerprints:
   - id: local-run
     date: '2026-10-31'

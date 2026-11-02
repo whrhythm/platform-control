@@ -1,0 +1,7 @@
+# Reuse exactly the SDK/tools version already installed in the cluster.
+FROM ghcr.nju.edu.cn/openhands/agent-canvas@sha256:638c5e3ce76df74344bb18bd85f44af395337ade8e71f04532099fb380febadf
+WORKDIR /app
+COPY control_plane/workspace_agent_service.py control_plane/workspace_file_service.py control_plane/workspace_files.py ./control_plane/
+ENV OPENHANDS_SUPPRESS_BANNER=1 LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONDONTWRITEBYTECODE=1
+USER 10001:10001
+ENTRYPOINT ["python", "-m", "control_plane.workspace_agent_service"]

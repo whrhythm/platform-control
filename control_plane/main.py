@@ -24,6 +24,7 @@ from .model_credentials import provision_model_key
 from .user_environments import identity_digest, plan_user_environment
 from .workspace_gateway import call_files
 from .models import WorkspaceFileService
+from .programming import router as programming_router
 
 
 @asynccontextmanager
@@ -36,6 +37,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
+app.include_router(programming_router)
 workspace_transfer_slots = asyncio.Semaphore(4)
 app.add_middleware(CORSMiddleware, allow_origins=[origin for origin in (get_settings().public_origin, get_settings().additional_public_origin) if origin], allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key"])
 

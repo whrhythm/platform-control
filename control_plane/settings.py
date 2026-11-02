@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     librechat_service_token: str = ""
     workspace_files_enabled: bool = False
     workspace_service_image: str = ""
+    workspace_agent_image: str = ""
+    workspace_agent_max_iterations: int = 40
     workspace_service_ca: str = "/etc/platform-ca/internal-ca.crt"
 
 

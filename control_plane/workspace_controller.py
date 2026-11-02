@@ -1,6 +1,7 @@
 """Create personal storage and a protected file service without adopting objects."""
 from copy import deepcopy
 import logging
+import json
 from pathlib import Path
 import secrets
 import ssl
@@ -32,7 +33,9 @@ def prepare_service(session_factory, provider, env_id, settings):
             db.flush()
         token = cipher.decrypt(service.encrypted_token.encode()).decode()
         identity_hash = env.identity_hash
-    objects = file_service_objects(provider.namespace, identity_hash, settings.workspace_service_image, token)
+    objects = file_service_objects(provider.namespace, identity_hash, settings.workspace_service_image, token,
+        agent_image=settings.workspace_agent_image, llm_url=settings.litellm_url,
+        llm_model=settings.litellm_models.split(',')[0], max_iterations=settings.workspace_agent_max_iterations)
     for obj in objects:
         key = obj['kind']
         path = resource_path(provider.namespace, key)
@@ -57,6 +60,7 @@ def prepare_service(session_factory, provider, env_id, settings):
             if key != 'Secret':
                 actual = provider._request('GET', path + '/' + obj['metadata']['name'])
                 _metadata_match(actual, obj, namespace_uid=step['uid'])
+                upgrade_owned_runtime(provider, path + '/' + obj['metadata']['name'], obj, actual)
     try:
         context = ssl.create_default_context(cafile=settings.workspace_service_ca)
         with httpx.Client(verify=context, timeout=5, trust_env=False) as client:
@@ -69,6 +73,36 @@ def prepare_service(session_factory, provider, env_id, settings):
         service = db.get(WorkspaceFileService, env_id)
         service.status = 'ready' if ready else 'preparing'
     return 'ready' if ready else 'preparing'
+
+
+def upgrade_owned_runtime(provider, path, desired, actual):
+    """Upgrade only observed, journal-owned compute/network objects; never storage."""
+    kind = desired['kind']
+    if kind == 'Deployment':
+        value = desired['spec']['template']
+        revision = value['metadata']['annotations']['codechat.io/runtime-revision']
+        if actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/runtime-revision') == revision:
+            return
+        target = '/spec/template'
+    elif kind == 'Service':
+        value = desired['spec']['ports']
+        existing = [{k: port[k] for k in ('name', 'port', 'targetPort')} for port in actual['spec']['ports']]
+        if existing == value:
+            return
+        target = '/spec/ports'
+    elif kind == 'NetworkPolicy':
+        value = desired['spec']
+        if actual['spec'] == value:
+            return
+        target = '/spec'
+    else:
+        return
+    patch = [{'op': 'test', 'path': '/metadata/uid', 'value': actual['metadata']['uid']},
+             {'op': 'test', 'path': '/metadata/resourceVersion', 'value': actual['metadata']['resourceVersion']},
+             {'op': 'replace', 'path': target, 'value': value}]
+    result = provider.client.patch(path, content=json.dumps(patch), headers={'Content-Type': 'application/json-patch+json'})
+    if result.status_code != 200:
+        raise RuntimeError('Owned runtime upgrade requires inspection')
 
 
 def reconcile(session_factory, provider, env_id, settings):
