@@ -89,6 +89,7 @@ def test_personal_environment_lookup_uses_verified_identity(harness):
 def test_existing_project_environment_is_reused_on_login(harness):
     from control_plane.auth import Principal
     from control_plane.main import ensure_personal_environment
+    from control_plane.models import WorkspaceProvisioningIntent
 
     client, token = harness
     alice, tenant_id, project_id = setup_project(client, token)
@@ -98,6 +99,7 @@ def test_existing_project_environment_is_reused_on_login(harness):
         result = ensure_personal_environment(principal, tenant_id, db)
         assert result.id == original['id']
         assert result.first_project_id == project_id
+        assert db.get(WorkspaceProvisioningIntent, result.id).state == 'requested'
 
 
 def test_environment_is_scoped_to_the_requesting_user(harness):

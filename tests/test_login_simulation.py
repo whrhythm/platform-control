@@ -7,7 +7,7 @@ import pytest
 from cryptography.fernet import Fernet
 from sqlalchemy import select
 
-from control_plane.models import UserEnvironment, WorkspaceVolumeBinding
+from control_plane.models import UserEnvironment, WorkspaceProvisioningIntent, WorkspaceVolumeBinding
 from control_plane.settings import get_settings
 
 
@@ -31,6 +31,7 @@ def test_real_login_http_path_reuses_one_environment(harness, monkeypatch):
     with client.session_factory() as db:
         environments = db.scalars(select(UserEnvironment).where(UserEnvironment.subject == subject)).all()
         assert len(environments) == 1 and environments[0].first_project_id is None
+        assert db.get(WorkspaceProvisioningIntent, environments[0].id).state == 'requested'
         assert db.get(WorkspaceVolumeBinding, environments[0].id) is None
 
 
@@ -51,4 +52,5 @@ def test_login_provider_unreachable_never_duplicates_plan(harness, monkeypatch):
     with client.session_factory() as db:
         environments = db.scalars(select(UserEnvironment).where(UserEnvironment.subject == subject)).all()
         assert len(environments) == 1 and environments[0].status == 'requested'
+        assert db.get(WorkspaceProvisioningIntent, environments[0].id).state == 'requested'
         assert db.get(WorkspaceVolumeBinding, environments[0].id) is None

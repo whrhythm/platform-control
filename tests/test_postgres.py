@@ -243,6 +243,8 @@ def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
         assert environments[0].first_project_id is None
         assert environments[0].status == 'requested'
         # This fixture uses a guarded, disposable local database only.
+        db.delete(db.get(WorkspaceProvisioningIntent, environments[0].id))
+        db.flush()
         db.delete(environments[0])
 
 

@@ -3,7 +3,7 @@ from cryptography.fernet import Fernet
 from sqlalchemy import select
 
 from control_plane import model_credentials
-from control_plane.models import AuditEvent, ModelCredential, UserEnvironment, WorkspaceVolumeBinding
+from control_plane.models import AuditEvent, ModelCredential, UserEnvironment, WorkspaceProvisioningIntent, WorkspaceVolumeBinding
 from control_plane.settings import get_settings
 from test_litellm import FakeGateway
 
@@ -40,6 +40,7 @@ def test_login_provisions_isolated_keys_once_and_does_not_restore_revoked(harnes
         assert len(environments) == 2
         assert {environment.subject for environment in environments} == {'alice', 'bob'}
         assert all(environment.first_project_id is None and environment.status == 'requested' for environment in environments)
+        assert all(db.get(WorkspaceProvisioningIntent, environment.id).state == 'requested' for environment in environments)
         assert db.scalars(select(WorkspaceVolumeBinding)).all() == []
         assert len(db.scalars(select(AuditEvent).where(AuditEvent.action == 'environment.create')).all()) == 2
     personal = client.get('/v1/me/environment', headers={'Authorization': 'Bearer ' + token('alice')})

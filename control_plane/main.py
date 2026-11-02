@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .auth import Principal, current_principal
 from .database import engine, get_db
-from .models import AuditEvent, Membership, Operation, Project, Resource, Tenant, TestOrder, UserEnvironment
+from .models import AuditEvent, Membership, Operation, Project, Resource, Tenant, TestOrder, UserEnvironment, WorkspaceProvisioningIntent
 from .schemas import AuditOut, MemberInput, MemberOut, OperationOut, QuotaInput, ResourceOut, ResourceRequest
 from .settings import get_settings
 from .litellm import LiteLLMError
@@ -227,27 +227,33 @@ def provision_litellm_key(response: Response, service_token: str = Header(defaul
 
 
 def ensure_personal_environment(principal: Principal, tenant_id: str, db: Session) -> UserEnvironment:
-    """Create an identity-bound plan during login; no storage is provisioned here."""
-    existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
-    if existing is not None:
-        return existing
-    environment = UserEnvironment(
-        issuer=principal.issuer, subject=principal.subject,
-        identity_hash=identity_digest(principal.issuer, principal.subject),
-        storage_gib=get_settings().default_environment_storage_gib,
-        first_tenant_id=tenant_id, first_project_id=None,
-    )
-    db.add(environment)
+    """Journal one identity-bound plan at login; never call a provider here."""
+    identity = (UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject)
     try:
-        db.flush()
-        audit(db, principal, tenant_id, 'environment.create', environment.id)
+        environment = db.scalar(select(UserEnvironment).where(*identity).with_for_update())
+        if environment is None:
+            environment = UserEnvironment(
+                issuer=principal.issuer, subject=principal.subject,
+                identity_hash=identity_digest(principal.issuer, principal.subject),
+                storage_gib=get_settings().default_environment_storage_gib,
+                first_tenant_id=tenant_id, first_project_id=None,
+            )
+            db.add(environment)
+            db.flush()
+            audit(db, principal, tenant_id, 'environment.create', environment.id)
+        if environment.status == 'requested' and db.get(WorkspaceProvisioningIntent, environment.id) is None:
+            db.add(WorkspaceProvisioningIntent(environment_id=environment.id, state='requested'))
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
-        if existing is None:
+        # Another first login may have inserted the same identity. Its journal
+        # is committed atomically with the environment, or can be backfilled.
+        environment = db.scalar(select(UserEnvironment).where(*identity).with_for_update())
+        if environment is None:
             raise
-        return existing
+        if environment.status == 'requested' and db.get(WorkspaceProvisioningIntent, environment.id) is None:
+            db.add(WorkspaceProvisioningIntent(environment_id=environment.id, state='requested'))
+            db.commit()
     return environment
 
 
