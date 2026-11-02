@@ -86,6 +86,33 @@
         ]
       }
     },
+    "/v1/me/environment": {
+      "get": {
+        "tags": [
+          "environments"
+        ],
+        "summary": "Get My Environment",
+        "description": "Return the authenticated user's environment record, if requested. This is a plan, not evidence that a volume or sandbox exists.",
+        "operationId": "get_my_environment_v1_me_environment_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserEnvironmentOut"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/tenants": {
       "get": {
         "tags": [

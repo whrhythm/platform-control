@@ -161,6 +161,15 @@ def me(principal: Principal = Depends(current_principal)):
     return {"issuer": principal.issuer, "subject": principal.subject, "platform_admin": principal.is_platform_admin}
 
 
+@app.get("/v1/me/environment", response_model=UserEnvironmentOut, tags=["environments"], description="Return the authenticated user's environment record, if requested. This is a plan, not evidence that a volume or sandbox exists.")
+def get_my_environment(response: Response, principal: Principal = Depends(current_principal), db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-store"
+    environment = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer, UserEnvironment.subject == principal.subject))
+    if environment is None:
+        raise HTTPException(status_code=404, detail="Environment not requested")
+    return environment_response(environment)
+
+
 @app.post("/v1/tenants", response_model=TenantOut, status_code=status.HTTP_201_CREATED, tags=["tenants"])
 def create_tenant(body: TenantCreate, principal: Principal = Depends(current_principal), db: Session = Depends(get_db)):
     settings = get_settings()

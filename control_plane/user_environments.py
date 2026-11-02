@@ -23,7 +23,7 @@ def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 2) ->
     metadata = lambda name: {'name': name, 'namespace': ns, 'labels': owner}
     namespace = {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': {'name': ns, 'labels': {**owner, 'pod-security.kubernetes.io/enforce': 'restricted'}, 'annotations': {'codechat.io/user-hash-sha256': digest}}}
     quota = {'apiVersion': 'v1', 'kind': 'ResourceQuota', 'metadata': metadata('user-capacity'), 'spec': {'hard': {'requests.storage': f'{storage_gib}Gi', 'persistentvolumeclaims': '1', 'services.nodeports': '0', 'services.loadbalancers': '0'}}}
-    pvc = {'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': metadata('workspace-data'), 'spec': {'storageClassName': 'longhorn', 'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': f'{storage_gib}Gi'}}}}
+    pvc = {'apiVersion': 'v1', 'kind': 'PersistentVolumeClaim', 'metadata': metadata('workspace-data'), 'spec': {'storageClassName': 'codechat-workspace-retain', 'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': f'{storage_gib}Gi'}}}}
     isolation = {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy', 'metadata': metadata('default-deny'), 'spec': {'podSelector': {}, 'policyTypes': ['Ingress', 'Egress'], 'ingress': [], 'egress': []}}
     return {'mode': 'plan', 'executable': False, 'identity_hash': digest, 'namespace': ns, 'storage_gib': storage_gib,
             'runtime_requirement': {'runtime_class': 'kata-qemu-runtime-rs', 'dedicated_sandbox': True, 'workspace_pvc': 'workspace-data', 'shared_orchestration': True},
@@ -32,4 +32,5 @@ def plan_user_environment(issuer: str, subject: str, *, storage_gib: int = 2) ->
                 'A temporary Agent Server and SDK compatibility probe passed; production integration and persistent user volume lifecycle remain unverified.',
                 'No authenticated access proxy, model credential relay, or reviewed network egress policy exists.',
                 'Project filesystem boundaries, retention, disk accounting and recovery remain unverified.',
+                'The retained storage class requires live verification; retained volumes are not backups and require a controlled recovery and deletion workflow.',
             ]}

@@ -10,6 +10,7 @@ def test_each_user_gets_deterministic_separate_namespace_and_volume_plan():
     assert alice['executable'] is False
     pvc = next(obj for obj in alice['objects'] if obj['kind'] == 'PersistentVolumeClaim')
     assert pvc['metadata']['namespace'] == alice['namespace']
+    assert pvc['spec']['storageClassName'] == 'codechat-workspace-retain'
     assert pvc['spec']['resources']['requests']['storage'] == '2Gi'
     assert alice['runtime_requirement']['runtime_class'] == 'kata-qemu-runtime-rs'
     assert alice['runtime_requirement']['dedicated_sandbox'] is True

@@ -48,7 +48,7 @@ def test_first_request_creates_plan_only_environment(harness):
     kinds = [obj["kind"] for obj in body["plan"]]
     assert sorted(kinds) == ["Namespace", "NetworkPolicy", "PersistentVolumeClaim", "ResourceQuota"]
     pvc = next(obj for obj in body["plan"] if obj["kind"] == "PersistentVolumeClaim")
-    assert pvc["spec"]["storageClassName"] == "longhorn"
+    assert pvc["spec"]["storageClassName"] == "codechat-workspace-retain"
     assert pvc["spec"]["resources"]["requests"]["storage"] == "2Gi"
     deny = next(obj for obj in body["plan"] if obj["kind"] == "NetworkPolicy")
     assert deny["spec"]["ingress"] == [] and deny["spec"]["egress"] == []
@@ -70,6 +70,20 @@ def test_repeated_request_is_idempotent_and_get_returns_same_record(harness):
     assert client.get(url, headers=alice).json()["id"] == first["id"]
     audit = client.get(f"/v1/tenants/{tenant_id}/audit", headers=alice).json()
     assert [event["action"] for event in audit].count("environment.create") == 1
+
+
+def test_personal_environment_lookup_uses_verified_identity(harness):
+    client, token = harness
+    assert client.get('/v1/me/environment').status_code == 401
+    alice, tenant_id, project_id = setup_project(client, token)
+    bob = headers(token('bob'))
+    assert client.get('/v1/me/environment', headers=alice).status_code == 404
+    environment = client.post(environment_url(tenant_id, project_id), headers=alice).json()
+    response = client.get('/v1/me/environment', headers=alice)
+    assert response.status_code == 200
+    assert response.json()['id'] == environment['id']
+    assert response.headers['cache-control'] == 'no-store'
+    assert client.get('/v1/me/environment', headers=bob).status_code == 404
 
 
 def test_environment_is_scoped_to_the_requesting_user(harness):

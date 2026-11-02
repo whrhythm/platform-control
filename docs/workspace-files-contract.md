@@ -21,3 +21,8 @@
 `scripts/workspace_files_cluster_acceptance.py` 在临时创建的两组 Kata 沙箱和 Longhorn 卷中运行上述代码，检查各自文件、上传大小限制、符号链接和硬链接保护以及暂停恢复后文件保留；还在沙箱回环地址运行内部 HTTP 服务，验证无凭据拒绝、持测试凭据上传和读取。脚本会回收并核查测试 namespace、PV 和 Longhorn 卷。该测试不证明跨 Pod 加密传输、浏览器授权、文件服务网络安全或异常断电恢复。真实用户工作空间、浏览器上传和资源控制器尚未接入。
 
 `control_plane/workspace_file_service.py` 新增**未部署**的单卷内部 HTTP 服务：服务凭据认证后可创建和列出目录、上传与读取文件；默认不覆盖，单次文件传输和并发内存有界。对应契约为 `contracts/workspace-files.openapi.json`，本地 HTTP/Postman 和自动化测试使用临时目录及合成凭据。默认监听 `127.0.0.1` 且关闭访问日志；只有同时提供 TLS 证书和私钥时才允许监听非回环地址。本地以临时证书验证了可信证书、未受信证书和服务凭据。该服务仅验证服务间凭据，不能识别或授权最终用户；工作卷绑定、单用户密钥安全发放、生产证书签发及轮换、客户端校验证书、请求时限、审计和访问网关未完成，不得绕过这些条件直接暴露。当前上传在有界内存中缓冲后再原子写入，并非端到端流式上传。
+# Personal environment lookup and storage retention (2026-11-02)
+
+`GET /v1/me/environment` returns only the environment record bound to the verified issuer and subject, or 404 if the user has not requested one. It does not create a workspace or demonstrate readiness. The response is not cached. The existing project-scoped request remains the entry point for creating plan metadata; concurrent requests are arbitrated by the database identity constraint.
+
+Workspace plans now refer to `codechat-workspace-retain`; the Argo CD prerequisite deploys this Longhorn class with `Retain`. A disposable cluster test verified that deleting a PVC leaves its PV in Released and its Longhorn volume present, then explicitly reclaimed only the identified test volume. This test did not validate file restoration after rebinding, a backup, authorization to reclaim user data, or protection from node/disk loss. The live API image has not been updated for the new endpoint or plan.
