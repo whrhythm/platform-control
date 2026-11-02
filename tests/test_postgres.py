@@ -7,10 +7,11 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 
 from control_plane.database import get_db, make_engine
 from control_plane.main import app
-from control_plane.models import Base
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding
 from control_plane.settings import get_settings
 from control_plane.worker import plan_one
 from test_resources import request, setup_tenant
@@ -84,7 +85,9 @@ def test_worker_and_cancellation_cannot_restore_cancelled_resource(postgres_harn
             cancellation = pool.submit(client.delete, path + "/resources/" + resource["id"], headers=auth)
             worker.result()
             assert cancellation.result().status_code == 200
-        operation = next(op for op in client.get(path + "/operations", headers=auth).json() if op["resource_id"] == resource["id"])
+        response = client.get(path + "/operations", headers=auth)
+        assert response.status_code == 200, response.text
+        operation = next(op for op in response.json() if op["resource_id"] == resource["id"])
         assert operation["status"] == "cancelled"
         assert operation["plan"] is None
         assert client.get(path + "/quota", headers=auth).json()["reserved"]["storage_gib"] == 0
@@ -102,6 +105,45 @@ def test_parallel_first_requests_create_one_environment(postgres_harness):
         responses = list(pool.map(create, range(20)))
     assert all(response.status_code == 200 for response in responses)
     assert len({response.json()["id"] for response in responses}) == 1
+
+
+def test_volume_identifier_cannot_be_bound_to_two_users_concurrently(postgres_harness):
+    client, _token = postgres_harness
+    sessions = client.session_factory
+    env_ids = []
+    with sessions() as db:
+        for user in ('alice-binding', 'bob-binding'):
+            tenant = Tenant(name=user, owner_issuer='issuer', owner_subject=user, project_limit=1)
+            db.add(tenant)
+            db.flush()
+            env = UserEnvironment(issuer='issuer', subject=user, identity_hash=user, storage_gib=2,
+                                  first_tenant_id=tenant.id, first_project_id='project')
+            db.add(env)
+            db.flush()
+            env_ids.append(env.id)
+        db.commit()
+
+    def insert(index):
+        with sessions() as db:
+            db.add(WorkspaceVolumeBinding(environment_id=env_ids[index], namespace_name=f'test-ns-{index}',
+                                          namespace_uid='same-namespace-uid', pvc_uid=f'claim-{index}',
+                                          pv_name=f'pv-{index}', pv_uid=f'pv-uid-{index}', volume_handle=f'volume-{index}'))
+            try:
+                db.commit()
+                return 'created'
+            except IntegrityError:
+                db.rollback()
+                return 'conflict'
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert sorted(pool.map(insert, range(2))) == ['conflict', 'created']
+    finally:
+        with sessions() as db:
+            for env_id in env_ids:
+                binding = db.get(WorkspaceVolumeBinding, env_id)
+                if binding is not None:
+                    db.delete(binding)
+            db.commit()
 
 
 def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):

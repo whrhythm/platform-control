@@ -27,7 +27,7 @@ from .user_environments import identity_digest, plan_user_environment
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0004_user_environments":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0005_workspace_bindings":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 

@@ -6,9 +6,11 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import Session
+import pytest
 
 from control_plane.database import make_engine
-from control_plane.models import Base
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding
 from control_plane.settings import get_settings
 
 
@@ -22,7 +24,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0004_user_environments"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0005_workspace_bindings"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:
@@ -31,6 +33,35 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
         assert inspect(engine).get_table_names() == ["alembic_version"]
         command.upgrade(config, "head")
         assert set(Base.metadata.tables) <= set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+        get_settings.cache_clear()
+
+
+def test_downgrade_cannot_discard_recorded_volume_identity(tmp_path, monkeypatch):
+    url = f"sqlite:///{tmp_path / 'protected.db'}"
+    monkeypatch.setenv("PLATFORM_DATABASE_URL", url)
+    get_settings.cache_clear()
+    config = Config(str(Path(__file__).resolve().parents[1] / "alembic.ini"))
+    engine = make_engine(url)
+    try:
+        command.upgrade(config, 'head')
+        with Session(engine) as db:
+            tenant = Tenant(name='test', owner_issuer='issuer', owner_subject='alice', project_limit=1)
+            db.add(tenant)
+            db.flush()
+            env = UserEnvironment(issuer='issuer', subject='alice', identity_hash='a' * 64, storage_gib=2,
+                                  first_tenant_id=tenant.id, first_project_id='project')
+            db.add(env)
+            db.flush()
+            db.add(WorkspaceVolumeBinding(environment_id=env.id, namespace_name='test-ns', namespace_uid='ns-uid',
+                                          pvc_uid='pvc-uid', pv_name='pv', pv_uid='pv-uid', volume_handle='volume'))
+            db.commit()
+        with pytest.raises(RuntimeError, match='Cannot remove nonempty'):
+            command.downgrade(config, '0004_user_environments')
+        with engine.connect() as connection:
+            assert connection.scalar(text('SELECT COUNT(*) FROM workspace_volume_bindings')) == 1
+            assert connection.scalar(text('SELECT version_num FROM alembic_version')) == '0005_workspace_bindings'
     finally:
         engine.dispose()
         get_settings.cache_clear()

@@ -99,6 +99,22 @@ class UserEnvironment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WorkspaceVolumeBinding(Base):
+    """Provider identifiers recorded by a trusted future provisioner.
+
+    This table alone does not enforce immutability, create a volume, or grant access.
+    """
+    __tablename__ = "workspace_volume_bindings"
+    environment_id: Mapped[str] = mapped_column(ForeignKey("user_environments.id"), primary_key=True)
+    namespace_name: Mapped[str] = mapped_column(String(63), unique=True)
+    namespace_uid: Mapped[str] = mapped_column(String(128), unique=True)
+    pvc_uid: Mapped[str] = mapped_column(String(128), unique=True)
+    pv_name: Mapped[str] = mapped_column(String(253), unique=True)
+    pv_uid: Mapped[str] = mapped_column(String(128), unique=True)
+    volume_handle: Mapped[str] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (
