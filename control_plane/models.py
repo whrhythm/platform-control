@@ -115,6 +115,19 @@ class WorkspaceVolumeBinding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WorkspaceProvisioningIntent(Base):
+    """Durable create-only journal; in-flight writes require manual resolution."""
+    __tablename__ = "workspace_provisioning_intents"
+    __table_args__ = (
+        CheckConstraint("state IN ('requested', 'namespace_inflight', 'namespace_recorded', 'pvc_inflight', 'pvc_recorded')", name="ck_workspace_provisioning_state"),
+    )
+    environment_id: Mapped[str] = mapped_column(ForeignKey("user_environments.id"), primary_key=True)
+    state: Mapped[str] = mapped_column(String(32), default="requested")
+    namespace_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    pvc_uid: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (

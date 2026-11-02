@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 import pytest
 from alembic import command
@@ -11,7 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from control_plane.database import get_db, make_engine
 from control_plane.main import app
-from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding, WorkspaceProvisioningIntent
+from control_plane.workspace_provisioning import provision_one, request_intent
 from control_plane.settings import get_settings
 from control_plane.worker import plan_one
 from test_resources import request, setup_tenant
@@ -144,6 +146,43 @@ def test_volume_identifier_cannot_be_bound_to_two_users_concurrently(postgres_ha
                 if binding is not None:
                     db.delete(binding)
             db.commit()
+
+
+def test_parallel_provisioners_only_one_sends_create(postgres_harness):
+    client, token = postgres_harness
+    auth, path, project = setup_tenant(client, token)
+    env_id = client.post(f'{path}/projects/{project}/environment', headers=auth).json()['id']
+    sessions = client.session_factory
+    request_intent(sessions, env_id)
+    started, release = Event(), Event()
+
+    class Provider:
+        calls = 0
+
+        def create_namespace(self, manifest):
+            self.calls += 1
+            started.set()
+            assert release.wait(timeout=10)
+            manifest['metadata']['uid'] = 'provider-created-ns'
+            return manifest
+
+    provider = Provider()
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(provision_one, sessions, provider, env_id)
+            try:
+                assert started.wait(timeout=10)
+                second = pool.submit(provision_one, sessions, provider, env_id)
+                assert second.result(timeout=10) == 'namespace_inflight'
+            finally:
+                release.set()
+            assert first.result(timeout=10) == 'namespace_recorded'
+        assert provider.calls == 1
+    finally:
+        with sessions.begin() as db:
+            intent = db.get(WorkspaceProvisioningIntent, env_id)
+            if intent is not None:
+                db.delete(intent)
 
 
 def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
