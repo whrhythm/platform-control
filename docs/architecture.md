@@ -4,6 +4,25 @@
 
 当前编程/发布路径：LibreChat 主聊天 → 平台编程网关 → 用户 Kata 执行环境中的 OpenHands SDK → 同一份个人持久文件。发布请求只生成后台意图：应用控制器 → 独立 Kata BuildKit Job → 个人私有 Harbor project → 用户 namespace 中按 digest 部署 → APISIX 独立应用域名。共享的是平台入口、编排和模型网关；没有为每位用户部署完整 OpenHands Web 服务。
 
+2026-11-03 补充：聊天能力与真实模型分离。普通聊天直接转发至 LiteLLM；编程由 OpenHands 使用用户的同一受管 key 调用选定模型。能力、两种模型选择均保存在原对话，切换保留上下文。管理员模型与套餐策略存于 PostgreSQL，普通用户通过同源接口获得真实模型目录，不看到供应商管理密钥。
+
+```mermaid
+flowchart LR
+    Admin[管理员配置页] --> Policy[模型 / 汇率 / 套餐策略]
+    User[LibreChat 套餐与用量] --> Order[服务端报价与订单快照]
+    Order --> Confirm[模拟支付确认]
+    Confirm --> Credit[持久化额度任务与绝对目标]
+    Credit --> Billing[独立额度控制器]
+    Billing --> LiteLLM[用户与 key 预算上限]
+    LiteLLM --> Observed[观察两级到账 / 保留 spend]
+    Observed --> Capacity[资源权益控制器]
+    Billing --> Wallet[余额与实际 Token 观察缓存]
+    Wallet --> User
+    Policy --> Order
+```
+
+注册赠送仅一次；后续购买按订单汇率把人民币额度折为美元预算。任务恢复、重复确认和重复购买不能清空历史消费。外部预算漂移需人工核验。各类存储分类计量和分类额度继续保留，本阶段不实现跨服务统一硬配额。详见[模型与套餐手册](model-membership-guide.md)。
+
 ## 1. 选型与职责
 
 采用 Python FastAPI + SQLAlchemy + PostgreSQL 编写业务后端，React + TypeScript 编写浏览器界面。复用已有 Python 工程；当前不引入第二套 Go 服务。Python 服务可作为容器运行，桌面辅助后端可用 PyInstaller 打包成各平台独立可执行文件。PyInstaller 是打包，不是将 Python 业务嵌入 Rust。

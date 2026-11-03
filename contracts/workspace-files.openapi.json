@@ -182,6 +182,45 @@
         }
       }
     },
+    "/v1/archive": {
+      "get": {
+        "summary": "Download Archive",
+        "operationId": "download_archive_v1_archive_get",
+        "security": [
+          {
+            "WorkspaceServiceToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/file": {
       "get": {
         "summary": "Read File",
