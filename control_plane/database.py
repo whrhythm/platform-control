@@ -8,6 +8,9 @@ from .settings import get_settings
 
 def make_engine(url: str):
     kwargs = {"connect_args": {"check_same_thread": False}} if url.startswith("sqlite") else {}
+    if not url.startswith('sqlite'):
+        settings = get_settings()
+        kwargs.update(pool_size=settings.database_pool_size, max_overflow=settings.database_pool_overflow)
     engine = create_engine(url, pool_pre_ping=True, **kwargs)
     if url.startswith("sqlite"):
         @event.listens_for(engine, "connect")

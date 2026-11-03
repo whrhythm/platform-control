@@ -12,7 +12,7 @@ from cluster_transport import remote
 
 NAMESPACE = "platform-system"
 DATABASE = "platform_control"
-ROLES = {"migrator": ("platform_migrator", 3), "api": ("platform_api", 20), "worker": ("platform_worker", 5)}
+ROLES = {"migrator": ("platform_migrator", 3), "api": ("platform_api", 20), "worker": ("platform_worker", 16)}
 
 
 def get_secret(namespace, name):
