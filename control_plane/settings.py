@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     litellm_url: str = ""
     litellm_master_key: str = ""
     litellm_models: str = ""
+    capabilities_enabled: bool = False
+    capability_chat_route: str = "codechat-chat"
+    capability_coding_route: str = "codechat-coding"
+    capability_chat_model: str = ""
     model_credential_encryption_key: str = ""
     librechat_service_token: str = ""
     workspace_files_enabled: bool = False

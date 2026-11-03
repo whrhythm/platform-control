@@ -11,12 +11,80 @@ from sqlalchemy.orm import sessionmaker
 
 from control_plane.database import make_engine
 from control_plane.models import Base, Tenant, ModelCredential, UserEnvironment, WorkspaceFileService, WorkspaceVolumeBinding
-from control_plane.programming import agent_prompt, resolve_space
+from control_plane.programming import agent_prompt, resolve_space, resolve_capability
 from control_plane.litellm import LiteLLMGateway
 from control_plane.settings import Settings
 from control_plane.user_environments import identity_digest
 from control_plane.workspace_agent_service import create_app, delivery_reply
 from control_plane.workspace_runtime import file_service_objects
+
+
+def test_capability_routes_preserve_legacy_and_reject_unconfigured_or_ambiguous_routes():
+    settings = Settings(litellm_models='model', capabilities_enabled=True, capability_chat_model='model')
+    assert resolve_capability('codechat-chat', settings) == ('chat', 'model')
+    assert resolve_capability('codechat-coding', settings) == ('coding', None)
+    assert resolve_capability('OpenHands', settings) == ('coding', None)
+    assert resolve_capability('model', settings) == ('chat', 'model')
+    for invalid in ('writing', 'music', 'http://other-service', {}, None):
+        with pytest.raises(HTTPException) as exc:
+            resolve_capability(invalid, settings)
+        assert exc.value.status_code == 400
+    with pytest.raises(HTTPException) as exc:
+        resolve_capability('codechat-chat', Settings(litellm_models='model'))
+    assert exc.value.status_code == 400
+    for changes in ({'capability_chat_model': 'not-allowed'}, {'capability_coding_route': 'codechat-chat'}, {'capability_coding_route': 'model'}):
+        with pytest.raises(HTTPException) as exc:
+            resolve_capability('codechat-chat', settings.model_copy(update=changes))
+        assert exc.value.status_code == 503
+
+
+@pytest.mark.parametrize('route,coding', [('codechat-chat', False), ('codechat-coding', True), ('OpenHands', True)])
+def test_http_capability_switch_forwards_same_history_and_issued_key(monkeypatch, route, coding):
+    import json
+    import certifi
+    from fastapi import FastAPI
+    from control_plane import programming
+    captured = {}
+    key = 'sk-' + 'k' * 48
+    history = [{'role': 'user', 'content': 'Project alpha must print apricot'},
+               {'role': 'assistant', 'content': 'Use alpha/main.py'},
+               {'role': 'user', 'content': 'Implement the requirements above'}]
+    async def space(db, settings, supplied, client, *, require_runtime):
+        assert supplied == key
+        captured['runtime'] = require_runtime
+        return 'codechat-user-test', 'synthetic-space-token'
+    def provider(request):
+        captured['url'] = str(request.url)
+        captured['body'] = json.loads(request.content)
+        captured['authorization'] = request.headers['Authorization']
+        return httpx.Response(200, content=b'data: [DONE]\n\n', headers={'content-type': 'text/event-stream'})
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(programming.httpx, 'AsyncClient', lambda **kwargs: original_client(transport=httpx.MockTransport(provider)))
+    monkeypatch.setattr(programming, 'resolve_space', space)
+    settings = Settings(litellm_models='model', capabilities_enabled=True, capability_chat_model='model',
+                        workspace_agent_image='agent', litellm_url='http://models', litellm_master_key='master',
+                        workspace_service_ca=certifi.where())
+    app = FastAPI()
+    app.include_router(programming.router)
+    class Database:
+        def rollback(self):
+            captured['released_transaction'] = True
+    app.dependency_overrides[programming.get_db] = lambda: Database()
+    app.dependency_overrides[programming.get_settings] = lambda: settings
+    response = TestClient(app).post('/agent/v1/chat/completions', json={'model': route, 'stream': True, 'messages': history},
+                                    headers={'Authorization': 'Bearer ' + key, 'X-CodeChat-Conversation': 'same-conversation'})
+    assert response.status_code == 200 and '[DONE]' in response.text
+    assert captured['runtime'] is coding and captured['released_transaction']
+    if coding:
+        assert captured['url'] == 'https://workspace-files.codechat-user-test.svc:8091/v1/run'
+        assert captured['authorization'] == 'Bearer synthetic-space-token'
+        assert captured['body']['api_key'] == key
+        prompt = captured['body']['prompt']
+        assert prompt.index('Project alpha must print apricot') < prompt.index('Use alpha/main.py') < prompt.index('Implement the requirements above')
+    else:
+        assert captured['url'] == 'http://models/v1/chat/completions'
+        assert captured['authorization'] == 'Bearer ' + key
+        assert captured['body']['model'] == 'model' and captured['body']['messages'] == history
 
 
 def test_runner_writes_real_files_deduplicates_and_preserves_failed_tasks(tmp_path):

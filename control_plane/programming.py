@@ -19,6 +19,28 @@ from .settings import get_settings
 router = APIRouter(prefix='/agent/v1', tags=['programming'])
 
 
+def resolve_capability(model, settings):
+    """Route names are server configuration, never browser-supplied destinations."""
+    allowed = tuple(value.strip() for value in settings.litellm_models.split(',') if value.strip())
+    if settings.capabilities_enabled:
+        routes = (settings.capability_chat_route, settings.capability_coding_route)
+        if (not all(routes) or len(set(routes)) != 2 or
+                any(route == 'OpenHands' or route in allowed for route in routes)):
+            raise HTTPException(503, 'Capability routing is misconfigured')
+        if model == settings.capability_coding_route:
+            return 'coding', None
+        if model == settings.capability_chat_route:
+            actual = settings.capability_chat_model
+            if not actual or actual not in allowed:
+                raise HTTPException(503, 'Chat capability is not configured')
+            return 'chat', actual
+    if model == 'OpenHands':
+        return 'coding', None
+    if isinstance(model, str) and model in allowed:
+        return 'chat', model
+    raise HTTPException(400, 'Unsupported capability or model')
+
+
 async def resolve_identity(db, settings, key, client):
     if not key.startswith('sk-') or not 35 <= len(key) <= 512:
         raise HTTPException(401, 'Invalid model credential')
@@ -126,17 +148,15 @@ async def completions(request: Request, authorization: str = Header(default=''),
     if not isinstance(body, dict):
         raise HTTPException(400, 'Invalid conversation')
     model = body.get('model')
-    allowed_models = settings.litellm_models.split(',')
-    if model != 'OpenHands' and model not in allowed_models:
-        raise HTTPException(400, 'Unsupported model')
+    capability, actual_model = resolve_capability(model, settings)
     context = ssl.create_default_context(cafile=settings.workspace_service_ca)
     client = httpx.AsyncClient(verify=context, timeout=httpx.Timeout(600, connect=10), trust_env=False)
     try:
         namespace, service_token = await resolve_space(db, settings, authorization[7:], client,
-                                                       require_runtime=model == 'OpenHands')
+                                                       require_runtime=capability == 'coding')
         # Release the database transaction before waiting for a long-running agent.
         db.rollback()
-        if model == 'OpenHands':
+        if capability == 'coding':
             if body.get('stream') is not True:
                 raise HTTPException(400, 'Programming requires streaming chat')
             prompt = agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image)
@@ -146,7 +166,7 @@ async def completions(request: Request, authorization: str = Header(default=''),
             headers = {'Authorization': 'Bearer ' + service_token}
         else:
             target = settings.litellm_url.rstrip('/') + '/v1/chat/completions'
-            payload, headers = body, {'Authorization': authorization}
+            payload, headers = {**body, 'model': actual_model}, {'Authorization': authorization}
         upstream = await client.send(client.build_request('POST', target, json=payload, headers=headers), stream=True)
         if upstream.status_code != 200:
             status = upstream.status_code if upstream.status_code in (400, 401, 403, 409, 429) else 503
