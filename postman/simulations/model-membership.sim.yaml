@@ -1,0 +1,6 @@
+simulation: model-membership
+routing: path
+mocks:
+  - name: litellm-provisioning
+    routeKey: litellm
+    path: ../mocks/litellm-provisioning/config.yaml

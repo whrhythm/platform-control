@@ -14,6 +14,7 @@ from .models import (AuditEvent, CapacityAccount, CapacityOrder, StorageMeasurem
 from .models import UserObjectStorage
 from .object_storage import ObjectStorageOut, storage_out
 from .settings import get_settings
+from .model_wallet import WalletOut, wallet_out, estimate_tokens
 from .workspace_gateway import own_environment, call_files
 
 GIB = 1024 ** 3
@@ -29,6 +30,9 @@ class CapacityPlan(BaseModel):
     application_limit: int = Field(ge=1, le=100)
     amount_minor: int = Field(ge=0, le=1000000)
     currency: str = Field(pattern=r'^[A-Z]{3}$')
+    model_credit_cny_minor: int = Field(default=0, ge=0, le=1000000)
+    description: str = Field(default='', max_length=300)
+    features: list[str] = Field(default_factory=list, max_length=12)
 
 
 class CreateCapacityOrder(BaseModel):
@@ -46,6 +50,13 @@ class CapacityPlanOut(BaseModel):
     application_limit: int
     amount_minor: int
     currency: str
+    model_credit_cny_minor: int = 0
+    model_credit_usd_micros: int = 0
+    settlement_cny_per_usd: str | None = None
+    description: str = ''
+    features: list[str] = Field(default_factory=list)
+    estimated_tokens: int | None = None
+    reference_model: str | None = None
 
 
 class CapacityOrderOut(BaseModel):
@@ -59,6 +70,7 @@ class CapacityOrderOut(BaseModel):
     created_at: datetime
     started_at: datetime | None
     completed_at: datetime | None
+    model_credit_status: str = 'not_required'
 
 
 class StorageComponentOut(BaseModel):
@@ -95,23 +107,39 @@ class CapacityAccountOut(BaseModel):
     applications: ApplicationAllowanceOut
     storage: StorageAccountOut
     object_storage: ObjectStorageOut | None = None
+    wallet: WalletOut | None = None
+    trial: dict | None = None
 
 
-def catalog(settings):
+def catalog(settings, db=None):
     try:
-        raw = json.loads(settings.capacity_plans_json)
+        from decimal import Decimal, ROUND_DOWN
+        from .ai_policy import effective_policy
+        policy = effective_policy(db, settings) if db is not None else None
+        raw = policy['plans'] if policy else json.loads(settings.capacity_plans_json)
+        rate = Decimal(policy['cny_per_usd'] if policy else settings.model_settlement_cny_per_usd)
+        if not Decimal('0.01') <= rate <= Decimal('1000'):
+            raise ValueError()
         if not isinstance(raw, list) or not 1 <= len(raw) <= 10:
             raise ValueError()
         plans = [CapacityPlan.model_validate(plan).model_dump() for plan in raw]
         if len({plan['id'] for plan in plans}) != len(plans):
             raise ValueError()
         for plan in plans:
+            if plan['model_credit_cny_minor']:
+                if plan['currency'] != 'CNY':
+                    raise ValueError()
+                plan['settlement_cny_per_usd'] = str(rate)
+                plan['model_credit_usd_micros'] = int((Decimal(plan['model_credit_cny_minor']) * 10000 / rate).to_integral_value(rounding=ROUND_DOWN))
+                if db is not None:
+                    from .model_wallet import estimate_tokens
+                    plan.update(estimate_tokens(db, settings, plan['model_credit_usd_micros']))
             # Every price/rights edit changes the offered version, even if an
             # administrator forgets to change their human catalog label.
             version = hashlib.sha256(json.dumps(plan, sort_keys=True, separators=(',', ':')).encode()).hexdigest()[:32]
             plan['catalog_version'], plan['version'] = plan['version'], version
         return plans
-    except (ValueError, TypeError, ValidationError):
+    except (ValueError, TypeError, ValidationError, ArithmeticError):
         raise HTTPException(503, 'capacity_configuration_invalid') from None
 
 
@@ -134,14 +162,18 @@ def application_limit(db, env, settings):
 
 
 def eligible(plan, account, env):
+    if plan.get('model_credit_usd_micros', 0) > 0:
+        return True
     return (plan['storage_gib'] >= env.storage_gib and
             plan['application_limit'] >= account.plan['application_limit'] and
-            (plan['storage_gib'] > env.storage_gib or plan['application_limit'] > account.plan['application_limit']))
+            (plan['storage_gib'] > env.storage_gib or plan['application_limit'] > account.plan['application_limit'] or
+             plan.get('model_credit_usd_micros', 0) > 0))
 
 
 def order_out(order):
-    return {key: getattr(order, key) for key in ('id', 'plan', 'status', 'payment_status', 'stage',
-        'error_code', 'attempt', 'created_at', 'started_at', 'completed_at')}
+    return {**{key: getattr(order, key) for key in ('id', 'plan', 'status', 'payment_status', 'stage',
+        'error_code', 'attempt', 'created_at', 'started_at', 'completed_at')},
+        'model_credit_status': order.evidence.get('model_credit_status', 'pending' if order.plan.get('model_credit_usd_micros', 0) else 'not_required')}
 
 
 def sample_storage(db, env, observed):
@@ -229,10 +261,14 @@ def create_router(principal_dependency):
                                                                      UserApplication.status != 'deleted'))
         available = settings.capacity_upgrades_enabled and settings.test_payments_enabled
         result = {'plan': account.plan, 'mode': 'test' if available else 'disabled',
-            'plans': [plan for plan in catalog(settings) if eligible(plan, account, env)] if available else [],
+            'trial': {'storage_gib': settings.default_environment_storage_gib,
+                      'application_limit': settings.default_application_limit,
+                      **estimate_tokens(db, settings, 1000000)},
+            'plans': [plan for plan in catalog(settings, db) if eligible(plan, account, env)] if available else [],
             'active_order': order_out(active) if active else None, 'orders': [order_out(order) for order in orders],
             'applications': {'used': apps, 'limit': account.plan['application_limit']},
             'object_storage': storage_out(db.get(UserObjectStorage, env.id), settings) if settings.object_storage_enabled else None,
+            'wallet': wallet_out(db, env, settings),
             'storage': {'budget_bytes': sum(value['budget_bytes'] or 0 for value in components),
                 'pending_capacity_bytes': max(0, (active.plan['storage_gib'] - env.storage_gib) * GIB) if active else 0,
                 'known_used_bytes': sum(row.used_bytes for row in fresh) if fresh else None,
@@ -256,7 +292,7 @@ def create_router(principal_dependency):
             return order_out(previous)
         if account.active_order_id:
             raise HTTPException(409, 'capacity_order_in_progress')
-        plan = next((plan for plan in catalog(settings) if plan['id'] == body.plan_id), None)
+        plan = next((plan for plan in catalog(settings, db) if plan['id'] == body.plan_id), None)
         if not plan or plan['version'] != body.plan_version:
             raise HTTPException(409, 'capacity_plan_changed')
         if not eligible(plan, account, env):
@@ -264,7 +300,11 @@ def create_router(principal_dependency):
         service = db.get(WorkspaceFileService, env.id)
         if not service or service.status != 'ready' or not db.get(WorkspaceVolumeBinding, env.id):
             raise HTTPException(409, 'capacity_space_preparing')
-        order = CapacityOrder(environment_id=env.id, idempotency_key=idempotency_key, plan=plan)
+        keep = plan['storage_gib'] < env.storage_gib or plan['application_limit'] < account.plan['application_limit']
+        snapshot = {**plan, 'storage_gib': max(plan['storage_gib'], env.storage_gib),
+                    'application_limit': max(plan['application_limit'], account.plan['application_limit'])}
+        order = CapacityOrder(environment_id=env.id, idempotency_key=idempotency_key, plan=snapshot,
+                              evidence={'keep_current_plan': keep})
         db.add(order)
         db.flush()
         account.active_order_id = order.id

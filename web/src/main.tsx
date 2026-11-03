@@ -4,6 +4,7 @@ import type { UserManager } from 'oidc-client-ts';
 import { api, desktop, identity, initTransport, setBearer } from './api';
 import type { IdentityConfig, Operation, Project, Quota, Resource, Tenant } from './api';
 import './style.css';
+import AISettings from './AISettings';
 
 const labels: Record<string, string> = {workspace: '工作空间', agent: '编程助手', database: '数据库', bucket: '对象存储', deployment: '应用部署', requested: '已提交', planned: '方案已生成', cancelled: '已取消'};
 
@@ -11,6 +12,7 @@ function App() {
   const [manager, setManager] = useState<UserManager>();
   const [ready, setReady] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [tenants, setTenants] = useState<Tenant[]>([]);
@@ -31,7 +33,7 @@ function App() {
     setError(''); setBusy(true);
     try {await action();} catch (e) {setError(e instanceof Error ? e.message : '操作未完成。');} finally {setBusy(false);}
   }
-  async function loadTenants() {const values = await api<Tenant[]>('/v1/tenants'); setTenants(values); setTenantId(values[0]?.id || '');}
+  async function loadTenants() {const [values,me] = await Promise.all([api<Tenant[]>('/v1/tenants'),api<{platform_admin:boolean}>('/v1/me')]); setIsAdmin(me.platform_admin); setTenants(values); setTenantId(values[0]?.id || '');}
   async function refreshResources() {
     const [r, q, o] = await Promise.all([api<Resource[]>(`${tenantPath}/projects/${projectId}/resources`), api<Quota>(tenantPath + '/quota'), api<Operation[]>(tenantPath + '/operations')]);
     setResources(r); setQuota(q); setOperations(o);
@@ -56,11 +58,12 @@ function App() {
   useEffect(() => {setResources([]); if (projectId) void perform(refreshResources);}, [projectId]);
 
   return <div className="shell">
-    <aside><div className="brand">◈ <strong>开发空间</strong></div><div className="aside-caption">从想法到可运行的项目</div><div className="nav active">项目与资源</div><div className="aside-footer">内部预览 · 第一版</div></aside>
-    <main><header><div><div className="eyebrow">你的项目工作台</div><h1>让想法有自己的空间。</h1><p>在一个地方管理项目、开发资源和发布申请。</p></div>{signedIn && <button className="subtle" onClick={() => void manager?.signoutRedirect()}>退出登录</button>}</header>
+    <aside><div className="brand">◈ <strong>CodeChat 管理平台</strong></div><div className="aside-caption">模型、套餐与平台资源</div><div className="nav active">平台管理</div><div className="aside-footer">内部预览</div></aside>
+    <main><header><div><div className="eyebrow">管理员控制台</div><h1>管理模型与服务权益</h1><p>配置普通聊天与编程模型、充值折算规则及套餐。用户请从 LibreChat 使用个人空间。</p></div>{signedIn && <button className="subtle" onClick={() => void manager?.signoutRedirect()}>退出登录</button>}</header>
       {error && <div className="error" role="alert">{error}</div>}
       {!signedIn ? <section className="panel welcome"><span className="symbol">↗</span><h2>从统一登录开始</h2><p>{desktop ? '桌面进程连接已就绪。桌面登录回调尚未接入，请通过浏览器使用。' : '使用组织账号，进入你的项目空间。'}</p><button disabled={!ready || !manager || busy} onClick={() => void perform(async () => manager?.signinRedirect())}>使用 Authentik 登录</button></section> : <>
-        <div className="notice">当前支持提交资源申请并查看方案。工作空间、助手和应用将在完成开通集成后提供运行入口。</div>
+        {isAdmin && <AISettings/>}
+        <div className="notice">此处保留资源申请与规划记录。普通用户的聊天、编程、文件和应用管理请使用 LibreChat。</div>
         <section className="toolbar"><label>当前空间<select value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>当前项目<select value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">选择项目</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></section>
         {!tenantId ? <section className="panel"><h2>创建你的个人空间</h2><p>项目、开发和部署资源都记入这个空间的额度。</p><form onSubmit={e => {e.preventDefault(); void perform(async () => {await api('/v1/tenants', 'POST', {name}); await loadTenants(); setName('');});}}><input aria-label="空间名称" required value={name} onChange={e => setName(e.target.value)} placeholder="空间名称" maxLength={120}/><button disabled={busy}>创建空间</button></form></section> : <>
           <section className="stats">{[['cpu_millicores', 'CPU 预留', 'm'], ['memory_mib', '内存预留', ' MiB'], ['storage_gib', '存储预留', ' GiB']].map(([key, title, unit]) => <article key={key}><span>{title}</span><strong>{quota?.reserved[key] ?? '—'}<small> / {quota?.limits[key] ?? '—'}{unit}</small></strong></article>)}</section>

@@ -18,12 +18,13 @@ class RunRequest(BaseModel):
     task_id: str = Field(pattern=r'^[0-9a-f]{64}$')
     prompt: str = Field(min_length=1, max_length=400000)
     api_key: str = Field(min_length=32, max_length=512, repr=False)
+    model: str | None = Field(default=None, min_length=1, max_length=200)
 
 
-def chunk(task_id: str, content: str = '', *, finish=False) -> str:
+def chunk(task_id: str, content: str = '', *, finish=False, progress=False) -> str:
     value = {'id': 'chatcmpl-' + task_id[:24], 'object': 'chat.completion.chunk',
              'created': int(time.time()), 'model': 'OpenHands',
-             'choices': [{'index': 0, 'delta': {'content': content} if content else {},
+             'choices': [{'index': 0, 'delta': {('reasoning_content' if progress else 'content'): content} if content else {},
                           'finish_reason': 'stop' if finish else None}]}
     return 'data: ' + json.dumps(value, ensure_ascii=False) + '\n\n'
 
@@ -66,10 +67,14 @@ def execute_sdk(prompt, api_key, root, base_url, model, emit, max_iterations, ca
     from openhands.tools.terminal import TerminalTool
 
     submitted = []
+    reported = set()
     def progress(event):
         if isinstance(event, ActionEvent) and event.tool_name != 'finish':
             labels = {'terminal': '正在运行命令或测试', 'file_editor': '正在读取或修改文件'}
-            emit(labels.get(event.tool_name, '正在执行编程工具') + '…\n\n')
+            label = labels.get(event.tool_name, '正在执行编程工具')
+            if label not in reported:
+                reported.add(label)
+                emit({'kind': 'progress', 'text': label + '…\n\n'})
         if isinstance(event, ObservationEvent) and event.tool_name == 'terminal':
             reply = delivery_reply(getattr(event.observation, 'text', ''))
             if reply:
@@ -156,7 +161,7 @@ def create_app(root, state_dir, token, base_url, model, *, runner=execute_sdk, m
         def work():
             try:
                 os.environ['CODECHAT_TASK_ID'] = body.task_id
-                result = runner(body.prompt, body.api_key, root, base_url, model, events.put, max_iterations, cancel)
+                result = runner(body.prompt, body.api_key, root, base_url, body.model or model, events.put, max_iterations, cancel)
                 text = str(result).replace(body.api_key, '[redacted]')
                 if timed_out.is_set():
                     text = '本轮编程已超时并请求停止；已完成的文件保留。已提交的发布任务在后台独立执行，请单独查看其状态。'
@@ -177,7 +182,7 @@ def create_app(root, state_dir, token, base_url, model, *, runner=execute_sdk, m
         async def stream():
             deadline = time.monotonic() + max_seconds
             try:
-                yield chunk(body.task_id, 'OpenHands 已连接到你的个人空间，开始处理。\n\n')
+                yield chunk(body.task_id, '已连接个人编程空间，开始处理。\n\n', progress=True)
                 while True:
                     if time.monotonic() >= deadline and not finished.is_set():
                         timed_out.set()
@@ -192,7 +197,10 @@ def create_app(root, state_dir, token, base_url, model, *, runner=execute_sdk, m
                         continue
                     if value is None:
                         break
-                    yield chunk(body.task_id, value.replace(body.api_key, '[redacted]'))
+                    if isinstance(value, dict) and value.get('kind') == 'progress':
+                        yield chunk(body.task_id, value['text'].replace(body.api_key, '[redacted]'), progress=True)
+                    else:
+                        yield chunk(body.task_id, value.replace(body.api_key, '[redacted]'))
                 yield chunk(body.task_id, finish=True)
                 yield 'data: [DONE]\n\n'
             finally:

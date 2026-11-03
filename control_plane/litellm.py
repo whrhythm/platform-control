@@ -84,7 +84,7 @@ class LiteLLMGateway:
         # Never set the budget again here: this would overwrite usage/administrator decisions.
         return user_id
 
-    def ensure_key(self, user_id: str, candidate: str, *, allow_create: bool = True) -> str:
+    def ensure_key(self, user_id: str, candidate: str, *, allow_create: bool = True, require_models: bool = True) -> str:
         if not candidate.startswith('sk-') or len(candidate) < 35:
             raise ValueError('A securely generated, previously persisted key is required')
         key_hash = hashlib.sha256(candidate.encode()).hexdigest()
@@ -99,6 +99,6 @@ class LiteLLMGateway:
         if response.status_code != 200:
             raise LiteLLMError('gateway_key_lookup_failed')
         info = self._json(response).get('info')
-        if not isinstance(info, dict) or info.get('user_id') != user_id or set(info.get('models') or []) != set(self.models):
+        if not isinstance(info, dict) or info.get('user_id') != user_id or (require_models and not set(self.models) <= set(info.get('models') or [])):
             raise LiteLLMError('gateway_key_identity_conflict')
         return key_hash

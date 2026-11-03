@@ -1,0 +1,16 @@
+name: model-membership
+claims:
+  - claim: Personal users and virtual keys both enforce cumulative USD max_budget and retain spend.
+    status: verified
+    source: https://docs.litellm.ai/docs/proxy/users
+    reason: Installed API schema and owner account were read on 2026-11-03; both limits are initially 1 USD with preserved existing spend.
+    verification: The actual HTTP adapters are exercised against a local simulation; a committed user update is followed by a client timeout, then resumed with the same absolute targets.
+  - claim: Token totals are provided in the metadata of user/daily/activity/aggregated.
+    status: verified
+    source: Installed LiteLLM v1.109.0-dev.2 OpenAPI and read-only owner response.
+    reason: The response has total_tokens, total_prompt_tokens, total_completion_tokens and has_more; incomplete totals are not treated as zero.
+    verification: Read-only installed response and local HTTP sample assertions.
+limitations:
+  - The mock does not establish real cache invalidation, payment settlement or LiteLLM authentication enforcement.
+  - External concurrent budget edits have no provider compare-and-set guarantee; managed budgets use this controller as their writer.
+  - Provider-owned workspace discovery was skipped because the CLI session is signed out.

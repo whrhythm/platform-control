@@ -15,27 +15,39 @@ from .database import get_db
 from .auth import Principal
 from .models import ModelCredential, UserEnvironment, WorkspaceFileService, WorkspaceVolumeBinding
 from .settings import get_settings
+from .workspace_gateway import own_environment
 
 router = APIRouter(prefix='/agent/v1', tags=['programming'])
 
 
-def resolve_capability(model, settings):
+def resolve_capability(model, settings, *, capability=None, db=None):
     """Route names are server configuration, never browser-supplied destinations."""
-    allowed = tuple(value.strip() for value in settings.litellm_models.split(',') if value.strip())
+    from .ai_policy import effective_policy
+    policy = effective_policy(db, settings) if db is not None else None
+    allowed = tuple(policy['allowed_models']) if policy else tuple(value.strip() for value in settings.litellm_models.split(',') if value.strip())
+    chat_default = policy['chat_model'] if policy else settings.capability_chat_model
+    coding_default = policy['coding_model'] if policy else (allowed[0] if allowed else '')
+    if capability:
+        if capability not in ('chat', 'coding'):
+            raise HTTPException(400, 'Unsupported capability')
+        actual = model if model in allowed else (chat_default if capability == 'chat' else coding_default)
+        if model not in (*allowed, settings.capability_chat_route, settings.capability_coding_route, 'OpenHands') or actual not in allowed:
+            raise HTTPException(400, 'Unsupported model')
+        return capability, actual
     if settings.capabilities_enabled:
         routes = (settings.capability_chat_route, settings.capability_coding_route)
         if (not all(routes) or len(set(routes)) != 2 or
                 any(route == 'OpenHands' or route in allowed for route in routes)):
             raise HTTPException(503, 'Capability routing is misconfigured')
         if model == settings.capability_coding_route:
-            return 'coding', None
+            return 'coding', coding_default if policy else None
         if model == settings.capability_chat_route:
-            actual = settings.capability_chat_model
+            actual = chat_default
             if not actual or actual not in allowed:
                 raise HTTPException(503, 'Chat capability is not configured')
             return 'chat', actual
     if model == 'OpenHands':
-        return 'coding', None
+        return 'coding', coding_default if policy else None
     if isinstance(model, str) and model in allowed:
         return 'chat', model
     raise HTTPException(400, 'Unsupported capability or model')
@@ -145,9 +157,18 @@ def agent_prompt(messages, *, python_base='', pip_index=''):
             + platform + '\n\n' + '\n\n'.join(history))
 
 
+@router.get('/models')
+def models(principal=Depends(model_principal), db=Depends(get_db), settings=Depends(get_settings)):
+    from .ai_policy import public_models
+    own_environment(db, principal)
+    return {'object': 'list', 'data': [{'id': model['name'], 'object': 'model', 'owned_by': 'CodeChat'}
+                                     for model in public_models(db, settings)['models']]}
+
+
 @router.post('/chat/completions')
 async def completions(request: Request, authorization: str = Header(default=''),
-                      x_codechat_conversation: str = Header(default=''), db=Depends(get_db), settings=Depends(get_settings)):
+                      x_codechat_conversation: str = Header(default=''), x_codechat_capability: str = Header(default=''),
+                      db=Depends(get_db), settings=Depends(get_settings)):
     if not settings.workspace_agent_image or not settings.litellm_url or not settings.litellm_master_key:
         raise HTTPException(503, 'Programming is not configured')
     if not authorization.startswith('Bearer '):
@@ -164,7 +185,9 @@ async def completions(request: Request, authorization: str = Header(default=''),
     if not isinstance(body, dict):
         raise HTTPException(400, 'Invalid conversation')
     model = body.get('model')
-    capability, actual_model = resolve_capability(model, settings)
+    # Native title generation uses the explicit chat route even from a coding thread.
+    requested = 'chat' if model == settings.capability_chat_route else x_codechat_capability
+    capability, actual_model = resolve_capability(model, settings, capability=requested, db=db)
     context = ssl.create_default_context(cafile=settings.workspace_service_ca)
     client = httpx.AsyncClient(verify=context, timeout=httpx.Timeout(600, connect=10), trust_env=False)
     try:
@@ -179,7 +202,7 @@ async def completions(request: Request, authorization: str = Header(default=''),
                                   pip_index=settings.workspace_pip_index_url)
             task_id = hashlib.sha256((x_codechat_conversation + '\n' + prompt).encode()).hexdigest()
             target = f'https://workspace-files.{namespace}.svc:8091/v1/run'
-            payload = {'task_id': task_id, 'prompt': prompt, 'api_key': authorization[7:]}
+            payload = {'task_id': task_id, 'prompt': prompt, 'api_key': authorization[7:], 'model': actual_model}
             headers = {'Authorization': 'Bearer ' + service_token}
         else:
             target = settings.litellm_url.rstrip('/') + '/v1/chat/completions'

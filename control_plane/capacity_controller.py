@@ -53,6 +53,9 @@ def reconcile_capacity(sessions, provider, env_id, settings, *, probe=None):
             return False
         if order.status == 'failed':
             return True
+        if order.plan.get('model_credit_usd_micros', 0) and order.evidence.get('model_credit_status') != 'applied':
+            order.stage = 'crediting_models'
+            return True
         started = order.started_at.replace(tzinfo=timezone.utc) if order.started_at and order.started_at.tzinfo is None else order.started_at
         if (not started or not 1 <= settings.capacity_resize_timeout_seconds <= 86400 or
                 not 0 <= settings.capacity_filesystem_overhead_percent <= 20):
@@ -91,7 +94,9 @@ def reconcile_capacity(sessions, provider, env_id, settings, *, probe=None):
                     order.status, order.error_code = 'failed', 'capacity_identity_requires_review'
                     return
                 env.storage_gib = order.plan['storage_gib']
-                account.plan, account.active_order_id, account.updated_at = dict(order.plan), None, now()
+                active_plan = dict(account.plan) if order.evidence.get('keep_current_plan') else dict(order.plan)
+                active_plan.update(storage_gib=order.plan['storage_gib'], application_limit=order.plan['application_limit'])
+                account.plan, account.active_order_id, account.updated_at = active_plan, None, now()
                 order.status, order.completed_at, order.error_code = 'ready', now(), None
                 db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=issuer, subject=subject,
                     action='capacity.activated', target_id=order_id))

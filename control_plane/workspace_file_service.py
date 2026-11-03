@@ -11,15 +11,18 @@ import hmac
 import os
 import threading
 import time
+import tempfile
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, Security
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .workspace_files import FileVersionConflict, InvalidWorkspacePath, UploadTooLarge, WorkspaceFiles
 from .workspace_usage import measure_usage
 from .workspace_snapshot import snapshot
+from .workspace_archive import archive
 
 
 def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024 * 1024, max_inflight: int = 4, usage_root: str | None = None) -> FastAPI:
@@ -104,6 +107,36 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
                 return {'entries': await run_in_threadpool(files.list_directory, path)}
         except (OSError, ValueError) as error:
             raise sanitized_error(error) from None
+
+    @app.get('/v1/archive', dependencies=[Depends(authenticate)], response_class=Response)
+    async def download_archive(path: str = Query(min_length=1, max_length=4096)):
+        await snapshots.acquire()
+        temporary, released = None, False
+        def release():
+            nonlocal released
+            if not released:
+                released = True
+                if temporary:
+                    temporary.close()
+                snapshots.release()
+        try:
+            temporary = tempfile.TemporaryFile()
+            _, skipped = await run_in_threadpool(archive, files, path, output=temporary)
+            async def content():
+                while chunk := await run_in_threadpool(temporary.read, 65536):
+                    yield chunk
+            class ArchiveResponse(StreamingResponse):
+                async def __call__(self, scope, receive, send):
+                    try:
+                        await super().__call__(scope, receive, send)
+                    finally:
+                        release()
+            return ArchiveResponse(content(), media_type='application/zip', headers={'X-CodeChat-Archive-Skipped': str(skipped)})
+        except BaseException as error:
+            release()
+            if isinstance(error, (OSError, ValueError)):
+                raise sanitized_error(error) from None
+            raise
 
     @app.post('/v1/directories', status_code=201, dependencies=[Depends(authenticate)], description='Create one directory. Parents must already exist; existing entries are never overwritten.', responses={400: {'description': 'Invalid path'}, 401: {'description': 'Service authentication required'}, 404: {'description': 'Parent directory not found'}, 409: {'description': 'Destination already exists'}, 507: {'description': 'Storage full'}})
     async def create_directory(path: str = Query(min_length=1, max_length=4096)):

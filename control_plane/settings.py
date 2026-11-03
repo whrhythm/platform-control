@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./control-plane.db"
     database_pool_size: int = Field(default=5, ge=1, le=50)
     database_pool_overflow: int = Field(default=10, ge=0, le=20)
+    model_settlement_cny_per_usd: str = '7.000000'
     oidc_issuer: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""

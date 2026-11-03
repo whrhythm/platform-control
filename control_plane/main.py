@@ -22,7 +22,7 @@ from .settings import get_settings
 from .litellm import LiteLLMError
 from .model_credentials import provision_model_key
 from .user_environments import identity_digest, plan_user_environment
-from .workspace_gateway import call_files
+from .workspace_gateway import call_files, own_environment
 from .models import WorkspaceFileService
 from .programming import router as programming_router
 from .programming import model_principal
@@ -36,7 +36,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0013_storage_providers":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0014_ai_membership":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -338,6 +338,17 @@ async def workspace_read(path: str = Query(min_length=1, max_length=4096),
         result = await run_in_threadpool(call_files, db, principal, get_settings(), 'GET', '/v1/file', path)
     return Response(result.content, media_type='application/octet-stream', headers={
         'Cache-Control': 'no-store', **({'ETag': result.headers['etag']} if 'etag' in result.headers else {})})
+
+
+@app.get('/internal/v1/workspace/archive', tags=['workspace-files'])
+async def workspace_archive(path: str = Query(min_length=1, max_length=4096),
+                            principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    from fastapi.concurrency import run_in_threadpool
+    async with workspace_transfer_slots:
+        result = await run_in_threadpool(call_files, db, principal, get_settings(), 'GET', '/v1/archive', path)
+    return Response(result.content, media_type='application/zip', headers={
+        'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+        'X-CodeChat-Archive-Skipped': result.headers.get('X-CodeChat-Archive-Skipped', '0')})
 
 
 @app.put('/internal/v1/workspace/file', tags=['workspace-files'], status_code=201)
@@ -666,6 +677,16 @@ def set_quota(tenant_id: str, body: QuotaInput, principal: Principal = Depends(p
     audit(db, principal, tenant_id, "admin.quota.set", tenant_id)
     db.commit()
     return tenant
+
+
+from .ai_policy import admin_router as create_ai_admin_router, public_models
+app.include_router(create_ai_admin_router(platform_admin))
+
+
+@app.get('/internal/v1/workspace/models', tags=['models'])
+def workspace_models(principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    own_environment(db, principal)
+    return public_models(db, get_settings())
 
 
 if get_settings().static_dir:

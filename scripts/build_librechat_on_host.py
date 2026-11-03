@@ -30,6 +30,7 @@ command = (
     ' --build-arg ALPINE_MIRROR=https://mirrors.tuna.tsinghua.edu.cn/alpine'
     ' --build-arg NPM_REGISTRY=https://registry.npmmirror.com'
     ' --build-arg VITE_CODECHAT_API_ORIGIN=https://platform.k3s.local:30443'
+    ' --build-arg VITE_CODECHAT_DEFAULT_LANGUAGE=zh-Hans'
     ' -t codechat-librechat:' + tag + ' .'
     ' && CODECHAT_IMAGE_TAG=' + tag + ' python3 ' + shlex.quote(destination + '/publisher.py') +
     ' > ' + shlex.quote(destination + '/published.json')

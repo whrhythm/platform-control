@@ -17,6 +17,33 @@ class Base(DeclarativeBase):
     pass
 
 
+class AIConfiguration(Base):
+    __tablename__ = 'ai_configuration'
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    catalog: Mapped[list] = mapped_column(JSON, default=list)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ModelCredit(Base):
+    __tablename__ = 'model_credits'
+    order_id: Mapped[str] = mapped_column(ForeignKey('capacity_orders.id'), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    amount_micros: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(32), default='pending')
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ModelWallet(Base):
+    __tablename__ = 'model_wallets'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    sample: Mapped[dict] = mapped_column(JSON, default=dict)
+    status: Mapped[str] = mapped_column(String(32), default='unknown')
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Tenant(Base):
     __tablename__ = "tenants"
     __table_args__ = (UniqueConstraint("owner_issuer", "owner_subject"),)

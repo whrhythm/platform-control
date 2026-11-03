@@ -5,6 +5,47 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/agent/v1/models": {
+      "get": {
+        "tags": [
+          "programming"
+        ],
+        "summary": "Models",
+        "operationId": "models_agent_v1_models_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/chat/completions": {
       "post": {
         "tags": [
@@ -31,6 +72,16 @@
               "type": "string",
               "default": "",
               "title": "X-Codechat-Conversation"
+            }
+          },
+          {
+            "name": "x-codechat-capability",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Capability"
             }
           }
         ],
@@ -2057,6 +2108,68 @@
         }
       }
     },
+    "/internal/v1/workspace/archive": {
+      "get": {
+        "tags": [
+          "workspace-files"
+        ],
+        "summary": "Workspace Archive",
+        "operationId": "workspace_archive_internal_v1_workspace_archive_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/tenants/{tenant_id}/projects": {
       "post": {
         "tags": [
@@ -3188,10 +3301,177 @@
           }
         }
       }
+    },
+    "/v1/admin/ai": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Get Policy",
+        "operationId": "get_policy_v1_admin_ai_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Save Policy",
+        "operationId": "save_policy_v1_admin_ai_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SavePolicy"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/internal/v1/workspace/models": {
+      "get": {
+        "tags": [
+          "models"
+        ],
+        "summary": "Workspace Models",
+        "operationId": "workspace_models_internal_v1_workspace_models_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AIPolicy": {
+        "properties": {
+          "chat_model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Chat Model"
+          },
+          "coding_model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Coding Model"
+          },
+          "allowed_models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Allowed Models"
+          },
+          "cny_per_usd": {
+            "type": "string",
+            "pattern": "^\\d{1,4}(?:\\.\\d{1,6})?$",
+            "title": "Cny Per Usd"
+          },
+          "plans": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Plans"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "chat_model",
+          "coding_model",
+          "allowed_models",
+          "cny_per_usd",
+          "plans"
+        ],
+        "title": "AIPolicy"
+      },
       "AgentSpec": {
         "properties": {
           "kind": {
@@ -3375,6 +3655,28 @@
                 "type": "null"
               }
             ]
+          },
+          "wallet": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WalletOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "trial": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trial"
           }
         },
         "type": "object",
@@ -3464,6 +3766,11 @@
               }
             ],
             "title": "Completed At"
+          },
+          "model_credit_status": {
+            "type": "string",
+            "title": "Model Credit Status",
+            "default": "not_required"
           }
         },
         "type": "object",
@@ -3521,6 +3828,61 @@
           "currency": {
             "type": "string",
             "title": "Currency"
+          },
+          "model_credit_cny_minor": {
+            "type": "integer",
+            "title": "Model Credit Cny Minor",
+            "default": 0
+          },
+          "model_credit_usd_micros": {
+            "type": "integer",
+            "title": "Model Credit Usd Micros",
+            "default": 0
+          },
+          "settlement_cny_per_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settlement Cny Per Usd"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description",
+            "default": ""
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Features"
+          },
+          "estimated_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Tokens"
+          },
+          "reference_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Model"
           }
         },
         "type": "object",
@@ -4092,6 +4454,25 @@
         ],
         "title": "ResourceOut"
       },
+      "SavePolicy": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "policy": {
+            "$ref": "#/components/schemas/AIPolicy"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "policy"
+        ],
+        "title": "SavePolicy"
+      },
       "StorageAccountOut": {
         "properties": {
           "budget_bytes": {
@@ -4458,6 +4839,168 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WalletOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "unknown",
+              "stale"
+            ],
+            "title": "Status"
+          },
+          "allocated_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocated Usd Micros"
+          },
+          "spent_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spent Usd Micros"
+          },
+          "remaining_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Usd Micros"
+          },
+          "remaining_cny_minor": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Cny Minor"
+          },
+          "cny_per_usd": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cny Per Usd"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          },
+          "prompt_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt Tokens"
+          },
+          "completion_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completion Tokens"
+          },
+          "estimated_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Tokens"
+          },
+          "reference_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Model"
+          },
+          "usage_start": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage Start"
+          },
+          "usage_end": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage End"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "WalletOut"
       },
       "WorkspaceSpec": {
         "properties": {

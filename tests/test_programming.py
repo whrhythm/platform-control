@@ -38,6 +38,32 @@ def test_capability_routes_preserve_legacy_and_reject_unconfigured_or_ambiguous_
         assert exc.value.status_code == 503
 
 
+def test_explicit_capability_is_independent_of_real_model():
+    settings=Settings(litellm_models='chat-model,coding-model',capabilities_enabled=True,capability_chat_model='chat-model')
+    assert resolve_capability('coding-model',settings,capability='chat') == ('chat','coding-model')
+    assert resolve_capability('chat-model',settings,capability='coding') == ('coding','chat-model')
+    assert resolve_capability('OpenHands',settings,capability='chat') == ('chat','chat-model')
+    with pytest.raises(HTTPException):resolve_capability('not-allowed',settings,capability='coding')
+
+
+def test_selected_agent_model_and_collapsible_progress_are_distinct_from_final_content(tmp_path):
+    import json
+    observed=[]
+    def runner(prompt,key,root,url,model,emit,limit,cancel):
+        observed.append(model)
+        emit({'kind':'progress','text':'正在处理文件'})
+        return '文件已准备好'
+    client=TestClient(create_app(tmp_path,tmp_path/'state','s'*40,'http://provider','default-model',runner=runner))
+    response=client.post('/v1/run',headers={'Authorization':'Bearer '+'s'*40},json={
+        'task_id':'e'*64,'prompt':'create a file','api_key':'sk-'+'k'*48,'model':'selected-model'})
+    chunks=[json.loads(line[6:])['choices'][0]['delta'] for line in response.text.splitlines()
+            if line.startswith('data: {')]
+    assert observed == ['selected-model']
+    assert any(value.get('reasoning_content') == '正在处理文件' for value in chunks)
+    assert '正在处理文件' not in ''.join(value.get('content','') for value in chunks)
+    assert any(value.get('content') == '文件已准备好' for value in chunks)
+
+
 @pytest.mark.parametrize('route,coding', [('codechat-chat', False), ('codechat-coding', True), ('OpenHands', True)])
 def test_http_capability_switch_forwards_same_history_and_issued_key(monkeypatch, route, coding):
     import json
@@ -67,6 +93,8 @@ def test_http_capability_switch_forwards_same_history_and_issued_key(monkeypatch
     app = FastAPI()
     app.include_router(programming.router)
     class Database:
+        def get(self, model, identifier):
+            return None
         def rollback(self):
             captured['released_transaction'] = True
     app.dependency_overrides[programming.get_db] = lambda: Database()

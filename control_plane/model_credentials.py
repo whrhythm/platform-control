@@ -14,7 +14,8 @@ from .settings import Settings
 
 
 def provision_model_key(db: Session, principal: Principal, settings: Settings, tenant_id: str) -> str:
-    models = tuple(model.strip() for model in settings.litellm_models.split(',') if model.strip())
+    from .ai_policy import effective_policy
+    models = tuple(effective_policy(db, settings)['allowed_models'])
     if not all((settings.litellm_url, settings.litellm_master_key, models, settings.model_credential_encryption_key)):
         raise LiteLLMError('provisioning_not_configured')
     try:
@@ -46,7 +47,7 @@ def provision_model_key(db: Session, principal: Principal, settings: Settings, t
         with httpx.Client(base_url=settings.litellm_url, timeout=10.0, trust_env=False) as client:
             gateway = LiteLLMGateway(client, settings.litellm_master_key, models)
             user_id = gateway.ensure_user(principal.issuer, principal.subject, allow_create=record.status == 'pending')
-            gateway.ensure_key(user_id, candidate, allow_create=record.status == 'pending')
+            gateway.ensure_key(user_id, candidate, allow_create=record.status == 'pending', require_models=record.status == 'pending')
         created = record.status == 'pending'
         record.status = 'ready'
         if created:
