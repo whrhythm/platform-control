@@ -179,6 +179,7 @@ def test_programming_manifest_mounts_same_disk_and_upgrade_changes_revision():
 def test_prompt_preserves_context_and_rejects_image_payloads():
     prompt = agent_prompt([{'role': 'assistant', 'content': 'created demo'}, {'role': 'user', 'content': 'edit demo'}])
     assert prompt.index('created demo') < prompt.index('edit demo')
+    assert '10001:10001' in prompt and '0.0.0.0:8080' in prompt and 'COPY' in prompt
     with pytest.raises(HTTPException):
         agent_prompt([{'role': 'user', 'content': [{'type': 'image_url', 'image_url': {}}]}])
 

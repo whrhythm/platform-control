@@ -321,6 +321,11 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         # has not yet observed the replacement. Do not fail the new rollout.
         if not actual or actual.get('status', {}).get('observedGeneration', 0) < actual['metadata'].get('generation', 1):
             return
+        if not deployment_ready(actual):
+            try:
+                update(observation=observe(cluster, namespace, app.id))
+            except httpx.HTTPError:
+                pass
         if any(condition.get('status') == 'False' and condition.get('reason') == 'ProgressDeadlineExceeded'
                           for condition in actual.get('status', {}).get('conditions', [])):
             raise DeliveryError('application_start_failed')
