@@ -242,3 +242,11 @@ def test_application_creation_uses_activated_account_limit(capacity_harness, mon
     assert client.post(url, headers=auth).status_code == 202
     assert client.post(url.replace('project-new', 'project-last'), headers=auth).status_code == 202
     assert client.post(url.replace('project-new', 'project-excess'), headers=auth).status_code == 409
+    with client.session_factory.begin() as db:
+        db.add(UserApplication(environment_id=env_id, project_path='project-deleted', status='deleted'))
+    restored = url.replace('project-new', 'project-deleted')
+    assert client.post(restored, headers=auth).status_code == 409
+    with client.session_factory.begin() as db:
+        db.scalar(select(UserApplication).where(UserApplication.environment_id == env_id,
+                  UserApplication.project_path == 'project-0')).status = 'deleted'
+    assert client.post(restored, headers=auth).status_code == 202

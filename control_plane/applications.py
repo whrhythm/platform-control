@@ -59,11 +59,12 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(409, 'Wait for failed release cleanup')
         if app and app.error_code and 'requires_review' in app.error_code:
             raise HTTPException(409, 'Previous operation requires administrator review')
-        if app is None:
+        if app is None or app.status == 'deleted':
             active = list(db.scalars(select(UserApplication.id).where(UserApplication.environment_id == env.id,
                                                                       UserApplication.status != 'deleted')))
             if len(active) >= application_limit(db, env, settings):
                 raise HTTPException(409, 'Application limit reached')
+        if app is None:
             app = UserApplication(environment_id=env.id, project_path=path, resources={'request_id': x_codechat_task_id})
             db.add(app)
         else:
