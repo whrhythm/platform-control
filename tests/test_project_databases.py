@@ -112,7 +112,7 @@ def test_controller_delivery_metering_stale_and_explicit_destroy(databases):
     provider.failure = TimeoutError()
     reconcile_databases(client.session_factory, cluster, settings, provider)
     account = client.get('/internal/v1/workspace/capacity', headers=auth).json()
-    assert account['storage']['known_used_bytes'] is None
+    assert account['storage']['known_used_bytes'] == 12
     assert account['storage']['components'][1]['status'] == 'stale'
     assert client.get(PREFIX, headers=auth).json()['databases'][0]['status'] == 'ready'
     result = client.post(PREFIX + '/' + identifier + '/delete', headers=auth, json={'confirmation': 'demo'})

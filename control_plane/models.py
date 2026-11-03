@@ -179,6 +179,22 @@ class StorageMeasurement(Base):
     used_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(24), default='unknown')
+    budget_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    basis: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    scope_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class UserObjectStorage(Base):
+    __tablename__ = 'user_object_storage'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    generation: Mapped[str] = mapped_column(String(36), default=uuid)
+    bucket_name: Mapped[str] = mapped_column(String(63), unique=True)
+    access_key: Mapped[str] = mapped_column(String(32), unique=True)
+    encrypted_secret: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(32), default='requested')
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resources: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
 class ProjectDatabase(Base):

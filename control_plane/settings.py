@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     project_database_budget_mib: int = 256
     project_database_reservation_mib: int = 128
     project_database_limit: int = 2
+    storage_metering_enabled: bool = False
+    object_storage_enabled: bool = False
+    object_storage_endpoint: str = "minio.minio.svc.cluster.local:9000"
+    object_storage_secure: bool = False
+    object_storage_access_key: str = ""
+    object_storage_secret_key: str = ""
+    object_storage_budget_mib: int = 256
+    object_storage_scan_limit: int = 10000
+    storage_sample_max_age_seconds: int = 180
 
 
 @lru_cache

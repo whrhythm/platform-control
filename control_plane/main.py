@@ -27,6 +27,7 @@ from .models import WorkspaceFileService
 from .programming import router as programming_router
 from .programming import model_principal
 from .project_databases import create_router as create_database_router
+from .object_storage import create_router as create_object_router
 from .applications import create_router as create_application_router
 from .capacity import create_router as create_capacity_router
 
@@ -35,7 +36,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0012_project_databases":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0013_storage_providers":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -44,6 +45,7 @@ app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
 app.include_router(programming_router)
 app.include_router(create_application_router(model_principal, prefix='/agent/v1'))
 app.include_router(create_database_router(model_principal, prefix='/agent/v1', agent=True))
+app.include_router(create_object_router(model_principal, prefix='/agent/v1', agent=True))
 workspace_transfer_slots = asyncio.Semaphore(4)
 app.add_middleware(CORSMiddleware, allow_origins=[origin for origin in (get_settings().public_origin, get_settings().additional_public_origin) if origin], allow_methods=["GET", "POST", "PUT", "DELETE"], allow_headers=["Authorization", "Content-Type", "Idempotency-Key"])
 
@@ -293,6 +295,7 @@ def workspace_service_principal(
 app.include_router(create_application_router(workspace_service_principal))
 app.include_router(create_capacity_router(workspace_service_principal))
 app.include_router(create_database_router(workspace_service_principal))
+app.include_router(create_object_router(workspace_service_principal))
 
 
 @app.post('/internal/v1/workspace/ensure', tags=['workspace-files'])

@@ -11,6 +11,10 @@ http.createServer(async (req, res) => {
   const objects = (await pm.state.get('delivery_objects')) || {};
   const mutations = (await pm.state.get('delivery_mutations')) || [];
   if (req.method === 'GET' && path === '__test__/snapshot') return send(res, 200, {objects, mutations});
+  if (req.method === 'GET' && /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/persistentvolumeclaims$/.test(path)) {
+    const inventory = objects[path];
+    return send(res, inventory ? (inventory.__status || 200) : 404, inventory || {});
+  }
   const secretCollection = /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/secrets$/.test(path);
   const databaseSecret = /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/secrets\/database-[a-f0-9]{24}$/.test(path);
   if (secretCollection && req.method === 'POST') {

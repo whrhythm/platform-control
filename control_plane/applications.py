@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .database import get_db
-from .models import AuditEvent, UserApplication, ProjectDatabase
+from .models import AuditEvent, UserApplication, ProjectDatabase, UserObjectStorage
+from .object_storage import secret_name as object_secret_name
 from .project_databases import names as database_names
 from .settings import get_settings
 from .workspace_gateway import own_environment, call_files
@@ -53,6 +54,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         if database and database.status != 'ready':
             raise HTTPException(409, 'Wait for the project database to become ready')
         database_secret = database_names(database)[2] if database else None
+        objects = db.get(UserObjectStorage, env.id)
+        object_secret = object_secret_name(objects) if objects and objects.status == 'ready' else None
         app = db.scalar(select(UserApplication).where(UserApplication.environment_id == env.id,
                                                       UserApplication.project_path == path))
         if app and x_codechat_task_id and app.resources.get('request_id') == x_codechat_task_id:
@@ -79,7 +82,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                              'last_good': app.resources.get('last_good', {})}
             app.status, app.desired_state, app.error_code = 'queued', 'running', None
         db.flush()
-        app.resources = {**app.resources, 'database_secret': database_secret}
+        app.resources = {**app.resources, 'database_secret': database_secret, 'object_storage_secret': object_secret}
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action='application.publish', target_id=app.id))
         try:

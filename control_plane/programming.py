@@ -132,6 +132,10 @@ def agent_prompt(messages, *, python_base='', pip_index=''):
     platform += ('发布后的应用固定以 UID/GID 10001:10001 运行，HTTP 服务监听 0.0.0.0:8080。'
                  '源文件可能是 0600；Dockerfile 的 COPY 使用 --chown=10001:10001，最终 USER 10001:10001，'
                  '不要依赖镜像内另一个用户的 UID，也不要通过放宽用户磁盘文件权限绕过。')
+    platform += ('持久对象文件可使用用户私有 MinIO 桶。先 python -m control_plane.object_cli status 查询一次就绪状态；'
+                 '用 python -m control_plane.object_cli run <工程目录> -- <程序及参数> 为测试进程自动注入 S3 连接。'
+                 '业务代码读取 S3_ENDPOINT_URL、S3_BUCKET 和 CODECHAT_OBJECT_PREFIX，AWS 凭据由平台提供，'
+                 '不要写入源码、文件或聊天。发布同一工程时自动交付。停止/删除应用不会删除对象。')
     return ('你是 CodeChat 的 OpenHands 编程助手。用户的持久个人文件位于当前工作目录。'
             '根据最后一条用户指令实际读取、创建、修改文件并运行必要的测试；不要只展示代码。'
             '先查看现有文件，避免覆盖无关项目。在用户要求的新工程子目录工作。'

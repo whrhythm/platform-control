@@ -11,6 +11,8 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from .tool_output import redacted_output
+
 
 def child_environment(profile, ca_path):
     values = profile['environment']
@@ -68,12 +70,7 @@ def main():
             sensitive = (env['PGPASSWORD'], env['DATABASE_URL'], profile['environment']['DATABASE_URL'])
             with subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                   text=True, errors='replace') as child:
-                while True:
-                    chunk = child.stdout.readline(16384)
-                    if not chunk:
-                        break
-                    for value in sensitive:
-                        chunk = chunk.replace(value, '[redacted]')
+                for chunk in redacted_output(child.stdout, sensitive):
                     print(chunk, end='')
                 return child.wait()
 

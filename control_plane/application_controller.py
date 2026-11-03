@@ -136,8 +136,10 @@ def cleanup_failure(app, env, cluster, settings):
         fallback = bool(good.get('image') and good.get('revision'))
         target = SimpleNamespace(id=app.id, image=good['image'] if fallback else app.image,
                                  revision=good['revision'] if fallback else app.revision,
+                                 project_path=getattr(app, 'project_path', ''),
                                  desired_state='running' if fallback else 'stopped')
-        desired = application_objects(target, env, settings, database_secret=good.get('database_secret') if fallback else None)[-1]
+        desired = application_objects(target, env, settings, database_secret=good.get('database_secret') if fallback else None,
+                                      object_secret=good.get('object_storage_secret') if fallback else None)[-1]
         path = object_path(desired['metadata']['namespace'], 'Deployment', desired['metadata']['name'])
         actual = cluster.get(path)
         if actual:
@@ -252,7 +254,8 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         update(image=image, status='deploying')
         return
     if app.status in ('deploying', 'running', 'stopped', 'failed', 'changing'):
-        objects = application_objects(app, env, settings, database_secret=state.get('database_secret'))
+        objects = application_objects(app, env, settings, database_secret=state.get('database_secret'),
+                                      object_secret=state.get('object_storage_secret'))
         workloads = deepcopy(state.get('workloads', {}))
         for desired in objects:
             kind, meta = desired['kind'], desired['metadata']
@@ -348,7 +351,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         except (httpx.HTTPError, ValueError, KeyError):
             observation = None
         state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/',
-                              'database_secret': state.get('database_secret')}
+                              'database_secret': state.get('database_secret'), 'object_storage_secret': state.get('object_storage_secret')}
         update(expected_revision=app.revision, expected_desired=app.desired_state,
                    status='running', error_code=None, observation=observation, resources=state,
                    url=application_origin(app, settings) + '/')

@@ -1,0 +1,21 @@
+name: storage-metering
+claims:
+  - claim: Harbor project summary contains quota.used.storage and quota.hard.storage; -1 means unlimited.
+    status: verified
+    reason: Observed the installed private user project summary and compared Harbor official quota documentation.
+    verification: Actual read-only response shape checked on 2026-11-03; local HTTP simulation checks attribution and outage handling.
+    source: https://goharbor.io/docs/edge/administration/configure-project-quotas/
+  - claim: Additional application volume usage is zero only with a complete PVC inventory matching the one recorded workspace PVC.
+    status: verified
+    reason: Unknown, additional, replaced or truncated volumes cannot safely be attributed as zero.
+    verification: Real HTTP requests against local Kubernetes mock cover verified inventory and a 503 response; unit tests cover drift and pagination.
+    source: control_plane/storage_metering.py
+  - claim: MinIO child credentials and completed object versions work with the installed server release.
+    status: verified
+    reason: The SDK was exercised against a disposable container with the same image as the cluster.
+    verification: scripts/test_minio.py tests real IAM bootstrap, duplicate provisioning, ownership, cross-bucket denial and version accounting; this simulation does not model S3 signatures or IAM.
+    source: tests/test_object_minio.py
+limitations:
+  - Local simulation is not proof of live Kubernetes RBAC or storage readiness.
+  - Native Harbor shared blobs are counted by its quota counter; no physical replica or filesystem quota is inferred.
+  - Owner-workspace mock discovery was skipped because the local CLI session is signed out.

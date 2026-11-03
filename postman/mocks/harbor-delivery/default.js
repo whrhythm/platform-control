@@ -7,6 +7,18 @@ http.createServer(async (req, res) => {
   const projects = (await pm.state.get('harbor_delivery_projects')) || {};
   const robots = (await pm.state.get('harbor_delivery_robots')) || {};
   const body = req.body || {};
+  if (req.method === 'POST' && url.pathname === '/__test__/seed') {
+    await pm.state.set('harbor_delivery_projects', body.projects || {});
+    await pm.state.set('harbor_delivery_quota_status', body.quota_status || 200);
+    return send(res, 200, {});
+  }
+  const summary = url.pathname.match(/^\/api\/v2\.0\/projects\/(\d+)\/summary$/);
+  if (req.method === 'GET' && summary) {
+    const project = Object.values(projects).find(value => value.project_id === Number(summary[1]));
+    if (!project) return send(res, 404, {});
+    const status = (await pm.state.get('harbor_delivery_quota_status')) || 200;
+    return send(res, status, status === 200 ? { quota: project.quota } : { error: 'synthetic quota unavailable' });
+  }
   if (req.method === 'POST' && url.pathname === '/api/v2.0/projects') {
     if (!body.project_name || body.metadata?.public !== 'false') return send(res, 400, {});
     if (projects[body.project_name]) return send(res, 409, {});
@@ -16,7 +28,7 @@ http.createServer(async (req, res) => {
   }
   const match = url.pathname.match(/^\/api\/v2\.0\/projects\/([^/]+)$/);
   if (req.method === 'GET' && match) {
-    const project = projects[decodeURIComponent(match[1])];
+    const project = projects[decodeURIComponent(match[1])] || Object.values(projects).find(value => value.project_id === Number(match[1]));
     return send(res, project ? 200 : 404, project || {});
   }
   if (req.method === 'POST' && url.pathname === '/api/v2.0/robots') {

@@ -12,12 +12,14 @@
 
 项目资源回收目前仅限尚未开通的申请：项目所有者或管理员可批量取消项目中全部 requested/planned 计划并释放预留；若发现任何已开通或状态未知的资源，则整批拒绝，必须等待未来真实销毁流程。该接口不删除 Kubernetes 资源或项目数据。
 
-已部署到 k3s 的 `platform-system`，镜像通过内部 Harbor 分发，配置由 ops 仓库与 Argo CD 管理。普通用户入口为 LibreChat，控制平台保留管理员和资源治理职责。已实现聊天编程、个人文件上传/下载、Kata 构建、私有 Harbor 镜像及应用交付控制器；验收事实与未完成事项见下方记录。项目数据库/MinIO 自动开通、真实支付、套餐用量统一计费和生产级隔离验收仍待完成。
+部署位于 k3s 的 `platform-system`，镜像通过内部 Harbor 分发，配置由 ops 仓库与 Argo CD 管理。普通用户入口为 LibreChat，控制平台负责管理员和资源治理。实现包含聊天编程、个人文件管理、Kata 构建、私有 Harbor、应用交付、项目数据库与自动私有对象存储；部署事实见各次验收记录。五类存储按实际来源计量，分类额度独立，真实支付、跨服务统一硬配额和生产级隔离验收仍待完成。
 
 平台地址：`https://platform.k3s.local:30443/`。首次访问需要配置两个域名和内部 CA，详见使用手册；不要直接用 IP 登录。
 
 ## 文档
 
+- [个人存储使用手册](docs/storage-accounting-guide.md)
+- [五类逻辑计量与对象存储协议](docs/storage-accounting-contract.md)
 - [架构和数据流](docs/architecture.md)
 - [权限、隔离与配额](docs/security.md)
 - [部署、桌面进程边界及验收计划](docs/delivery.md)

@@ -1,0 +1,9 @@
+simulation: storage-metering
+routing: path
+mocks:
+  - name: harbor-delivery
+    routeKey: harbor
+    path: ../mocks/harbor-delivery/config.yaml
+  - name: kubernetes-delivery
+    routeKey: kubernetes
+    path: ../mocks/kubernetes-delivery/config.yaml

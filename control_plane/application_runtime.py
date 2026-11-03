@@ -79,7 +79,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
     return job, secret_object, target
 
 
-def application_objects(app, environment, settings, *, database_secret=None):
+def application_objects(app, environment, settings, *, database_secret=None, object_secret=None):
     name = app_name(app)
     namespace = 'codechat-user-' + environment.identity_hash[:40]
     owner = labels(app, environment.identity_hash)
@@ -124,6 +124,14 @@ def application_objects(app, environment, settings, *, database_secret=None):
         policy = next(obj for obj in objects if obj['kind'] == 'NetworkPolicy')
         policy['spec']['egress'].append({'to': [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'postgres'}}}],
                                           'ports': [{'protocol': 'TCP', 'port': 5432}]})
+    if object_secret:
+        container = objects[-1]['spec']['template']['spec']['containers'][0]
+        container.setdefault('env', []).extend([{'name': key, 'valueFrom': {'secretKeyRef': {'name': object_secret, 'key': key}}}
+            for key in ('S3_ENDPOINT_URL', 'S3_BUCKET', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_DEFAULT_REGION', 'AWS_REGION')])
+        container['env'].append({'name': 'CODECHAT_OBJECT_PREFIX', 'value': app.project_path + '/'})
+        policy = next(obj for obj in objects if obj['kind'] == 'NetworkPolicy')
+        policy['spec']['egress'].append({'to': [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'minio'}}}],
+                                          'ports': [{'protocol': 'TCP', 'port': 9000}]})
     return objects
 
 
