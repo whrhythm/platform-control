@@ -17,6 +17,7 @@ from .models import UserEnvironment, WorkspaceProvisioningIntent, WorkspaceFileS
 from .settings import get_settings
 from .workspace_provisioning import provision_one, observe_and_record_volume, _metadata_match
 from .workspace_runtime import file_service_objects, resource_path
+from .capacity_controller import reconcile_capacity
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,8 @@ def main():
                 token=(sa / 'token').read_text().strip(), ca_file=str(sa / 'ca.crt'),
                 issuer=env.issuer, subject=env.subject, storage_gib=env.storage_gib)
             try:
+                if settings.capacity_upgrades_enabled and reconcile_capacity(SessionLocal, provider, env.id, settings):
+                    continue
                 result = reconcile(SessionLocal, provider, env.id, settings)
                 logger.info('Workspace %s state=%s', env.id, result)
             except Exception as error:

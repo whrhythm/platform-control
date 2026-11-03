@@ -28,6 +28,10 @@ class Settings(BaseSettings):
     runtime_class: str = "kata-qemu-runtime-rs"
     storage_class: str = "longhorn"
     test_payments_enabled: bool = False
+    capacity_upgrades_enabled: bool = False
+    capacity_resize_timeout_seconds: int = 900
+    capacity_filesystem_overhead_percent: int = 10
+    capacity_plans_json: str = '[{"id":"basic","version":"test-v1","name":"Basic","storage_gib":4,"application_limit":5,"amount_minor":1000,"currency":"CNY"},{"id":"pro","version":"test-v1","name":"Pro","storage_gib":8,"application_limit":10,"amount_minor":2000,"currency":"CNY"}]'
     require_project_entitlement: bool = False
     litellm_url: str = ""
     litellm_master_key: str = ""

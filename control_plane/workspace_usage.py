@@ -32,4 +32,5 @@ def measure_usage(root, *, max_entries=200000, max_seconds=10):
             raise ValueError('Usage scan exceeded supported limit')
     volume = os.statvfs(root)
     return {'used_bytes': used, 'physical_available_bytes': volume.f_bavail * volume.f_frsize,
+            'physical_total_bytes': volume.f_blocks * volume.f_frsize,
             'observed_at': datetime.now(timezone.utc).isoformat(), 'scope': 'personal_volume'}

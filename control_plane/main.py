@@ -27,13 +27,14 @@ from .models import WorkspaceFileService
 from .programming import router as programming_router
 from .programming import model_principal
 from .applications import create_router as create_application_router
+from .capacity import create_router as create_capacity_router
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0010_application_delivery":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0011_capacity_accounts":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -288,6 +289,7 @@ def workspace_service_principal(
 
 
 app.include_router(create_application_router(workspace_service_principal))
+app.include_router(create_capacity_router(workspace_service_principal))
 
 
 @app.post('/internal/v1/workspace/ensure', tags=['workspace-files'])

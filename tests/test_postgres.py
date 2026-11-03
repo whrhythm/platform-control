@@ -248,6 +248,32 @@ def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
         db.delete(environments[0])
 
 
+def test_parallel_capacity_orders_and_confirmations_are_idempotent(postgres_harness, monkeypatch):
+    from sqlalchemy import delete, func
+    from control_plane.models import CapacityAccount, CapacityOrder, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity, create_order, PREFIX
+    client, _ = postgres_harness
+    client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            responses = list(pool.map(lambda _: create_order(client, auth), range(16)))
+        assert all(response.status_code == 201 for response in responses)
+        ids = {response.json()['id'] for response in responses}
+        assert len(ids) == 1
+        path = PREFIX + '/orders/' + ids.pop() + '/confirm-test'
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            confirmations = list(pool.map(lambda _: client.post(path, headers=auth), range(16)))
+        assert all(response.status_code == 200 and response.json()['attempt'] == 1 for response in confirmations)
+        with client.session_factory() as db:
+            assert db.scalar(select(func.count(CapacityOrder.id)).where(CapacityOrder.environment_id == env_id)) == 1
+            assert db.get(UserEnvironment, env_id).storage_gib == 2
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (StorageMeasurement, CapacityOrder, CapacityAccount, WorkspaceFileService, WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_projectless_migration_preserves_existing_workspace_binding(postgres_harness):
     client, _token = postgres_harness
     sessions = client.session_factory

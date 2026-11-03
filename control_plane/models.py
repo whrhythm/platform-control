@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -139,6 +139,46 @@ class WorkspaceFileService(Base):
     resources: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(24), default='requested')
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CapacityAccount(Base):
+    __tablename__ = 'capacity_accounts'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    plan: Mapped[dict] = mapped_column(JSON)
+    active_order_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class CapacityOrder(Base):
+    __tablename__ = 'capacity_orders'
+    __table_args__ = (
+        UniqueConstraint('environment_id', 'idempotency_key'),
+        CheckConstraint("status IN ('pending_payment', 'applying', 'ready', 'failed', 'cancelled')", name='ck_capacity_order_status'),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    plan: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(24), default='pending_payment')
+    payment_status: Mapped[str] = mapped_column(String(16), default='unpaid')
+    stage: Mapped[str] = mapped_column(String(40), default='awaiting_test_payment')
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence: Mapped[dict] = mapped_column(JSON, default=dict)
+    attempt: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class StorageMeasurement(Base):
+    __tablename__ = 'storage_measurements'
+    __table_args__ = (UniqueConstraint('environment_id', 'component'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    component: Mapped[str] = mapped_column(String(24))
+    used_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(24), default='unknown')
 
 
 class Resource(Base):

@@ -10,6 +10,7 @@ from .models import AuditEvent, UserApplication
 from .settings import get_settings
 from .workspace_gateway import own_environment, call_files
 from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
+from .capacity import application_limit
 
 
 def application_out(app):
@@ -61,7 +62,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         if app is None:
             active = list(db.scalars(select(UserApplication.id).where(UserApplication.environment_id == env.id,
                                                                       UserApplication.status != 'deleted')))
-            if len(active) >= settings.default_application_limit:
+            if len(active) >= application_limit(db, env, settings):
                 raise HTTPException(409, 'Application limit reached')
             app = UserApplication(environment_id=env.id, project_path=path, resources={'request_id': x_codechat_task_id})
             db.add(app)

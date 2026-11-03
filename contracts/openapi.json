@@ -666,6 +666,205 @@
         }
       }
     },
+    "/internal/v1/workspace/capacity": {
+      "get": {
+        "tags": [
+          "capacity"
+        ],
+        "summary": "Get Account",
+        "operationId": "get_account_internal_v1_workspace_capacity_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityAccountOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/capacity/orders": {
+      "post": {
+        "tags": [
+          "capacity"
+        ],
+        "summary": "Create Order",
+        "operationId": "create_order_internal_v1_workspace_capacity_orders_post",
+        "parameters": [
+          {
+            "name": "idempotency-key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[a-zA-Z0-9_-]+$",
+              "title": "Idempotency-Key"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateCapacityOrder"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityOrderOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/capacity/orders/{order_id}/{action}": {
+      "post": {
+        "tags": [
+          "capacity"
+        ],
+        "summary": "Order Action",
+        "operationId": "order_action_internal_v1_workspace_capacity_orders__order_id___action__post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "action",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Action"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CapacityOrderOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/ensure": {
       "post": {
         "tags": [
@@ -2271,6 +2470,24 @@
         ],
         "title": "AgentSpec"
       },
+      "ApplicationAllowanceOut": {
+        "properties": {
+          "used": {
+            "type": "integer",
+            "title": "Used"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          }
+        },
+        "type": "object",
+        "required": [
+          "used",
+          "limit"
+        ],
+        "title": "ApplicationAllowanceOut"
+      },
       "AuditOut": {
         "properties": {
           "id": {
@@ -2353,6 +2570,231 @@
           "name"
         ],
         "title": "BucketSpec"
+      },
+      "CapacityAccountOut": {
+        "properties": {
+          "plan": {
+            "$ref": "#/components/schemas/CapacityPlanOut"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "test",
+              "disabled"
+            ],
+            "title": "Mode"
+          },
+          "plans": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityPlanOut"
+            },
+            "type": "array",
+            "title": "Plans"
+          },
+          "active_order": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CapacityOrderOut"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orders": {
+            "items": {
+              "$ref": "#/components/schemas/CapacityOrderOut"
+            },
+            "type": "array",
+            "title": "Orders"
+          },
+          "applications": {
+            "$ref": "#/components/schemas/ApplicationAllowanceOut"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/StorageAccountOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "plan",
+          "mode",
+          "plans",
+          "active_order",
+          "orders",
+          "applications",
+          "storage"
+        ],
+        "title": "CapacityAccountOut"
+      },
+      "CapacityOrderOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "plan": {
+            "$ref": "#/components/schemas/CapacityPlanOut"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending_payment",
+              "applying",
+              "ready",
+              "failed",
+              "cancelled"
+            ],
+            "title": "Status"
+          },
+          "payment_status": {
+            "type": "string",
+            "enum": [
+              "unpaid",
+              "confirmed"
+            ],
+            "title": "Payment Status"
+          },
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "attempt": {
+            "type": "integer",
+            "title": "Attempt"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "plan",
+          "status",
+          "payment_status",
+          "stage",
+          "error_code",
+          "attempt",
+          "created_at",
+          "started_at",
+          "completed_at"
+        ],
+        "title": "CapacityOrderOut"
+      },
+      "CapacityPlanOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "catalog_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalog Version"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "storage_gib": {
+            "type": "integer",
+            "title": "Storage Gib"
+          },
+          "application_limit": {
+            "type": "integer",
+            "title": "Application Limit"
+          },
+          "amount_minor": {
+            "type": "integer",
+            "title": "Amount Minor"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "name",
+          "storage_gib",
+          "application_limit",
+          "amount_minor",
+          "currency"
+        ],
+        "title": "CapacityPlanOut"
+      },
+      "CreateCapacityOrder": {
+        "properties": {
+          "plan_id": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Plan Id"
+          },
+          "plan_version": {
+            "type": "string",
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Plan Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "plan_id",
+          "plan_version"
+        ],
+        "title": "CreateCapacityOrder"
       },
       "DatabaseSpec": {
         "properties": {
@@ -2690,6 +3132,117 @@
           "created_at"
         ],
         "title": "ResourceOut"
+      },
+      "StorageAccountOut": {
+        "properties": {
+          "budget_bytes": {
+            "type": "integer",
+            "title": "Budget Bytes"
+          },
+          "pending_capacity_bytes": {
+            "type": "integer",
+            "title": "Pending Capacity Bytes"
+          },
+          "known_used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Used Bytes"
+          },
+          "complete": {
+            "type": "boolean",
+            "title": "Complete"
+          },
+          "components": {
+            "items": {
+              "$ref": "#/components/schemas/StorageComponentOut"
+            },
+            "type": "array",
+            "title": "Components"
+          }
+        },
+        "type": "object",
+        "required": [
+          "budget_bytes",
+          "pending_capacity_bytes",
+          "known_used_bytes",
+          "complete",
+          "components"
+        ],
+        "title": "StorageAccountOut"
+      },
+      "StorageComponentOut": {
+        "properties": {
+          "component": {
+            "type": "string",
+            "enum": [
+              "files",
+              "database",
+              "objects",
+              "images",
+              "app_volumes"
+            ],
+            "title": "Component"
+          },
+          "budget_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "stale",
+              "unknown",
+              "not_metered"
+            ],
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component",
+          "budget_bytes",
+          "used_bytes",
+          "observed_at",
+          "status"
+        ],
+        "title": "StorageComponentOut"
       },
       "TenantCreate": {
         "properties": {

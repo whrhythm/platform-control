@@ -1,7 +1,14 @@
 purpose:
-  stands_in_for: A narrow synthetic Kubernetes API for workspace namespace, quota, network policy and PVC creation.
+  stands_in_for: A narrow synthetic Kubernetes API for workspace provisioning and UID/resourceVersion-guarded quota/PVC growth.
   unblocks: Testing real HTTP adapter calls and conflict handling without affecting the cluster.
 assumptions:
+  - id: capacity-growth
+    status: supported
+    claim: The capacity controller grows the existing claim after raising its quota and waits for an independent guest filesystem observation before activating rights.
+    reason: The mock models storage class support and immediate Kubernetes capacity updates; the synthetic filesystem observation is separate. It does not establish real Longhorn or Kata expansion.
+    verification: On 2026-11-03 test_capacity_simulation.py passed against the existing local Postman member. Its log captured 38 GET, two guarded PATCH and four provisioning POST requests. A separate test covers a lost patch response, stale identity and timeout/retry. CLI 1.74.0 supports simulation run but has no status command; no workspace sign-in or owner search was performed for this existing local mock.
+    source: tests/test_capacity_simulation.py; tests/test_capacity.py; control_plane/capacity_controller.py
+    updated_at: '2026-11-03'
   - id: create-only
     status: supported
     claim: Workspace objects use create-only POST operations; an existing name is a conflict and is never adopted.
