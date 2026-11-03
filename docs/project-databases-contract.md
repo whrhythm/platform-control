@@ -31,3 +31,8 @@ The controller uses a non-superuser provisioning role. Roles and a durable provi
 journal are created transactionally; database creation is recovered only against
 the recorded owner-role OID. Destruction checks the recorded database and role OIDs.
 Name collisions require administrator review and are never adopted or dropped.
+
+Provider references: connection rules use PostgreSQL's
+[`sameuser` and role regular expressions](https://www.postgresql.org/docs/17/auth-pg-hba-conf.html);
+password verifiers are generated using psycopg's
+[`PGconn.encrypt_password`](https://www.psycopg.org/psycopg3/docs/api/pq.html).

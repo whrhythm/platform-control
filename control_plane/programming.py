@@ -94,7 +94,7 @@ async def model_principal(authorization: str = Header(default=''), db=Depends(ge
     return Principal(issuer=env.issuer, subject=env.subject)
 
 
-def agent_prompt(messages, *, python_base=''):
+def agent_prompt(messages, *, python_base='', pip_index=''):
     if not isinstance(messages, list) or not 1 <= len(messages) <= 200:
         raise HTTPException(400, 'Text conversation required')
     history = []
@@ -120,6 +120,10 @@ def agent_prompt(messages, *, python_base=''):
                 '不要尝试连接宿主 Docker daemon，不要读取或展示环境中的平台/模型凭据。')
     if python_base:
         platform += '新建 Python Dockerfile 时优先使用集群内部基础镜像：' + python_base + '。'
+    if pip_index:
+        platform += ('平台已配置 Python HTTPS 软件源，个人虚拟环境的 pip 会自动使用。'
+                     'Python Dockerfile 在安装依赖的 RUN 之前声明 ARG PIP_INDEX_URL，平台构建任务会提供同一软件源。'
+                     '不要覆盖 PIP_CACHE_DIR；下载和安装失败应明确报告原因，不要无限轮询。')
     platform += ('需要关系型数据库时执行 python -m control_plane.database_cli ensure <工程目录>，申请共享 PostgreSQL 中的独立数据库。'
                  '用 python -m control_plane.database_cli list 查看就绪状态，不要循环轮询。'
                  '就绪后用 python -m control_plane.database_cli run <工程目录> -- <程序及参数> 运行迁移或数据库测试。'
@@ -164,7 +168,8 @@ async def completions(request: Request, authorization: str = Header(default=''),
         if capability == 'coding':
             if body.get('stream') is not True:
                 raise HTTPException(400, 'Programming requires streaming chat')
-            prompt = agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image)
+            prompt = agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image,
+                                  pip_index=settings.workspace_pip_index_url)
             task_id = hashlib.sha256((x_codechat_conversation + '\n' + prompt).encode()).hexdigest()
             target = f'https://workspace-files.{namespace}.svc:8091/v1/run'
             payload = {'task_id': task_id, 'prompt': prompt, 'api_key': authorization[7:]}

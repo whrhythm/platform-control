@@ -164,9 +164,13 @@ def test_programming_manifest_mounts_same_disk_and_upgrade_changes_revision():
     image = 'harbor.k3s.local/internal/platform@sha256:' + 'b' * 64
     old = file_service_objects('codechat-user-' + digest[:40], digest, image, 's' * 48)
     new = file_service_objects('codechat-user-' + digest[:40], digest, image, 's' * 48,
-        agent_image='harbor.k3s.local/internal/agent@sha256:' + 'c' * 64, llm_url='http://models:4000', llm_model='model')
+        agent_image='harbor.k3s.local/internal/agent@sha256:' + 'c' * 64, llm_url='http://models:4000', llm_model='model',
+        pip_index_url='https://packages.test/simple')
     pod = new[-1]['spec']['template']['spec']
     assert [c['name'] for c in pod['containers']] == ['files', 'agent']
+    values = {value['name']: value['value'] for value in pod['containers'][1]['env']}
+    assert values['PIP_INDEX_URL'] == values['UV_INDEX_URL'] == 'https://packages.test/simple'
+    assert values['PIP_CACHE_DIR'].startswith('/workspace/')
     assert pod['volumes'][0]['persistentVolumeClaim']['claimName'] == 'workspace-data'
     assert old[-1]['spec']['template']['metadata'] != new[-1]['spec']['template']['metadata']
     assert not any(obj['kind'] == 'PersistentVolumeClaim' for obj in new)

@@ -68,6 +68,12 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
                             {'name': 'context', 'emptyDir': {'sizeLimit': '128Mi'}},
                             {'name': 'build', 'emptyDir': {'sizeLimit': '2Gi'}}],
             }}}}
+    if settings.workspace_pip_index_url:
+        index = urlsplit(settings.workspace_pip_index_url)
+        if index.scheme != 'https' or not index.hostname or index.username or index.password or index.query or index.fragment:
+            raise ValueError('A credential-free HTTPS package index is required')
+        job['spec']['template']['spec']['containers'][0]['args'].extend([
+            '--opt', 'build-arg:PIP_INDEX_URL=' + settings.workspace_pip_index_url])
     return job, secret_object, target
 
 

@@ -45,11 +45,13 @@ def test_build_job_uses_independent_kata_and_no_host_socket():
     app = SimpleNamespace(id='a' * 36, revision='b' * 36, project_path='demo', image='registry/p@sha256:' + 'c' * 64, desired_state='running')
     env = SimpleNamespace(identity_hash='d' * 64)
     registry = SimpleNamespace(robot_name='robot$demo', project_name='u-demo')
-    settings = Settings(buildkit_image='registry/buildkit@sha256:' + 'e' * 64, workspace_service_image='registry/platform@sha256:' + 'f' * 64)
+    settings = Settings(buildkit_image='registry/buildkit@sha256:' + 'e' * 64, workspace_service_image='registry/platform@sha256:' + 'f' * 64,
+                        workspace_pip_index_url='https://packages.test/simple')
     job, secret, target = build_objects(app, env, registry, settings, 'synthetic-secret', 'synthetic-workspace-token', 'test-ca')
     pod = job['spec']['template']['spec']
     assert pod['runtimeClassName'] == 'kata-qemu-runtime-rs'
     assert pod['automountServiceAccountToken'] is False
+    assert 'build-arg:PIP_INDEX_URL=https://packages.test/simple' in pod['containers'][0]['args']
     assert all('hostPath' not in volume for volume in pod['volumes'])
     assert target.startswith('harbor.k3s.local/u-demo/')
     assert 'synthetic-secret' not in json.dumps(job)

@@ -2,11 +2,12 @@
 import re
 import hashlib
 import json
+from urllib.parse import urlsplit
 
 
 def file_service_objects(namespace: str, identity_hash: str, image: str, token: str, *, agent_image='',
                          llm_url='', llm_model='', max_iterations=40, publisher_enabled=False, max_seconds=180,
-                         databases_enabled=False) -> list[dict]:
+                         databases_enabled=False, pip_index_url='') -> list[dict]:
     if not re.fullmatch(r'[0-9a-f]{64}', identity_hash) or namespace != 'codechat-user-' + identity_hash[:40]:
         raise ValueError('Invalid workspace identity')
     if not re.fullmatch(r'[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}', image):
@@ -67,6 +68,10 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
                                   {'name': 'tmp', 'emptyDir': {'sizeLimit': '64Mi'}}]}}}},
     ]
     if agent_image:
+        if pip_index_url:
+            index = urlsplit(pip_index_url)
+            if index.scheme != 'https' or not index.hostname or index.username or index.password or index.query or index.fragment:
+                raise ValueError('A credential-free HTTPS package index is required')
         if not re.fullmatch(r'[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}', agent_image) or not llm_url or not llm_model:
             raise ValueError('Agent image and model configuration are required')
         service = next(obj for obj in objects if obj['kind'] == 'Service')
@@ -114,6 +119,11 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
             'volumeMounts': [{'name': 'data', 'mountPath': '/workspace'},
                              {'name': 'tls', 'mountPath': '/tls', 'readOnly': True}],
         })
+        if pip_index_url:
+            pod['containers'][-1]['env'].extend([{'name': key, 'value': value} for key, value in {
+                'PIP_INDEX_URL': pip_index_url, 'UV_INDEX_URL': pip_index_url,
+                'PIP_DEFAULT_TIMEOUT': '15', 'PIP_RETRIES': '1', 'PIP_PROGRESS_BAR': 'off',
+            }.items()])
     if publisher_enabled:
         objects.insert(0, {'apiVersion': 'rbac.authorization.k8s.io/v1', 'kind': 'RoleBinding',
             'metadata': meta('application-controller'),

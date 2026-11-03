@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     workspace_agent_max_iterations: int = 40
     workspace_agent_max_seconds: int = 180
     workspace_python_base_image: str = ""
+    workspace_pip_index_url: str = ""
     workspace_service_ca: str = "/etc/platform-ca/internal-ca.crt"
     publisher_enabled: bool = False
     buildkit_image: str = ""
