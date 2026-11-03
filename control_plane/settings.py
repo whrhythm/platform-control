@@ -57,6 +57,13 @@ class Settings(BaseSettings):
     application_origin: str = "http://192.168.10.30.sslip.io:30097"
     default_application_limit: int = 3
     build_job_retention_seconds: int = 300
+    project_databases_enabled: bool = False
+    project_database_provisioner_url: str = ""
+    project_database_host: str = "postgres-rw.postgres.svc.cluster.local"
+    project_database_ca: str = "/etc/platform-ca/postgres-ca.crt"
+    project_database_budget_mib: int = 256
+    project_database_reservation_mib: int = 128
+    project_database_limit: int = 2
 
 
 @lru_cache

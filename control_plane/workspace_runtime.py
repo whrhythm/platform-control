@@ -5,7 +5,8 @@ import json
 
 
 def file_service_objects(namespace: str, identity_hash: str, image: str, token: str, *, agent_image='',
-                         llm_url='', llm_model='', max_iterations=40, publisher_enabled=False, max_seconds=180) -> list[dict]:
+                         llm_url='', llm_model='', max_iterations=40, publisher_enabled=False, max_seconds=180,
+                         databases_enabled=False) -> list[dict]:
     if not re.fullmatch(r'[0-9a-f]{64}', identity_hash) or namespace != 'codechat-user-' + identity_hash[:40]:
         raise ValueError('Invalid workspace identity')
     if not re.fullmatch(r'[a-z0-9][a-z0-9._:/-]*@sha256:[0-9a-f]{64}', image):
@@ -130,6 +131,12 @@ def file_service_objects(namespace: str, identity_hash: str, image: str, token: 
              'ports': [{'protocol': 'TCP', 'port': 9443}]},
             {'to': [{'ipBlock': {'cidr': '192.168.10.30/32'}}], 'ports': [{'protocol': 'TCP', 'port': 30443}]},
         ])
+    if databases_enabled:
+        policy = next(obj for obj in objects if obj['kind'] == 'NetworkPolicy')
+        if 'Egress' not in policy['spec']['policyTypes']:
+            policy['spec']['policyTypes'].append('Egress')
+        policy['spec'].setdefault('egress', []).append({'to': [{'namespaceSelector': {
+            'matchLabels': {'kubernetes.io/metadata.name': 'postgres'}}}], 'ports': [{'protocol': 'TCP', 'port': 5432}]})
     template = objects[-1]['spec']['template']
     revision = hashlib.sha256(json.dumps(template, sort_keys=True).encode()).hexdigest()
     template['metadata']['annotations'] = {'codechat.io/runtime-revision': revision}

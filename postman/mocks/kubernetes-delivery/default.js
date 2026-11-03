@@ -11,6 +11,32 @@ http.createServer(async (req, res) => {
   const objects = (await pm.state.get('delivery_objects')) || {};
   const mutations = (await pm.state.get('delivery_mutations')) || [];
   if (req.method === 'GET' && path === '__test__/snapshot') return send(res, 200, {objects, mutations});
+  const secretCollection = /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/secrets$/.test(path);
+  const databaseSecret = /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/secrets\/database-[a-f0-9]{24}$/.test(path);
+  if (secretCollection && req.method === 'POST') {
+    const document = req.body;
+    if (!/^database-[a-f0-9]{24}$/.test(document?.metadata?.name || '') || document?.metadata?.labels?.['app.kubernetes.io/managed-by'] !== 'platform-control') return send(res, 400, {});
+    const key = path + '/' + document.metadata.name;
+    if (objects[key]) return send(res, 409, {});
+    document.metadata.uid = 'synthetic-' + document.metadata.name;
+    document.metadata.resourceVersion = '1';
+    objects[key] = document;
+    mutations.push(['POST', key]);
+    await pm.state.set('delivery_objects', objects);
+    await pm.state.set('delivery_mutations', mutations);
+    return send(res, 201, document);
+  }
+  if (databaseSecret) {
+    if (req.method === 'GET') return send(res, objects[path] ? 200 : 404, objects[path] || {});
+    if (req.method !== 'DELETE') return send(res, 501, {});
+    if (!objects[path]) return send(res, 404, {});
+    if (req.body?.preconditions?.uid !== objects[path].metadata.uid) return send(res, 409, {});
+    delete objects[path];
+    mutations.push(['DELETE', path]);
+    await pm.state.set('delivery_objects', objects);
+    await pm.state.set('delivery_mutations', mutations);
+    return send(res, 202, {});
+  }
   const job = /^apis\/batch\/v1\/namespaces\/codechat-builds\/jobs\/build-[a-z0-9]+$/.test(path);
   const deployment = /^apis\/apps\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/deployments\/app-[a-f0-9]+$/.test(path);
   if (!job && !deployment) return send(res, 501, {error: 'not modelled'});

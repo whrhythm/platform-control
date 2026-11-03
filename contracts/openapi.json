@@ -218,6 +218,266 @@
         }
       }
     },
+    "/agent/v1/databases": {
+      "get": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "List Databases",
+        "operationId": "list_databases_agent_v1_databases_get",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Request Database",
+        "operationId": "request_database_agent_v1_databases_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/databases/{identifier}/retry": {
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Retry",
+        "operationId": "retry_agent_v1_databases__identifier__retry_post",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/databases/{identifier}/delete": {
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_agent_v1_databases__identifier__delete_post",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseDelete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/v1/databases/profile": {
+      "get": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Profile",
+        "operationId": "profile_agent_v1_databases_profile_get",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "title": "Path"
+            }
+          },
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/config": {
       "get": {
         "tags": [
@@ -848,6 +1108,254 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CapacityOrderOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/databases": {
+      "get": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "List Databases",
+        "operationId": "list_databases_internal_v1_workspace_databases_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Request Database",
+        "operationId": "request_database_internal_v1_workspace_databases_post",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/databases/{identifier}/retry": {
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Retry",
+        "operationId": "retry_internal_v1_workspace_databases__identifier__retry_post",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/databases/{identifier}/delete": {
+      "post": {
+        "tags": [
+          "project-databases"
+        ],
+        "summary": "Delete",
+        "operationId": "delete_internal_v1_workspace_databases__identifier__delete_post",
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Identifier"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatabaseDelete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatabaseOut"
                 }
               }
             }
@@ -2795,6 +3303,149 @@
           "plan_version"
         ],
         "title": "CreateCapacityOrder"
+      },
+      "DatabaseDelete": {
+        "properties": {
+          "confirmation": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Confirmation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "confirmation"
+        ],
+        "title": "DatabaseDelete"
+      },
+      "DatabaseList": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "budget_bytes": {
+            "type": "integer",
+            "title": "Budget Bytes"
+          },
+          "reserved_bytes": {
+            "type": "integer",
+            "title": "Reserved Bytes"
+          },
+          "reservation_bytes": {
+            "type": "integer",
+            "title": "Reservation Bytes"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "quota_mode": {
+            "type": "string",
+            "title": "Quota Mode"
+          },
+          "databases": {
+            "items": {
+              "$ref": "#/components/schemas/DatabaseOut"
+            },
+            "type": "array",
+            "title": "Databases"
+          }
+        },
+        "type": "object",
+        "required": [
+          "enabled",
+          "budget_bytes",
+          "reserved_bytes",
+          "reservation_bytes",
+          "limit",
+          "quota_mode",
+          "databases"
+        ],
+        "title": "DatabaseList"
+      },
+      "DatabaseOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "project_path": {
+            "type": "string",
+            "title": "Project Path"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "reserved_bytes": {
+            "type": "integer",
+            "title": "Reserved Bytes"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project_path",
+          "status",
+          "error_code",
+          "reserved_bytes",
+          "used_bytes",
+          "observed_at"
+        ],
+        "title": "DatabaseOut"
+      },
+      "DatabaseRequest": {
+        "properties": {
+          "project_path": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Project Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "project_path"
+        ],
+        "title": "DatabaseRequest"
       },
       "DatabaseSpec": {
         "properties": {

@@ -17,6 +17,7 @@ from sqlalchemy import select
 from .application_runtime import application_objects, application_origin, app_name, build_objects, object_path
 from .application_observation import observe
 from .database import SessionLocal
+from .project_database_controller import reconcile_databases
 from .models import UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from .registry import provision_registry, RegistryError
 from .settings import get_settings
@@ -111,7 +112,7 @@ def cleanup_failure(app, env, cluster, settings):
         target = SimpleNamespace(id=app.id, image=good['image'] if fallback else app.image,
                                  revision=good['revision'] if fallback else app.revision,
                                  desired_state='running' if fallback else 'stopped')
-        desired = application_objects(target, env, settings)[-1]
+        desired = application_objects(target, env, settings, database_secret=good.get('database_secret') if fallback else None)[-1]
         path = object_path(desired['metadata']['namespace'], 'Deployment', desired['metadata']['name'])
         actual = cluster.get(path)
         if actual:
@@ -226,7 +227,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         update(image=image, status='deploying')
         return
     if app.status in ('deploying', 'running', 'stopped', 'failed', 'changing'):
-        objects = application_objects(app, env, settings)
+        objects = application_objects(app, env, settings, database_secret=state.get('database_secret'))
         workloads = deepcopy(state.get('workloads', {}))
         for desired in objects:
             kind, meta = desired['kind'], desired['metadata']
@@ -316,7 +317,8 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
             observation = observe(cluster, namespace, app.id)
         except (httpx.HTTPError, ValueError, KeyError):
             observation = None
-        state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/'}
+        state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/',
+                              'database_secret': state.get('database_secret')}
         update(expected_revision=app.revision, expected_desired=app.desired_state,
                    status='running', error_code=None, observation=observation, resources=state,
                    url=application_origin(app, settings) + '/')
@@ -336,6 +338,7 @@ def main():
              httpx.Client(base_url=settings.harbor_url, verify=registry_context, timeout=15,
                           auth=(settings.harbor_username, settings.harbor_password), trust_env=False) as harbor:
             cluster = Cluster(client)
+            reconcile_databases(SessionLocal, cluster, settings)
             with SessionLocal() as db:
                 environments = list(db.scalars(select(UserEnvironment).where(UserEnvironment.status.not_in(('deleted', 'suspended')))))
             for env in environments:

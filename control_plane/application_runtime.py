@@ -71,13 +71,13 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
     return job, secret_object, target
 
 
-def application_objects(app, environment, settings):
+def application_objects(app, environment, settings, *, database_secret=None):
     name = app_name(app)
     namespace = 'codechat-user-' + environment.identity_hash[:40]
     owner = labels(app, environment.identity_hash)
     meta = {'name': name, 'namespace': namespace, 'labels': owner}
     host = urlsplit(application_origin(app, settings)).hostname
-    return [
+    objects = [
         {'apiVersion': 'v1', 'kind': 'Service', 'metadata': meta,
          'spec': {'selector': owner, 'ports': [{'name': 'http', 'port': 8080, 'targetPort': 8080}]}},
         {'apiVersion': 'networking.k8s.io/v1', 'kind': 'NetworkPolicy', 'metadata': meta,
@@ -106,6 +106,17 @@ def application_objects(app, environment, settings):
                     'readinessProbe': {'httpGet': {'path': '/', 'port': 8080}, 'periodSeconds': 5}}],
             }}}},
     ]
+    if database_secret:
+        spec = objects[-1]['spec']['template']['spec']
+        spec['containers'][0]['env'] = [{'name': key, 'valueFrom': {'secretKeyRef': {'name': database_secret, 'key': key}}}
+            for key in ('DATABASE_URL', 'PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'PGSSLMODE', 'PGSSLROOTCERT')]
+        spec['containers'][0]['volumeMounts'] = [{'name': 'database-ca', 'mountPath': '/etc/codechat-database', 'readOnly': True}]
+        spec['volumes'] = [{'name': 'database-ca', 'secret': {'secretName': database_secret,
+                            'items': [{'key': 'ca.crt', 'path': 'ca.crt'}]}}]
+        policy = next(obj for obj in objects if obj['kind'] == 'NetworkPolicy')
+        policy['spec']['egress'].append({'to': [{'namespaceSelector': {'matchLabels': {'kubernetes.io/metadata.name': 'postgres'}}}],
+                                          'ports': [{'protocol': 'TCP', 'port': 5432}]})
+    return objects
 
 
 def object_path(namespace, kind, name=None):

@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 
 from .database import get_db
 from .models import (AuditEvent, CapacityAccount, CapacityOrder, StorageMeasurement,
-                     UserApplication, WorkspaceFileService, WorkspaceVolumeBinding, now)
+                     UserApplication, WorkspaceFileService, WorkspaceVolumeBinding, ProjectDatabase, now)
 from .settings import get_settings
 from .workspace_gateway import own_environment, call_files
 
@@ -158,6 +158,17 @@ def sample_storage(db, env, observed):
         row.used_bytes, row.observed_at, row.status = used, at, 'ok'
     else:
         row.status = 'stale' if row.observed_at is not None else 'unknown'
+    if get_settings().project_databases_enabled:
+        databases = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id,
+                                                                  ProjectDatabase.status != 'deleted')))
+        measured = rows['database']
+        if all(value.status == 'ready' and value.observed_at and value.used_bytes is not None and
+               0 <= (now() - value.observed_at.replace(tzinfo=timezone.utc)).total_seconds() <= 90 for value in databases):
+            measured.used_bytes = sum(value.used_bytes for value in databases)
+            measured.observed_at = min((value.observed_at for value in databases), default=now())
+            measured.status = 'ok'
+        else:
+            measured.status = 'stale' if measured.observed_at else 'unknown'
     return rows
 
 
@@ -193,7 +204,9 @@ def create_router(principal_dependency):
         orders = list(db.scalars(select(CapacityOrder).where(CapacityOrder.environment_id == env.id)
                                  .order_by(CapacityOrder.created_at.desc()).limit(10)))
         active = db.get(CapacityOrder, account.active_order_id) if account.active_order_id else None
-        components = [{'component': kind, 'budget_bytes': env.storage_gib * GIB if kind == 'files' else None,
+        database_budget = settings.project_database_budget_mib * 1024 ** 2 if settings.project_databases_enabled else 0
+        components = [{'component': kind, 'budget_bytes': (env.storage_gib * GIB if kind == 'files' else
+                database_budget if kind == 'database' and database_budget else None),
             'used_bytes': samples[kind].used_bytes, 'observed_at': samples[kind].observed_at,
             'status': samples[kind].status} for kind in COMPONENTS]
         apps = db.scalar(select(func.count(UserApplication.id)).where(UserApplication.environment_id == env.id,
@@ -203,9 +216,10 @@ def create_router(principal_dependency):
             'plans': [plan for plan in catalog(settings) if eligible(plan, account, env)] if available else [],
             'active_order': order_out(active) if active else None, 'orders': [order_out(order) for order in orders],
             'applications': {'used': apps, 'limit': account.plan['application_limit']},
-            'storage': {'budget_bytes': env.storage_gib * GIB,
+            'storage': {'budget_bytes': env.storage_gib * GIB + database_budget,
                 'pending_capacity_bytes': max(0, (active.plan['storage_gib'] - env.storage_gib) * GIB) if active else 0,
-                'known_used_bytes': samples['files'].used_bytes if samples['files'].status == 'ok' else None,
+                'known_used_bytes': (samples['files'].used_bytes + (samples['database'].used_bytes if database_budget else 0))
+                    if samples['files'].status == 'ok' and (not database_budget or samples['database'].status == 'ok') else None,
                 'complete': False, 'components': components}}
         db.commit()
         return result

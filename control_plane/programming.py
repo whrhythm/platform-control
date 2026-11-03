@@ -120,6 +120,11 @@ def agent_prompt(messages, *, python_base=''):
                 '不要尝试连接宿主 Docker daemon，不要读取或展示环境中的平台/模型凭据。')
     if python_base:
         platform += '新建 Python Dockerfile 时优先使用集群内部基础镜像：' + python_base + '。'
+    platform += ('需要关系型数据库时执行 python -m control_plane.database_cli ensure <工程目录>，申请共享 PostgreSQL 中的独立数据库。'
+                 '用 python -m control_plane.database_cli list 查看就绪状态，不要循环轮询。'
+                 '就绪后用 python -m control_plane.database_cli run <工程目录> -- <程序及参数> 运行迁移或数据库测试。'
+                 '该工具为子进程注入 DATABASE_URL，业务代码从环境读取，严禁将连接密码打印或写入源码、文件、聊天。'
+                 '发布同一工程时平台自动交付连接配置；编译阶段不能访问数据库，迁移应在运行阶段执行。')
     return ('你是 CodeChat 的 OpenHands 编程助手。用户的持久个人文件位于当前工作目录。'
             '根据最后一条用户指令实际读取、创建、修改文件并运行必要的测试；不要只展示代码。'
             '先查看现有文件，避免覆盖无关项目。在用户要求的新工程子目录工作。'

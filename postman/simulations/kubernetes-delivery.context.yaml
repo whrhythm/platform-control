@@ -2,6 +2,13 @@ purpose:
   stands_in_for: Narrow Kubernetes Job delete and Deployment patch operations used by failed release cleanup.
   unblocks: HTTP serialization, UID preconditions, foreground deletion request, rollback/scale-down and repeatable cleanup checks without deleting user data.
 assumptions:
+  - id: project-database-connection-secrets
+    status: supported
+    claim: A recorded project database connection Secret is created once and deleted only with its recorded UID.
+    reason: The stand-in handles only database-prefixed Secret paths, rejects collisions and checks DeleteOptions UID. It does not simulate RBAC, admissions or PostgreSQL.
+    verification: On 2026-11-03 eleven tests passed through real local HTTP, including connection Secret creation and deletion plus existing failed-release cleanup cases. Database DDL is separately tested against disposable PostgreSQL.
+    source: control_plane/project_database_controller.py; tests/test_project_databases.py
+    updated_at: '2026-11-03'
   - id: scoped-mutations
     status: supported
     claim: Cleanup deletes only a journalled Job UID and either restores the last successful Deployment template or scales the first failed release to zero.

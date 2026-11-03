@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from .database import get_db
-from .models import AuditEvent, UserApplication
+from .models import AuditEvent, UserApplication, ProjectDatabase
+from .project_databases import names as database_names
 from .settings import get_settings
 from .workspace_gateway import own_environment, call_files
 from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
@@ -47,6 +48,11 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(400, 'A Dockerfile is required in this directory')
         # Serialize intent creation against the same durable environment row.
         db.refresh(env, with_for_update=True)
+        database = db.scalar(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id,
+            ProjectDatabase.project_path == path, ProjectDatabase.status != 'deleted'))
+        if database and database.status != 'ready':
+            raise HTTPException(409, 'Wait for the project database to become ready')
+        database_secret = database_names(database)[2] if database else None
         app = db.scalar(select(UserApplication).where(UserApplication.environment_id == env.id,
                                                       UserApplication.project_path == path))
         if app and x_codechat_task_id and app.resources.get('request_id') == x_codechat_task_id:
@@ -73,6 +79,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                              'last_good': app.resources.get('last_good', {})}
             app.status, app.desired_state, app.error_code = 'queued', 'running', None
         db.flush()
+        app.resources = {**app.resources, 'database_secret': database_secret}
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action='application.publish', target_id=app.id))
         try:

@@ -2,7 +2,8 @@
 FROM ghcr.nju.edu.cn/openhands/agent-canvas@sha256:638c5e3ce76df74344bb18bd85f44af395337ade8e71f04532099fb380febadf
 WORKDIR /app
 COPY control_plane/workspace_agent_service.py control_plane/workspace_file_service.py control_plane/workspace_files.py control_plane/workspace_snapshot.py control_plane/workspace_usage.py control_plane/publish_cli.py ./control_plane/
+COPY control_plane/database_cli.py ./control_plane/
 ENV OPENHANDS_SUPPRESS_BANNER=1 LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app
 USER 10001:10001
-RUN python -c "from control_plane.workspace_agent_service import create_app; from control_plane.workspace_file_service import server_options"
+RUN python -c "from control_plane.workspace_agent_service import create_app; from control_plane.workspace_file_service import server_options; from control_plane.database_cli import child_environment"
 ENTRYPOINT ["python", "-m", "control_plane.workspace_agent_service"]

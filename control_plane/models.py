@@ -181,6 +181,23 @@ class StorageMeasurement(Base):
     status: Mapped[str] = mapped_column(String(24), default='unknown')
 
 
+class ProjectDatabase(Base):
+    __tablename__ = 'project_databases'
+    __table_args__ = (UniqueConstraint('environment_id', 'project_path'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    project_path: Mapped[str] = mapped_column(String(255))
+    generation: Mapped[str] = mapped_column(String(36), default=uuid)
+    encrypted_password: Mapped[str] = mapped_column(String(512))
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(24), default='requested')
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resources: Mapped[dict] = mapped_column(JSON, default=dict)
+    used_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class Resource(Base):
     __tablename__ = "resources"
     __table_args__ = (
