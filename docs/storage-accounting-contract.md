@@ -42,3 +42,46 @@ existing running applications are not restarted just to add object storage.
 
 Real money, object/image allowance upgrades, a single interchangeable hard byte
 quota and additional application-volume provisioning remain outside this phase.
+
+## Runtime and deployment
+
+The dedicated storage-controller provisions buckets and gathers provider samples;
+application-controller continues to own publication. Both use the existing
+verified per-user namespace RoleBinding. The object provider credentials belong
+only to storage-controller. API and agent profile responses never contain the
+root or provisioner identity; only the owner-scoped child key reaches project
+processes and application Secrets.
+
+```mermaid
+flowchart LR
+  UI[LibreChat storage window] --> BFF[Same-origin identity bridge]
+  BFF --> API[Python control API]
+  API --> DB[(Account and measurement records)]
+  SC[Storage controller] --> DB
+  SC --> M[(Private MinIO bucket)]
+  SC --> H[Harbor native project counter]
+  SC --> K[Kubernetes PVC inventory and connection Secret]
+  A[Owner Coding process] --> P[Owner connection profile]
+  P --> API
+  A --> M
+  D[Published application] --> M
+```
+
+Schema revision is 0013_storage_providers. Downgrade refuses to erase recorded
+object ownership. The worker database role needs capacity for four background
+services plus rollout/probe connections; bootstrap now sets 16. Each background
+process uses pool_size=1 and max_overflow=1 in GitOps. API keeps its separate
+role/budget and default pool. Existing managed deployments can run
+scripts/configure_worker_connections.py to increase only this connection budget;
+it verifies the managed database owner and non-privileged role, and does not
+rotate passwords or lower a custom larger limit.
+
+The current MinIO endpoint is cluster-internal HTTP on port 9000. No public S3
+ingress is introduced. No automatic expiration of completed objects or versions
+is configured. Incomplete-upload recovery is owned by MinIO, not the completed
+object byte counter; cleanup timing was not measured in this acceptance.
+
+Provider references: [Harbor project quota semantics](https://goharbor.io/docs/edge/administration/configure-project-quotas/)
+and [MinIO Python SDK](https://github.com/minio/minio-py). The installed server's
+actual IAM and version behavior was separately checked in a disposable container
+with the same image; the Postman mocks do not establish IAM enforcement.

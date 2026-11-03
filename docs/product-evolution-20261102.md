@@ -158,7 +158,7 @@ Dify 的会话 ID 是外部执行器会话，不是平台聊天 ID；按用户�
 | D | PostgreSQL/MinIO、镜像与应用持久盘的分项计量 | 实际连接隔离、写入/读回、计量归属、容量阈值、备份恢复和独立销毁验收 |
 | E | Dify 写作/音乐等能力、真实支付与运营 | 工作流结果和账单对账真实验证后再开放 |
 
-截至 2026-11-03，A 的交付见 [空间管理验收](space-management-acceptance-20261102.md)，B 的交付见 [能力入口验收](capabilities-acceptance-20261103.md)，C 初版见 [套餐与扩容验收](capacity-acceptance-20261103.md)。D 的项目数据库子阶段已完成真实 UI 链路，见 [项目数据库验收](project-databases-acceptance-20261103.md) 和 [使用手册](project-databases-guide.md)：按项目建库、连接交付、数据库测试到发布、实际计量、停止保留和明确销毁。D 的 MinIO/Harbor/应用卷计量、数据库付费扩容及严格写入限制尚未完成；E、真实价格和生产支付仍未完成。备份恢复等生产开放条件继续单列验收，不能把内网试用当作生产承诺。
+截至 2026-11-03，A 的交付见 [空间管理验收](space-management-acceptance-20261102.md)，B 的交付见 [能力入口验收](capabilities-acceptance-20261103.md)，C 初版见 [套餐与扩容验收](capacity-acceptance-20261103.md)。D 的项目数据库子阶段见 [项目数据库验收](project-databases-acceptance-20261103.md)：按项目建库、连接交付、测试到发布、实际计量、停止保留和明确销毁。D 的自动 MinIO、Harbor 原生计量与额外应用 PVC 核验已接入，并完成聊天到对象应用发布及启停保留，见 [跨存储验收](storage-accounting-acceptance-20261103.md)。任意额外应用盘创建、跨服务套餐额度调整、数据库付费扩容、严格写入限制和备份恢复尚未完成；E、真实价格和生产支付仍未完成。内网试用不作为生产承诺。
 
 ## 9. 补充建议
 
