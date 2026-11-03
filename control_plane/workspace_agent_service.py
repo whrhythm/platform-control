@@ -24,7 +24,7 @@ class RunRequest(BaseModel):
 def chunk(task_id: str, content: str = '', *, finish=False, progress=False) -> str:
     value = {'id': 'chatcmpl-' + task_id[:24], 'object': 'chat.completion.chunk',
              'created': int(time.time()), 'model': 'OpenHands',
-             'choices': [{'index': 0, 'delta': {('reasoning_content' if progress else 'content'): content} if content else {},
+             'choices': [{'index': 0, 'delta': {'role': 'assistant', ('reasoning_content' if progress else 'content'): content} if content else {},
                           'finish_reason': 'stop' if finish else None}]}
     return 'data: ' + json.dumps(value, ensure_ascii=False) + '\n\n'
 

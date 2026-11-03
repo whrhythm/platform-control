@@ -59,6 +59,9 @@ def test_selected_agent_model_and_collapsible_progress_are_distinct_from_final_c
     chunks=[json.loads(line[6:])['choices'][0]['delta'] for line in response.text.splitlines()
             if line.startswith('data: {')]
     assert observed == ['selected-model']
+    # The SDK drops provider reasoning on anonymous ChatMessageChunk objects.
+    # An assistant role must precede reasoning so it becomes an AIMessageChunk.
+    assert chunks[0]['role'] == 'assistant'
     assert any(value.get('reasoning_content') == '正在处理文件' for value in chunks)
     assert '正在处理文件' not in ''.join(value.get('content','') for value in chunks)
     assert any(value.get('content') == '文件已准备好' for value in chunks)

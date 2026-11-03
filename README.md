@@ -18,6 +18,8 @@
 
 ## 文档
 
+- [模型选择、模拟充值与中文套餐手册](docs/model-membership-guide.md)
+- [聊天、模型与套餐改进协议](docs/chat-and-membership-contract.md)
 - [个人存储使用手册](docs/storage-accounting-guide.md)
 - [五类逻辑计量与对象存储协议](docs/storage-accounting-contract.md)
 - [架构和数据流](docs/architecture.md)
