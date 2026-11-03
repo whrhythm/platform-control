@@ -177,8 +177,12 @@ def test_resize_requires_kubernetes_and_filesystem_observation_and_recovers_lost
         run()  # Observe quota and increase the same PVC.
         run()  # PVC request alone cannot activate rights.
         assert [kind for kind, _ in transport.calls] == ['ResourceQuota', 'PersistentVolumeClaim']
+        from control_plane.workspace_controller import reconcile
+        disabled = settings.model_copy(update={'capacity_upgrades_enabled': False, 'test_payments_enabled': False})
+        assert reconcile(client.session_factory, provider, env_id, disabled) == 'capacity_in_progress'
         with client.session_factory() as db:
             assert db.get(UserEnvironment, env_id).storage_gib == 2
+            assert db.get(WorkspaceFileService, env_id).status == 'ready'
         transport.objects['PersistentVolumeClaim']['status']['capacity']['storage'] = '4Gi'
         transport.objects['PersistentVolume']['spec']['capacity']['storage'] = '4Gi'
         run()  # The guest filesystem is still old.

@@ -108,6 +108,11 @@ def upgrade_owned_runtime(provider, path, desired, actual):
 
 
 def reconcile(session_factory, provider, env_id, settings):
+    # New-order switches must not strand already confirmed storage changes.
+    # While a resize owns the quota/PVC, the create-only path must not compare
+    # its intermediate capacity with the old active allowance.
+    if reconcile_capacity(session_factory, provider, env_id, settings):
+        return 'capacity_in_progress'
     for _ in range(4):
         state = provision_one(session_factory, provider, env_id)
         if state == 'pvc_recorded':
@@ -134,8 +139,6 @@ def main():
                 token=(sa / 'token').read_text().strip(), ca_file=str(sa / 'ca.crt'),
                 issuer=env.issuer, subject=env.subject, storage_gib=env.storage_gib)
             try:
-                if settings.capacity_upgrades_enabled and reconcile_capacity(SessionLocal, provider, env.id, settings):
-                    continue
                 result = reconcile(SessionLocal, provider, env.id, settings)
                 logger.info('Workspace %s state=%s', env.id, result)
             except Exception as error:
