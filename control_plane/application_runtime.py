@@ -21,6 +21,8 @@ def labels(app, digest):
 
 
 def build_objects(app, environment, registry, settings, credential, workspace_token, ca):
+    if not 256 <= settings.build_scratch_mib <= 4096 or not settings.build_scratch_mib + 512 <= settings.build_memory_mib <= 8192:
+        raise ValueError('Build memory must include scratch space and worker headroom')
     revision = app.revision.replace('-', '')
     name, secret = 'build-' + revision[:24], 'build-auth-' + revision[:24]
     owner = labels(app, environment.identity_hash)
@@ -50,7 +52,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
                                      {'name': 'credentials', 'mountPath': '/credentials', 'readOnly': True}]}],
                 'containers': [{'name': 'build', 'image': settings.buildkit_image,
                     'command': ['/bin/sh', '-ec',
-                        'mount -t tmpfs -o size=1073741824,mode=0700 tmpfs /var/lib/buildkit\n'
+                        f'mount -t tmpfs -o size={settings.build_scratch_mib * 1024 ** 2},mode=0700 tmpfs /var/lib/buildkit\n'
                         'exec buildctl-daemonless.sh "$@"', 'buildkit-job'],
                     'args': ['build', '--frontend', 'dockerfile.v0', '--local', 'context=/context/src',
                              '--local', 'dockerfile=/context/src', '--output', f'type=image,name={target},push=true'],
@@ -60,13 +62,13 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
                     # Privilege is confined to the dedicated Kata VM. No host paths/sockets or SA token.
                     'securityContext': {'privileged': True, 'runAsUser': 0},
                     'resources': {'requests': {'cpu': '250m', 'memory': '512Mi', 'ephemeral-storage': '1Gi'},
-                                  'limits': {'cpu': '2', 'memory': '2Gi', 'ephemeral-storage': '2Gi'}},
+                                  'limits': {'cpu': '2', 'memory': f'{settings.build_memory_mib}Mi', 'ephemeral-storage': '2Gi'}},
                     'volumeMounts': [{'name': 'context', 'mountPath': '/context', 'readOnly': True},
                                      {'name': 'credentials', 'mountPath': '/credentials', 'readOnly': True},
                                      {'name': 'build', 'mountPath': '/var/lib/buildkit'}]}],
                 'volumes': [{'name': 'credentials', 'secret': {'secretName': secret}},
                             {'name': 'context', 'emptyDir': {'sizeLimit': '128Mi'}},
-                            {'name': 'build', 'emptyDir': {'sizeLimit': '2Gi'}}],
+                            {'name': 'build', 'emptyDir': {'sizeLimit': f'{settings.build_scratch_mib}Mi'}}],
             }}}}
     if settings.workspace_pip_index_url:
         index = urlsplit(settings.workspace_pip_index_url)

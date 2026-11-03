@@ -39,6 +39,31 @@ def deployment_ready(actual):
             all(status.get(field, 0) == 1 for field in ('replicas', 'updatedReplicas', 'readyReplicas', 'availableReplicas')))
 
 
+def failed_build_code(cluster, app, job):
+    """Classify a bounded owned build log; never persist source or log contents."""
+    if any(value.get('reason') == 'DeadlineExceeded' for value in job.get('status', {}).get('conditions', [])):
+        return 'build_timed_out'
+    try:
+        pods = cluster.get('api/v1/namespaces/codechat-builds/pods?labelSelector=job-name%3D' + job['metadata']['name'])
+        for pod in (pods or {}).get('items', []):
+            metadata = pod.get('metadata', {})
+            if (metadata.get('labels', {}).get('codechat.io/app-id') != app.id or not any(
+                    value.get('kind') == 'Job' and value.get('uid') == job['metadata']['uid']
+                    for value in metadata.get('ownerReferences', []))):
+                continue
+            statuses = pod.get('status', {}).get('containerStatuses', [])
+            if any(value.get('state', {}).get('terminated', {}).get('reason') == 'OOMKilled' for value in statuses):
+                return 'build_memory_exhausted'
+            response = cluster.client.get('api/v1/namespaces/codechat-builds/pods/' + metadata['name'] + '/log',
+                params={'container': 'build', 'tailLines': 80, 'limitBytes': 16384})
+            if response.status_code == 200 and 'no space left on device' in response.text.lower():
+                return 'build_storage_exhausted'
+    except Exception:
+        # Diagnostics must not prevent cleanup when a Pod has already disappeared.
+        pass
+    return 'build_failed'
+
+
 class Cluster:
     def __init__(self, client):
         self.client = client
@@ -216,7 +241,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         if not actual or actual.get('metadata', {}).get('uid') != job.get('uid'):
             raise DeliveryError('build_identity_requires_review')
         if any(item['type'] == 'Failed' and item['status'] == 'True' for item in actual.get('status', {}).get('conditions', [])):
-            raise DeliveryError('build_failed')
+            raise DeliveryError(failed_build_code(cluster, app, actual))
         if not any(item['type'] == 'Complete' and item['status'] == 'True' for item in actual.get('status', {}).get('conditions', [])):
             return
         response = harbor.get(f'/api/v2.0/projects/{registry.project_name}/repositories/{app_name(app)}/artifacts/{app.revision.replace("-", "")}')

@@ -22,7 +22,7 @@ Agent 发布工具只提交意图，不阻塞等待镜像构建。终端返回�
 1. 每个个人环境关联一个私有 Harbor project 和只具备该 project pull/push 权限的 robot。先持久记录创建意图，再将 Harbor 返回的一次性生成密钥立即加密保存；创建结果不明时不自动重建。Harbor v2.15.4 实际创建接口不采用预先传入的 secret，不能只依据 Swagger 字段假设它会采用。身份关联和加密凭据由控制平台保管。
 2. 文件服务导出工程快照。只包含普通文件，跳过链接和常用依赖缓存，限制文件数量及总大小；Dockerfile 中的构建过程由构建器执行。
 3. 每次构建使用独立 Kata Job，运行 BuildKit；不挂载宿主 Docker socket，不向用户执行进程提供集群凭据。构建环境及其临时凭据随 Job 回收，个人 PVC 保留。
-   BuildKit 临时层写入 Kata 虚拟机内的 1 GiB tmpfs，避免共享目录缺少 xattr 导致镜像导出失败；此目录不承载用户持久文件，受构建容器 2 GiB 内存上限约束。
+   BuildKit 临时层写入 Kata 虚拟机内的 tmpfs，避免共享目录缺少 xattr 导致镜像导出失败；此目录不承载用户持久文件。上限由 `PLATFORM_BUILD_SCRATCH_MIB` 和 `PLATFORM_BUILD_MEMORY_MIB` 配置，内存必须额外保留至少 512 MiB 工作空间。该集群现配置 2 GiB 临时层、3 GiB 容器内存，以支持含依赖安装的多层 Python 镜像；临时计算与持久存储额度分开，结束回收。
 4. BuildKit 推送版本镜像。控制器观察构建成功，并从 Harbor 获取实际镜像 digest，随后将该 digest 部署到用户 namespace。
    BuildKit daemon 的 registry CA 与 buildctl 会话中获取 Harbor token 的客户端信任分别配置；后者通过 SSL_CERT_FILE 加载相同内部 CA，不跳过 TLS 校验。
 5. 部署完成并通过 HTTP 探测后才返回可访问状态。局域网无自有域名时，使用 `<应用标识>.192.168.10.30.sslip.io:30097` 独立域名，根路径直达应用，与 LibreChat 登录入口分开。已实际验证该域名模式解析至集群 IP。首版为局域网 HTTP 入口；以后接入用户自己的域名和公开受信任的 HTTPS。

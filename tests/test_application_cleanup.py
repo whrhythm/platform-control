@@ -135,3 +135,23 @@ def test_old_ready_pod_cannot_make_a_failed_new_release_look_successful():
     assert deployment_ready(old_serving)
     old_serving['status']['observedGeneration'] = 1
     assert not deployment_ready(old_serving)
+
+
+@pytest.mark.parametrize('mode,expected', [('space', 'build_storage_exhausted'), ('memory', 'build_memory_exhausted'),
+    ('deadline', 'build_timed_out'), ('unowned', 'build_failed')])
+def test_failed_build_classifies_owned_bounded_diagnostics(mode, expected):
+    from control_plane.application_controller import failed_build_code
+    from types import SimpleNamespace
+    job = {'metadata': {'name': 'build-test', 'uid': 'owned-job'}, 'status': {'conditions': []}}
+    pod = {'metadata': {'name': 'build-pod', 'labels': {'codechat.io/app-id': 'app-id'},
+        'ownerReferences': [{'kind': 'Job', 'uid': 'foreign-job' if mode == 'unowned' else 'owned-job'}]},
+        'status': {'containerStatuses': [{'state': {'terminated': {'reason': 'OOMKilled' if mode == 'memory' else 'Error'}}}]}}
+    if mode == 'deadline':
+        job['status']['conditions'] = [{'reason': 'DeadlineExceeded'}]
+    requests = []
+    def logs(path, params):
+        requests.append(params)
+        return httpx.Response(200, text='no space left on device')
+    cluster = SimpleNamespace(get=lambda path: {'items': [pod]}, client=SimpleNamespace(get=logs))
+    assert failed_build_code(cluster, SimpleNamespace(id='app-id'), job) == expected
+    assert len(requests) == (1 if mode == 'space' else 0)

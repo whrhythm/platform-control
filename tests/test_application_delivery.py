@@ -52,6 +52,14 @@ def test_build_job_uses_independent_kata_and_no_host_socket():
     assert pod['runtimeClassName'] == 'kata-qemu-runtime-rs'
     assert pod['automountServiceAccountToken'] is False
     assert 'build-arg:PIP_INDEX_URL=https://packages.test/simple' in pod['containers'][0]['args']
+    assert 'size=1073741824' in pod['containers'][0]['command'][2]
+    settings.build_scratch_mib, settings.build_memory_mib = 2048, 3072
+    larger, _, _ = build_objects(app, env, registry, settings, 'synthetic-secret', 'synthetic-workspace-token', 'test-ca')
+    assert 'size=2147483648' in larger['spec']['template']['spec']['containers'][0]['command'][2]
+    assert larger['spec']['template']['spec']['containers'][0]['resources']['limits']['memory'] == '3072Mi'
+    settings.build_memory_mib = 2048
+    with pytest.raises(ValueError):
+        build_objects(app, env, registry, settings, 'synthetic-secret', 'synthetic-workspace-token', 'test-ca')
     assert all('hostPath' not in volume for volume in pod['volumes'])
     assert target.startswith('harbor.k3s.local/u-demo/')
     assert 'synthetic-secret' not in json.dumps(job)
