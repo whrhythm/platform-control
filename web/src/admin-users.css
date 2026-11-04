@@ -1,0 +1,12 @@
+.inventory-search { flex-wrap: wrap; margin: 16px 0; }
+.inventory-search input { min-width: min(100%, 18rem); }
+.inventory-scroll { overflow-x: auto; }
+.inventory-table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.inventory-table th, .inventory-table td { text-align: left; padding: 12px 10px; border-bottom: 1px solid #e0e7df; }
+.inventory-table td { overflow-wrap: anywhere; }
+.inventory-meta { display: block; color: #52766a; margin-top: 4px; }
+.inventory-pagination { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.inventory-identity { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.inventory-identity dt { font-weight: 600; font-size: 13px; }
+.inventory-identity dd { margin: 5px 0 0; overflow-wrap: anywhere; }
+@media (max-width: 850px) { .inventory-identity { grid-template-columns: minmax(0, 1fr); } }

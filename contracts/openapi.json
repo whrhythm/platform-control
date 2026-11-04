@@ -3551,6 +3551,152 @@
         }
       }
     },
+    "/v1/admin/users": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "List Users",
+        "operationId": "list_users_v1_admin_users_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 255,
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUsersOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users/{environment_id}": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "User Detail",
+        "operationId": "user_detail_v1_admin_users__environment_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "environment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Environment Id"
+            }
+          },
+          {
+            "name": "application_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Application Limit"
+            }
+          },
+          {
+            "name": "application_offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Application Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetailOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Platform user workspace not found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/models": {
       "get": {
         "tags": [
@@ -3654,6 +3800,215 @@
           "plans"
         ],
         "title": "AIPolicy"
+      },
+      "AdminApplicationOut": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "project": {
+            "type": "string",
+            "title": "Project"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "desired_state": {
+            "type": "string",
+            "title": "Desired State"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "project",
+          "status",
+          "desired_state",
+          "created_at"
+        ],
+        "title": "AdminApplicationOut"
+      },
+      "AdminUserDetailOut": {
+        "properties": {
+          "user": {
+            "$ref": "#/components/schemas/AdminUserOut"
+          },
+          "storage": {
+            "items": {
+              "$ref": "#/components/schemas/StorageSampleOut"
+            },
+            "type": "array",
+            "title": "Storage"
+          },
+          "applications": {
+            "items": {
+              "$ref": "#/components/schemas/AdminApplicationOut"
+            },
+            "type": "array",
+            "title": "Applications"
+          },
+          "next_application_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Application Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user",
+          "storage",
+          "applications",
+          "next_application_offset"
+        ],
+        "title": "AdminUserDetailOut"
+      },
+      "AdminUserOut": {
+        "properties": {
+          "environment_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Environment Id"
+          },
+          "issuer": {
+            "type": "string",
+            "title": "Issuer"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "workspace_name": {
+            "type": "string",
+            "title": "Workspace Name"
+          },
+          "workspace_status": {
+            "type": "string",
+            "title": "Workspace Status"
+          },
+          "file_service_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Service Status"
+          },
+          "namespace": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Namespace"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "plan_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Id"
+          },
+          "plan_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Name"
+          },
+          "application_limit": {
+            "type": "integer",
+            "title": "Application Limit"
+          },
+          "application_count": {
+            "type": "integer",
+            "title": "Application Count"
+          },
+          "files": {
+            "$ref": "#/components/schemas/StorageSampleOut"
+          },
+          "model_usage": {
+            "$ref": "#/components/schemas/ModelUsageOut"
+          }
+        },
+        "type": "object",
+        "required": [
+          "environment_id",
+          "issuer",
+          "subject",
+          "workspace_name",
+          "workspace_status",
+          "file_service_status",
+          "namespace",
+          "created_at",
+          "plan_id",
+          "plan_name",
+          "application_limit",
+          "application_count",
+          "files",
+          "model_usage"
+        ],
+        "title": "AdminUserOut"
+      },
+      "AdminUsersOut": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserOut"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "next_offset"
+        ],
+        "title": "AdminUsersOut"
       },
       "AgentSpec": {
         "properties": {
@@ -4430,6 +4785,80 @@
         ],
         "title": "MemberOut"
       },
+      "ModelUsageOut": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          },
+          "allocated_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allocated Usd Micros"
+          },
+          "spent_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Spent Usd Micros"
+          },
+          "remaining_usd_micros": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Usd Micros"
+          },
+          "total_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Tokens"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "observed_at",
+          "allocated_usd_micros",
+          "spent_usd_micros",
+          "remaining_usd_micros",
+          "total_tokens"
+        ],
+        "title": "ModelUsageOut"
+      },
       "ObjectStorageOut": {
         "properties": {
           "enabled": {
@@ -5021,6 +5450,61 @@
           "status"
         ],
         "title": "StorageComponentOut"
+      },
+      "StorageSampleOut": {
+        "properties": {
+          "component": {
+            "type": "string",
+            "title": "Component"
+          },
+          "used_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Used Bytes"
+          },
+          "budget_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Budget Bytes"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "component",
+          "used_bytes",
+          "budget_bytes",
+          "status",
+          "observed_at"
+        ],
+        "title": "StorageSampleOut"
       },
       "TenantCreate": {
         "properties": {
