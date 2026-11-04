@@ -98,6 +98,38 @@ def test_restart_never_replays_and_readonly_tools_refuse_writes(workspace):
         tools.authorize('write', {'path': 'unexpected'})
 
 
+@pytest.mark.parametrize('service', ['database', 'objects'])
+def test_service_credentials_require_confirmation_even_in_project_auto(workspace, monkeypatch, service):
+    client, _, _ = workspace
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        item = db.get(AgentTask, task.id)
+        item.status = 'running'
+        item.config = {**item.config, 'approval': 'workspace_auto'}
+    def observe_wait(_):
+        with client.session_factory() as db:
+            item = db.get(AgentTask, task.id)
+            assert item.status == 'awaiting_approval'
+            assert item.pending['decision'] is None
+        raise TaskStopped('confirmation_observed')
+    monkeypatch.setattr('control_plane.agent_execution.time.sleep', observe_wait)
+    tools = TaskTools(client.session_factory, task.id, None, get_settings(), None)
+    with pytest.raises(TaskStopped, match='confirmation_observed'):
+        tools.authorize('command', {'command': 'python query.py', service: True})
+
+
+def test_large_file_read_is_explicitly_rejected_not_silently_truncated(workspace, monkeypatch):
+    import json
+    client, _, _ = workspace
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        db.get(AgentTask, task.id).status = 'running'
+    monkeypatch.setattr('control_plane.agent_execution.call_files',
+                        lambda *a, **kw: httpx.Response(200, content=b'x' * 32769))
+    tools = TaskTools(client.session_factory, task.id, None, get_settings(), None)
+    assert json.loads(tools.file('read', 'large.txt'))['error'] == 'file_too_large_for_agent_read'
+
+
 @pytest.mark.parametrize('path', ['../other', '/root', 'x/../y', 'x//y', 'x\\y'])
 def test_project_traversal_is_rejected(path):
     with pytest.raises(ValueError):

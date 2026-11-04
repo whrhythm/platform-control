@@ -11,7 +11,7 @@ def snapshot(files: WorkspaceFiles, path: str, *, max_bytes=48 * 1024 * 1024, ma
     pending = [('', base)]
     total, count = 0, 0
     output = io.BytesIO()
-    excluded = {'.git', 'node_modules', '.venv', '__pycache__', '.pytest_cache'}
+    excluded = {'.git', '.cache', 'node_modules', '.venv', '__pycache__', '.pytest_cache'}
     with tarfile.open(fileobj=output, mode='w') as archive:
         while pending:
             prefix, parts = pending.pop()

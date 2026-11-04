@@ -48,7 +48,9 @@ class TaskTools:
             if task.config['strategy'] != 'implement':
                 raise TaskStopped('agent_strategy_read_only')
             digest = hashlib.sha256(json.dumps([task.config, operation, arguments], sort_keys=True).encode()).hexdigest()
-            required = task.config['approval'] == 'strict' or operation in ('publish', 'start', 'stop', 'delete', 'database')
+            required = (task.config['approval'] == 'strict'
+                        or operation in ('publish', 'start', 'stop', 'delete', 'database')
+                        or (operation == 'command' and (arguments.get('database') or arguments.get('objects'))))
             deadline = now() + timedelta(seconds=self.settings.agent_approval_seconds)
             task.pending = {'id': operation_id, 'digest': digest, 'expires_at': deadline.isoformat(),
                             'decision': None if required else 'approve'}
@@ -103,10 +105,13 @@ class TaskTools:
                 self.stop_reason = 'agent_write_requires_review'
                 raise TaskStopped('agent_write_requires_review') from None
             return json.dumps({'error': 'file_operation_failed', 'status': error.status_code})
+        if operation == 'read' and len(response.content) > 32768:
+            return json.dumps({'error': 'file_too_large_for_agent_read', 'path': path,
+                               'message': 'Use a bounded command to inspect sections; never replace from partial content.'})
         result = response.json() if operation == 'list' else {'path': path, 'etag': response.headers.get('etag'),
                                                               'content': response.text if operation == 'read' else ''}
         self.event('file', operation=operation, path=path)
-        return json.dumps(result, ensure_ascii=False)[:65536]
+        return json.dumps(result, ensure_ascii=False)
 
     def command(self, command, *, database=False, objects=False):
         if not command or len(command) > 16384:

@@ -30,6 +30,8 @@ def test_source_snapshot_is_real_bounded_and_does_not_follow_links(tmp_path):
     (project / 'app.txt').write_text('actual source')
     (project / '.git').mkdir()
     (project / '.git' / 'config').write_text('exclude')
+    (project / '.cache').mkdir()
+    (project / '.cache' / 'dependency.whl').write_bytes(b'x' * 4096)
     try:
         (project / 'outside').symlink_to('/etc/passwd')
     except (OSError, NotImplementedError):

@@ -18,6 +18,9 @@
 
 ## 文档
 
+- [编程设置使用手册](docs/agent-workbench-guide.md)
+- [共享 OpenHands 与 Kata 执行架构](docs/agent-workbench-design.md)
+- [编程工作台实际验收](docs/agent-workbench-acceptance-20261104.md)
 - [模型选择、模拟充值与中文套餐手册](docs/model-membership-guide.md)
 - [聊天、模型与中文套餐实际验收](docs/chat-membership-acceptance-20261103.md)
 - [聊天、模型与套餐改进协议](docs/chat-and-membership-contract.md)
