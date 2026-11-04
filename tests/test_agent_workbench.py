@@ -111,6 +111,7 @@ def test_command_has_only_project_mount_and_no_credentials():
     task = SimpleNamespace(id=str(uuid4()), config={'project_path': 'projects/demo'})
     job = command_job(task, env, binding, str(uuid4()), 'python -m pytest', settings)
     pod = job['spec']['template']['spec']
+    assert all(len(value) <= 63 for value in job['metadata']['labels'].values())
     assert pod['runtimeClassName'] == 'kata-qemu-runtime-rs'
     assert pod['automountServiceAccountToken'] is False
     assert job['spec']['backoffLimit'] == 0

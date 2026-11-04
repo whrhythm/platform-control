@@ -16,7 +16,7 @@ def command_job(task, environment, binding, operation_id, command, settings):
     if not settings.agent_command_image or '@sha256:' not in settings.agent_command_image:
         raise ValueError('agent_command_image_unpinned')
     labels = {'codechat.io/agent-task': task.id, 'codechat.io/agent-operation': operation_id,
-              'codechat.io/user-hash': environment.identity_hash, 'codechat.io/agent-command': 'true'}
+              'codechat.io/user-hash': environment.identity_hash[:40], 'codechat.io/agent-command': 'true'}
     return {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': {
         'name': 'agent-' + operation_id, 'namespace': namespace, 'labels': labels},
         'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': settings.agent_command_seconds,
