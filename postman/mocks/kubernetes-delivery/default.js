@@ -6,6 +6,7 @@ http.createServer(async (req, res) => {
   if (req.method === 'POST' && path === '__test__/seed') {
     await pm.state.set('delivery_objects', req.body.objects || {});
     await pm.state.set('delivery_mutations', []);
+    await pm.state.set('delivery_delay', req.body.delay || null);
     return send(res, 200, {});
   }
   const objects = (await pm.state.get('delivery_objects')) || {};
@@ -43,8 +44,21 @@ http.createServer(async (req, res) => {
   }
   const job = /^apis\/batch\/v1\/namespaces\/codechat-builds\/jobs\/build-[a-z0-9]+$/.test(path);
   const deployment = /^apis\/apps\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/deployments\/app-[a-f0-9]+$/.test(path);
-  if (!job && !deployment) return send(res, 501, {error: 'not modelled'});
-  if (req.method === 'GET') return send(res, objects[path] ? 200 : 404, objects[path] || {});
+  const service = /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/services\/app-[a-f0-9]+$/.test(path);
+  const networkPolicy = /^apis\/networking\.k8s\.io\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/networkpolicies\/app-[a-f0-9]+$/.test(path);
+  const route = /^apis\/apisix\.apache\.org\/v2\/namespaces\/codechat-user-[a-f0-9]{40}\/apisixroutes\/app-[a-f0-9]+$/.test(path);
+  if (!job && !deployment && !service && !networkPolicy && !route) return send(res, 501, {error: 'not modelled'});
+  const delay = async () => {
+    const fault = await pm.state.get('delivery_delay');
+    if (fault?.path === path && fault.method === req.method) {
+      await pm.state.set('delivery_delay', null);
+      await new Promise(resolve => setTimeout(resolve, fault.ms));
+    }
+  };
+  if (req.method === 'GET') {
+    await delay();
+    return send(res, objects[path] ? 200 : 404, objects[path] || {});
+  }
   if (!objects[path]) return send(res, 404, {});
   if (job && req.method === 'DELETE') {
     if (req.body?.preconditions?.uid !== objects[path].metadata.uid) return send(res, 409, {});
@@ -65,5 +79,6 @@ http.createServer(async (req, res) => {
   mutations.push([req.method, path]);
   await pm.state.set('delivery_objects', objects);
   await pm.state.set('delivery_mutations', mutations);
+  await delay();
   return send(res, job ? 202 : 200, objects[path] || {});
 }).listen(process.env.PORT || 4502);

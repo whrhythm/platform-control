@@ -4,6 +4,9 @@ import json
 from urllib.parse import urlsplit
 
 
+WRITE_REVIEW_CODE = 'provider_write_requires_review'
+
+
 def app_name(app):
     return 'app-' + app.id.replace('-', '')[:24]
 

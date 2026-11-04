@@ -10,7 +10,7 @@ import httpx
 import pytest
 from sqlalchemy.orm import sessionmaker
 
-from control_plane.application_runtime import application_objects, build_objects
+from control_plane.application_runtime import WRITE_REVIEW_CODE, application_objects, build_objects
 from control_plane.application_observation import quantity
 from control_plane.database import make_engine
 from control_plane.models import Base, Tenant, UserEnvironment, UserRegistry
@@ -132,7 +132,8 @@ def test_metric_quantities_keep_units():
     assert quantity('128Mi') == 128 * 1024 ** 2
 
 
-def test_same_chat_cannot_rebuild_after_failure_but_new_user_request_can(tmp_path, monkeypatch):
+@pytest.mark.parametrize('failure', ['build_failed', WRITE_REVIEW_CODE])
+def test_retry_requires_a_new_request_and_a_known_write_result(tmp_path, monkeypatch, failure):
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     from control_plane import applications
@@ -153,7 +154,8 @@ def test_same_chat_cannot_rebuild_after_failure_but_new_user_request_can(tmp_pat
         db.add(env)
         db.flush()
         app = UserApplication(environment_id=env.id, project_path='demo', status='failed',
-                              error_code='build_failed', resources={'request_id': 'a' * 64, 'cleanup': {'status': 'complete'}})
+                              image='registry.test/app@sha256:' + 'a' * 64, error_code=failure,
+                              resources={'request_id': 'a' * 64, 'cleanup': {'status': 'complete'}})
         db.add(app)
         db.flush()
         identifier, original_revision = app.id, app.revision
@@ -174,8 +176,16 @@ def test_same_chat_cannot_rebuild_after_failure_but_new_user_request_can(tmp_pat
         assert db.get(UserApplication, identifier).revision == original_revision
         assert not list(db.scalars(select(AuditEvent)))
     result = client.post('/internal/v1/workspace/apps?path=demo', headers={'X-CodeChat-Task-ID': 'b' * 64})
-    assert result.status_code == 202 and result.json()['status'] == 'queued'
-    with sessions() as db:
-        assert db.get(UserApplication, identifier).revision != original_revision
-        assert len(list(db.scalars(select(AuditEvent)))) == 1
+    if failure == WRITE_REVIEW_CODE:
+        assert result.status_code == 409
+        for action in ('start', 'stop', 'delete'):
+            assert client.post(f'/internal/v1/workspace/apps/{identifier}/{action}').status_code == 409
+        with sessions() as db:
+            assert db.get(UserApplication, identifier).revision == original_revision
+            assert not list(db.scalars(select(AuditEvent)))
+    else:
+        assert result.status_code == 202 and result.json()['status'] == 'queued'
+        with sessions() as db:
+            assert db.get(UserApplication, identifier).revision != original_revision
+            assert len(list(db.scalars(select(AuditEvent)))) == 1
     engine.dispose()

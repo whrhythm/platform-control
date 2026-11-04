@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
+from .application_runtime import WRITE_REVIEW_CODE
 from .database import get_db
 from .models import AuditEvent, UserApplication, ProjectDatabase, UserObjectStorage
 from .object_storage import secret_name as object_secret_name
@@ -64,6 +65,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(409, 'Wait for the lifecycle operation')
         if app and app.status in ('queued', 'preparing', 'building', 'deploying'):
             return application_out(app)
+        if app and app.error_code == WRITE_REVIEW_CODE:
+            raise HTTPException(409, 'Previous operation requires administrator review')
         if app and app.status == 'failed' and app.resources.get('cleanup', {}).get('status') != 'complete':
             raise HTTPException(409, 'Wait for failed release cleanup')
         if app and app.error_code and 'requires_review' in app.error_code:
@@ -101,6 +104,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                                                       UserApplication.environment_id == env.id).with_for_update())
         if not app:
             raise HTTPException(404, 'Application not found')
+        if app.error_code == WRITE_REVIEW_CODE:
+            raise HTTPException(409, 'Previous operation requires administrator review')
         target = {'start': 'running', 'stop': 'stopped', 'delete': 'deleted'}[action]
         if app.status == 'changing' and app.desired_state == target:
             return application_out(app)

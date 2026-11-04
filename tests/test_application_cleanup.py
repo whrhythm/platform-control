@@ -1,3 +1,4 @@
+from copy import deepcopy
 import json
 import os
 from types import SimpleNamespace
@@ -5,10 +6,126 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from cryptography.fernet import Fernet
+from sqlalchemy.orm import sessionmaker
 
-from control_plane.application_controller import Cluster, DeliveryError, cleanup_failure
-from control_plane.application_runtime import application_objects, object_path
+from control_plane import application_controller
+from control_plane.application_controller import Cluster, DeliveryError, cleanup_failure, reconcile_application_iteration
+from control_plane.application_runtime import WRITE_REVIEW_CODE, application_objects, object_path
+from control_plane.database import make_engine
+from control_plane.models import Base, Tenant, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from control_plane.settings import Settings
+
+
+@pytest.mark.parametrize('provider', ['local', 'postman'])
+@pytest.mark.parametrize('fault', ['read', 'committed_patch'])
+def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monkeypatch, provider, fault):
+    simulation = os.environ.get('CODECHAT_DELIVERY_SIM_URL') if provider == 'postman' else None
+    if provider == 'postman' and not simulation:
+        pytest.skip('requires local Postman delivery simulation')
+
+    engine = make_engine('sqlite:///' + str(tmp_path / 'reconcile.db'))
+    Base.metadata.create_all(engine)
+    sessions = sessionmaker(engine, expire_on_commit=False)
+    settings = Settings(model_credential_encryption_key=Fernet.generate_key().decode())
+    image = 'registry.test/demo@sha256:' + 'a' * 64
+    old_observation = {'observed_at': '2026-01-01T00:00:00Z'}
+    fresh_observation = {'observed_at': '2026-01-01T00:01:00Z'}
+    objects = {}
+    with sessions.begin() as db:
+        tenant = Tenant(name='personal', owner_issuer='issuer', owner_subject='owner', project_limit=3)
+        db.add(tenant)
+        db.flush()
+        env = UserEnvironment(issuer='issuer', subject='owner', identity_hash='b' * 64,
+                              storage_gib=2, first_tenant_id=tenant.id)
+        db.add(env)
+        db.flush()
+        namespace = 'codechat-user-' + env.identity_hash[:40]
+        db.add_all([
+            WorkspaceVolumeBinding(environment_id=env.id, namespace_name=namespace, namespace_uid='ns-uid',
+                                   pvc_uid='pvc-uid', pv_name='pv', pv_uid='pv-uid', volume_handle='volume'),
+            WorkspaceFileService(environment_id=env.id, encrypted_token='unused', status='ready'),
+            UserRegistry(environment_id=env.id, project_name='demo', robot_name='demo', encrypted_secret='unused',
+                         pull_secret_uid='pull-uid', status='ready'),
+        ])
+        app = UserApplication(environment_id=env.id, project_path='demo', status='running' if fault == 'read' else 'deploying',
+                              image=image, observation=old_observation)
+        db.add(app)
+        db.flush()
+        identifier, revision, original_status = app.id, app.revision, app.status
+        workloads = {}
+        for document in application_objects(app, env, settings):
+            obj = deepcopy(document)
+            kind, meta = obj['kind'], obj['metadata']
+            meta.update(uid=kind + '-uid', resourceVersion='1', generation=1)
+            path = object_path(namespace, kind, meta['name'])
+            objects[path] = obj
+            workloads[kind] = {'state': 'created', 'uid': meta['uid']}
+            if kind == 'ApisixRoute':
+                obj['status'] = {'conditions': [{'type': 'Accepted', 'status': 'True', 'observedGeneration': 1}]}
+            if kind == 'Deployment':
+                deployment_path = path
+                obj['status'] = {'observedGeneration': 1, 'replicas': 1, 'updatedReplicas': 1,
+                                 'readyReplicas': 1, 'availableReplicas': 1}
+                if fault == 'committed_patch':
+                    obj['spec']['template']['metadata']['annotations']['codechat.io/revision'] = 'previous-revision'
+        journal = {'workloads': workloads}
+        app.resources = journal
+
+    mutations = []
+    failed_once = False
+    def respond(request):
+        nonlocal failed_once
+        path = request.url.path.lstrip('/')
+        if request.method == 'PATCH':
+            assert path == deployment_path
+            patch = json.loads(request.content)
+            objects[path]['spec']['template'] = patch[-1]['value']
+            mutations.append(['PATCH', path])
+            raise httpx.ReadTimeout('write committed before the response', request=request)
+        assert request.method == 'GET'
+        if fault == 'read' and path == deployment_path and not failed_once:
+            failed_once = True
+            raise httpx.ConnectTimeout('query could not connect', request=request)
+        return httpx.Response(200, json=objects[path])
+
+    options = {'base_url': simulation, 'timeout': 0.7, 'trust_env': False} if simulation else {
+        'base_url': 'http://cluster/', 'transport': httpx.MockTransport(respond)}
+    with httpx.Client(**options) as client:
+        if simulation:
+            delay = {'method': 'GET' if fault == 'read' else 'PATCH', 'path': deployment_path, 'ms': 1400}
+            client.post('__test__/seed', json={'objects': objects, 'delay': delay}).raise_for_status()
+        # Pod metrics and the deployed app are separate from the Kubernetes API under test.
+        real_client = httpx.Client
+        monkeypatch.setattr(application_controller, 'observe', lambda *_: fresh_observation)
+        monkeypatch.setattr(application_controller.httpx, 'Client', lambda **kwargs: real_client(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200)), **kwargs))
+        cluster = Cluster(client)
+        reconcile_application_iteration(sessions, identifier, cluster, None, settings)
+        with sessions() as db:
+            app = db.get(UserApplication, identifier)
+            assert app.revision == revision and app.resources == journal
+            assert app.observation == old_observation
+            if fault == 'read':
+                assert app.status == original_status and app.error_code is None
+            else:
+                assert app.status == 'failed' and app.error_code == WRITE_REVIEW_CODE
+
+        reconcile_application_iteration(sessions, identifier, cluster, None, settings)
+        with sessions() as db:
+            app = db.get(UserApplication, identifier)
+            if fault == 'read':
+                assert app.status == 'running' and app.error_code is None
+                assert app.observation == fresh_observation
+            else:
+                assert app.status == 'failed' and app.error_code == WRITE_REVIEW_CODE
+                assert app.resources == journal
+        if simulation:
+            snapshot = client.get('__test__/snapshot').json()
+            objects, mutations = snapshot['objects'], snapshot['mutations']
+    assert mutations == ([] if fault == 'read' else [['PATCH', deployment_path]])
+    assert objects[deployment_path]['spec']['template']['metadata']['annotations']['codechat.io/revision'] == revision
+    engine.dispose()
 
 
 @pytest.mark.parametrize('provider', ['local', 'postman'])

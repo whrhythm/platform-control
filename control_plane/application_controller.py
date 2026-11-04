@@ -14,7 +14,7 @@ from cryptography.fernet import Fernet
 import httpx
 from sqlalchemy import select
 
-from .application_runtime import application_objects, application_origin, app_name, build_objects, object_path
+from .application_runtime import WRITE_REVIEW_CODE, application_objects, application_origin, app_name, build_objects, object_path
 from .application_observation import observe
 from .database import SessionLocal
 from .project_database_controller import reconcile_databases
@@ -31,6 +31,15 @@ class DeliveryError(RuntimeError):
 
 class RevisionChanged(RuntimeError):
     pass
+
+
+class KubernetesReadTimeout(httpx.TimeoutException):
+    """A read gave no evidence about the resource's state."""
+
+
+class KubernetesWriteUncertain(DeliveryError):
+    def __init__(self):
+        super().__init__(WRITE_REVIEW_CODE)
 
 
 def deployment_ready(actual):
@@ -69,15 +78,29 @@ class Cluster:
         self.client = client
 
     def get(self, path):
-        response = self.client.get(path)
+        try:
+            response = self.client.get(path)
+        except httpx.TimeoutException as error:
+            raise KubernetesReadTimeout('Kubernetes status query timed out') from error
+        if response.status_code in (408, 504):
+            raise KubernetesReadTimeout('Kubernetes status query timed out')
         if response.status_code == 404:
             return None
         if response.status_code != 200:
             raise DeliveryError('provider_read_failed')
         return response.json()
 
+    def _write(self, method, path, **kwargs):
+        try:
+            response = self.client.request(method, path, **kwargs)
+        except httpx.TransportError as error:
+            raise KubernetesWriteUncertain() from error
+        if response.status_code == 408 or response.status_code >= 500:
+            raise KubernetesWriteUncertain()
+        return response
+
     def create(self, document):
-        response = self.client.post(object_path(document['metadata']['namespace'], document['kind']), json=document)
+        response = self._write('POST', object_path(document['metadata']['namespace'], document['kind']), json=document)
         if response.status_code != 201:
             raise DeliveryError('provider_create_requires_review')
         return response.json()
@@ -85,12 +108,12 @@ class Cluster:
     def patch(self, path, actual, operations):
         patch = [{'op': 'test', 'path': '/metadata/uid', 'value': actual['metadata']['uid']},
                  {'op': 'test', 'path': '/metadata/resourceVersion', 'value': actual['metadata']['resourceVersion']}] + operations
-        response = self.client.patch(path, content=json.dumps(patch), headers={'Content-Type': 'application/json-patch+json'})
+        response = self._write('PATCH', path, content=json.dumps(patch), headers={'Content-Type': 'application/json-patch+json'})
         if response.status_code != 200:
             raise DeliveryError('provider_update_requires_review')
 
     def delete(self, path, uid, *, foreground=False):
-        response = self.client.request('DELETE', path, json={'apiVersion': 'v1', 'kind': 'DeleteOptions',
+        response = self._write('DELETE', path, json={'apiVersion': 'v1', 'kind': 'DeleteOptions',
             'preconditions': {'uid': uid}, 'propagationPolicy': 'Foreground' if foreground else 'Background'})
         if response.status_code not in (200, 202, 404):
             raise DeliveryError('provider_delete_requires_review')
@@ -203,10 +226,12 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         fields.setdefault('expected_desired', app.desired_state)
         return change_app(sessions, app_id, **fields)
     if app.status == 'failed':
-        if state.get('cleanup', {}).get('status') == 'complete':
+        if app.error_code == WRITE_REVIEW_CODE or state.get('cleanup', {}).get('status') == 'complete':
             return
         try:
             cleaned = cleanup_failure(app, env, cluster, settings)
+        except KubernetesReadTimeout:
+            raise
         except (DeliveryError, httpx.HTTPError):
             cleaned = deepcopy(state)
             cleaned['cleanup'] = {'status': 'pending', 'error_code': 'cleanup_requires_attention'}
@@ -349,12 +374,32 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         try:
             observation = observe(cluster, namespace, app.id)
         except (httpx.HTTPError, ValueError, KeyError):
-            observation = None
+            observation = app.observation
         state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/',
                               'database_secret': state.get('database_secret'), 'object_storage_secret': state.get('object_storage_secret')}
         update(expected_revision=app.revision, expected_desired=app.desired_state,
                    status='running', error_code=None, observation=observation, resources=state,
                    url=application_origin(app, settings) + '/')
+
+
+def reconcile_application_iteration(sessions, app_id, cluster, harbor, settings):
+    with sessions() as db:
+        requested = db.get(UserApplication, app_id)
+        expected_revision, expected_desired = requested.revision, requested.desired_state
+    try:
+        reconcile_application(sessions, app_id, cluster, harbor, settings)
+    except RevisionChanged:
+        return
+    except KubernetesReadTimeout:
+        logger.warning('Application=%s Kubernetes status query timed out; will retry', app_id)
+    except Exception as error:
+        code = str(error) if isinstance(error, DeliveryError) else 'delivery_requires_review'
+        try:
+            change_app(sessions, app_id, expected_revision=expected_revision, expected_desired=expected_desired,
+                       status='failed', error_code=code)
+        except RevisionChanged:
+            return
+        logger.warning('Application=%s state=%s (%s)', app_id, code, type(error).__name__)
 
 
 def main():
@@ -398,21 +443,7 @@ def main():
             with SessionLocal() as db:
                 identifiers = list(db.scalars(select(UserApplication.id).where(UserApplication.status != 'deleted')))
             for identifier in identifiers:
-                with SessionLocal() as db:
-                    requested = db.get(UserApplication, identifier)
-                    expected_revision, expected_desired = requested.revision, requested.desired_state
-                try:
-                    reconcile_application(SessionLocal, identifier, cluster, harbor, settings)
-                except RevisionChanged:
-                    continue
-                except Exception as error:
-                    code = str(error) if isinstance(error, DeliveryError) else 'delivery_requires_review'
-                    try:
-                        change_app(SessionLocal, identifier, expected_revision=expected_revision, expected_desired=expected_desired,
-                                   status='failed', error_code=code)
-                    except RevisionChanged:
-                        continue
-                    logger.warning('Application=%s state=%s (%s)', identifier, code, type(error).__name__)
+                reconcile_application_iteration(SessionLocal, identifier, cluster, harbor, settings)
         time.sleep(5)
 
 

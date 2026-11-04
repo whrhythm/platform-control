@@ -2,6 +2,13 @@ purpose:
   stands_in_for: Narrow Kubernetes Job delete and Deployment patch operations used by failed release cleanup.
   unblocks: HTTP serialization, UID preconditions, foreground deletion request, rollback/scale-down and repeatable cleanup checks without deleting user data.
 assumptions:
+  - id: status-timeout-and-uncertain-write
+    status: supported
+    claim: A delayed GET preserves the last confirmed state and the next successful check refreshes it. A committed PATCH with a delayed response pauses further writes and cleanup pending review.
+    reason: The synthetic Kubernetes mock delays one matching response and persists a PATCH before delaying its response. The controller runs against the real HTTP transport and a disposable metadata database.
+    verification: On 2026-11-04 the GET delay exceeded the client timeout and the next loop refreshed the existing running release with zero mutations. The PATCH delay produced one recorded mutation and a review hold through the next loop. Application health and metrics were controlled by the test.
+    source: control_plane/application_controller.py; tests/test_application_cleanup.py
+    updated_at: '2026-11-04'
   - id: project-database-connection-secrets
     status: supported
     claim: A recorded project database connection Secret is created once and deleted only with its recorded UID.
