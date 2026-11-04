@@ -7,22 +7,30 @@ from uuid import uuid4
 import httpx
 import pytest
 from cryptography.fernet import Fernet
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import sessionmaker
 
 from control_plane import application_controller
 from control_plane.application_controller import Cluster, DeliveryError, cleanup_failure, reconcile_application_iteration
+from control_plane.application_review_api import create_review_router
+from control_plane.application_reviews import create_intent, existing_intent, inspect_write
 from control_plane.application_runtime import WRITE_REVIEW_CODE, application_objects, object_path
-from control_plane.database import make_engine
+from control_plane.auth import Principal, current_principal
+from control_plane.database import get_db, make_engine
+from control_plane.main import platform_admin
 from control_plane.models import Base, Tenant, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from control_plane.settings import Settings
 
 
 @pytest.mark.parametrize('provider', ['local', 'postman'])
-@pytest.mark.parametrize('fault', ['read', 'committed_patch'])
+@pytest.mark.parametrize('fault', ['read', 'committed_patch', 'changed_after_review'])
 def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monkeypatch, provider, fault):
     simulation = os.environ.get('CODECHAT_DELIVERY_SIM_URL') if provider == 'postman' else None
     if provider == 'postman' and not simulation:
         pytest.skip('requires local Postman delivery simulation')
+    if simulation and fault == 'changed_after_review':
+        pytest.skip('metadata drift tested with the local synthetic provider')
 
     engine = make_engine('sqlite:///' + str(tmp_path / 'reconcile.db'))
     Base.metadata.create_all(engine)
@@ -67,7 +75,7 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
                 deployment_path = path
                 obj['status'] = {'observedGeneration': 1, 'replicas': 1, 'updatedReplicas': 1,
                                  'readyReplicas': 1, 'availableReplicas': 1}
-                if fault == 'committed_patch':
+                if fault != 'read':
                     obj['spec']['template']['metadata']['annotations']['codechat.io/revision'] = 'previous-revision'
         journal = {'workloads': workloads}
         app.resources = journal
@@ -104,12 +112,14 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
         reconcile_application_iteration(sessions, identifier, cluster, None, settings)
         with sessions() as db:
             app = db.get(UserApplication, identifier)
-            assert app.revision == revision and app.resources == journal
+            assert app.revision == revision
+            assert {k: v for k, v in app.resources.items() if k != 'write_review'} == journal
             assert app.observation == old_observation
             if fault == 'read':
                 assert app.status == original_status and app.error_code is None
             else:
                 assert app.status == 'failed' and app.error_code == WRITE_REVIEW_CODE
+                assert app.resources['write_review']['intent']['method'] == 'PATCH'
 
         reconcile_application_iteration(sessions, identifier, cluster, None, settings)
         with sessions() as db:
@@ -119,13 +129,76 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
                 assert app.observation == fresh_observation
             else:
                 assert app.status == 'failed' and app.error_code == WRITE_REVIEW_CODE
-                assert app.resources == journal
+                assert app.resources['write_review']['evidence']['result'] == 'confirmed'
+        if fault != 'read':
+            api = FastAPI()
+            api.include_router(create_review_router(platform_admin))
+            principal = Principal('issuer', 'regular-user')
+            api.dependency_overrides[current_principal] = lambda: principal
+            def database():
+                with sessions() as db:
+                    yield db
+            api.dependency_overrides[get_db] = database
+            web = TestClient(api)
+            base = '/v1/admin/release-reviews'
+            assert web.get(base).status_code == 403
+            assert web.get(base + '/audit').status_code == 403
+            principal = Principal('issuer', 'operator', ('platform-admins',))
+            review, = web.get(base).json()
+            assert review['intent']['expected']['revision'] == revision
+            assert review['evidence']['actual']['revision'] == revision
+            assert 'operations' not in review['intent']
+            resume = base + '/' + identifier + '/resume'
+            body = {'review_id': review['review_id'], 'evidence_id': review['evidence']['id']}
+            assert web.post(resume, json={**body, 'evidence_id': str(uuid4())}).status_code == 409
+            principal = Principal('issuer', 'regular-user')
+            assert web.post(resume, json=body).status_code == 403
+            principal = Principal('issuer', 'operator', ('platform-admins',))
+            assert web.post(resume, json=body).status_code == 202
+            assert web.post(resume, json=body).status_code == 202
+            if fault == 'changed_after_review':
+                objects[deployment_path]['metadata']['uid'] = 'foreign-uid'
+            reconcile_application_iteration(sessions, identifier, cluster, None, settings)
+            events = web.get(base + '/audit').json()
+            assert {e['subject'] for e in events} == {'operator'}
+            assert all(e['target_id'] == identifier for e in events)
+            assert {e['review_id'] for e in events} == {review['review_id']}
+            if fault == 'changed_after_review':
+                changed, = web.get(base).json()
+                assert changed['evidence']['differences'] == ['ownership_mismatch']
+                assert changed['resume_pending'] is False
+                assert [e['action'] for e in events] == ['application.review.blocked', 'application.review.requested']
+            else:
+                assert web.get(base).json() == []
+                assert [e['action'] for e in events] == ['application.review.resumed', 'application.review.requested']
+                reconcile_application_iteration(sessions, identifier, cluster, None, settings)
+                with sessions() as db:
+                    app = db.get(UserApplication, identifier)
+                    assert app.status == 'running' and app.error_code is None
         if simulation:
             snapshot = client.get('__test__/snapshot').json()
             objects, mutations = snapshot['objects'], snapshot['mutations']
     assert mutations == ([] if fault == 'read' else [['PATCH', deployment_path]])
     assert objects[deployment_path]['spec']['template']['metadata']['annotations']['codechat.io/revision'] == revision
     engine.dispose()
+
+
+def test_review_distinguishes_owned_create_delete_and_unproven_results():
+    app_id = 'demo'
+    namespace = 'codechat-user-' + 'b' * 40
+    document = {'kind': 'Service', 'metadata': {'name': 'app-demo', 'namespace': namespace,
+        'labels': {'codechat.io/app-id': app_id}}, 'spec': {'ports': [{'port': 8080}]}}
+    create = create_intent(document)
+    document['metadata']['uid'] = 'recorded-uid'
+    cluster = SimpleNamespace(get=lambda _: document)
+    assert inspect_write(cluster, create, app_id)['result'] == 'confirmed'
+    document['metadata']['annotations'] = {}
+    assert inspect_write(cluster, create, app_id)['differences'] == ['attempt_mismatch']
+    delete = existing_intent('DELETE', object_path(namespace, 'Service', 'app-demo'), 'original-uid')
+    assert inspect_write(cluster, delete, app_id)['differences'] == ['ownership_mismatch']
+    cluster.get = lambda _: None
+    assert inspect_write(cluster, create, app_id)['differences'] == ['object_missing']
+    assert inspect_write(cluster, delete, app_id)['result'] == 'confirmed'
 
 
 @pytest.mark.parametrize('provider', ['local', 'postman'])

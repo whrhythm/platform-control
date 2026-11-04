@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from .auth import Principal, current_principal
 from .database import engine, get_db
 from .models import AuditEvent, Membership, Operation, Project, Resource, Tenant, TestOrder, UserEnvironment, WorkspaceProvisioningIntent
+from .application_review_api import create_review_router
 from .schemas import AuditOut, MemberInput, MemberOut, OperationOut, QuotaInput, ResourceOut, ResourceRequest
 from .settings import get_settings
 from .litellm import LiteLLMError
@@ -681,6 +682,7 @@ def set_quota(tenant_id: str, body: QuotaInput, principal: Principal = Depends(p
 
 from .ai_policy import admin_router as create_ai_admin_router, public_models
 app.include_router(create_ai_admin_router(platform_admin))
+app.include_router(create_review_router(platform_admin))
 
 
 @app.get('/internal/v1/workspace/models', tags=['models'])
