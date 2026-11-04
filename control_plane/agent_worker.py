@@ -93,10 +93,15 @@ def iteration(sessions, cluster, settings, run_agent):
 
 def main():
     from .agent_sdk import run_agent
+    from .database import engine
     settings = get_settings()
     if not settings.agent_tasks_enabled:
         raise RuntimeError('agent_workbench_disabled')
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.WARNING, force=True)
+    engine.echo = False
+    engine.hide_parameters = True
+    for name in ('sqlalchemy', 'sqlalchemy.engine', 'sqlalchemy.engine.Engine', 'httpx', 'httpcore', 'openhands'):
+        logging.getLogger(name).setLevel(logging.WARNING)
     recover(SessionLocal, settings)
     service_account = Path('/var/run/secrets/kubernetes.io/serviceaccount')
     tls = ssl.create_default_context(cafile=str(service_account / 'ca.crt'))

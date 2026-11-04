@@ -127,7 +127,7 @@ def create_agent_router(principal_dependency):
     def get_preferences(conversation_id: str = Query(default='default', pattern=r'^[a-zA-Z0-9_-]{1,64}$'),
                         principal=Depends(principal_dependency), db=Depends(get_db)):
         env = own_environment(db, principal)
-        return {**preference(db, env.id, conversation_id), 'runtime': 'kata', 'mcp_connections': []}
+        return preference(db, env.id, conversation_id)
 
     @router.put('/preferences', dependencies=[Depends(enabled)])
     def set_preferences(body: PreferenceInput, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -148,7 +148,7 @@ def create_agent_router(principal_dependency):
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                          action='agent.preferences.updated', target_id=env.id))
         db.commit()
-        return {**preference(db, env.id, body.conversation_id), 'runtime': 'kata', 'mcp_connections': []}
+        return preference(db, env.id, body.conversation_id)
 
     @router.get('/tasks', dependencies=[Depends(enabled)])
     def list_tasks(principal=Depends(principal_dependency), db=Depends(get_db)):
