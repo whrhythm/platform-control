@@ -34,15 +34,16 @@ class AIPolicy(BaseModel):
 
 
 def effective_policy(db, settings):
+    from .capacity import CapacityPlan
     row = db.get(AIConfiguration, 'default')
     if row:
-        return row.config
+        return {**row.config, 'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in row.config['plans']]}
     import json
     allowed = [value.strip() for value in settings.litellm_models.split(',') if value.strip()]
     first = allowed[0] if allowed else ''
     return {'chat_model': settings.capability_chat_model or first, 'coding_model': first,
             'allowed_models': allowed, 'cny_per_usd': settings.model_settlement_cny_per_usd,
-            'plans': json.loads(settings.capacity_plans_json)}
+            'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in json.loads(settings.capacity_plans_json)]}
 
 
 def public_models(db, settings):

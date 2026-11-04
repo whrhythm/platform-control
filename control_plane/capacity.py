@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import func, select
 
 from .database import get_db
@@ -15,6 +15,7 @@ from .models import UserObjectStorage
 from .object_storage import ObjectStorageOut, storage_out
 from .settings import get_settings
 from .model_wallet import WalletOut, wallet_out, estimate_tokens
+from .application_resources import CPU, MEMORY, enriched_plan, plan_resources
 from .workspace_gateway import own_environment, call_files
 
 GIB = 1024 ** 3
@@ -33,6 +34,14 @@ class CapacityPlan(BaseModel):
     model_credit_cny_minor: int = Field(default=0, ge=0, le=1000000)
     description: str = Field(default='', max_length=300)
     features: list[str] = Field(default_factory=list, max_length=12)
+    application_cpu_millicores: int | None = Field(default=None, ge=50, le=4000)
+    application_memory_mib: int | None = Field(default=None, ge=128, le=8192)
+
+    @model_validator(mode='after')
+    def runtime_defaults(self):
+        rights = plan_resources(self.model_dump())
+        self.application_cpu_millicores, self.application_memory_mib = rights[CPU], rights[MEMORY]
+        return self
 
 
 class CreateCapacityOrder(BaseModel):
@@ -48,6 +57,8 @@ class CapacityPlanOut(BaseModel):
     name: str
     storage_gib: int
     application_limit: int
+    application_cpu_millicores: int
+    application_memory_mib: int
     amount_minor: int
     currency: str
     model_credit_cny_minor: int = 0
@@ -167,12 +178,14 @@ def eligible(plan, account, env):
     return (plan['storage_gib'] >= env.storage_gib and
             plan['application_limit'] >= account.plan['application_limit'] and
             (plan['storage_gib'] > env.storage_gib or plan['application_limit'] > account.plan['application_limit'] or
-             plan.get('model_credit_usd_micros', 0) > 0))
+             plan.get('model_credit_usd_micros', 0) > 0 or
+             any(plan_resources(plan)[key] > plan_resources(account.plan)[key] for key in (CPU, MEMORY))))
 
 
 def order_out(order):
     return {**{key: getattr(order, key) for key in ('id', 'plan', 'status', 'payment_status', 'stage',
         'error_code', 'attempt', 'created_at', 'started_at', 'completed_at')},
+        'plan': enriched_plan(order.plan),
         'model_credit_status': order.evidence.get('model_credit_status', 'pending' if order.plan.get('model_credit_usd_micros', 0) else 'not_required')}
 
 
@@ -260,8 +273,9 @@ def create_router(principal_dependency):
         apps = db.scalar(select(func.count(UserApplication.id)).where(UserApplication.environment_id == env.id,
                                                                      UserApplication.status != 'deleted'))
         available = settings.capacity_upgrades_enabled and settings.test_payments_enabled
-        result = {'plan': account.plan, 'mode': 'test' if available else 'disabled',
+        result = {'plan': enriched_plan(account.plan), 'mode': 'test' if available else 'disabled',
             'trial': {'storage_gib': settings.default_environment_storage_gib,
+                      **plan_resources({}),
                       'application_limit': settings.default_application_limit,
                       **estimate_tokens(db, settings, 1000000)},
             'plans': [plan for plan in catalog(settings, db) if eligible(plan, account, env)] if available else [],
@@ -300,9 +314,11 @@ def create_router(principal_dependency):
         service = db.get(WorkspaceFileService, env.id)
         if not service or service.status != 'ready' or not db.get(WorkspaceVolumeBinding, env.id):
             raise HTTPException(409, 'capacity_space_preparing')
-        keep = plan['storage_gib'] < env.storage_gib or plan['application_limit'] < account.plan['application_limit']
+        keep = (plan['storage_gib'] < env.storage_gib or plan['application_limit'] < account.plan['application_limit'] or
+                any(plan_resources(plan)[key] < plan_resources(account.plan)[key] for key in (CPU, MEMORY)))
         snapshot = {**plan, 'storage_gib': max(plan['storage_gib'], env.storage_gib),
-                    'application_limit': max(plan['application_limit'], account.plan['application_limit'])}
+                    'application_limit': max(plan['application_limit'], account.plan['application_limit']),
+                    **{key: max(plan_resources(plan)[key], plan_resources(account.plan)[key]) for key in (CPU, MEMORY)}}
         order = CapacityOrder(environment_id=env.id, idempotency_key=idempotency_key, plan=snapshot,
                               evidence={'keep_current_plan': keep})
         db.add(order)

@@ -2,6 +2,7 @@
 import base64
 import json
 from urllib.parse import urlsplit
+from .application_resources import container_resources, plan_resources
 
 
 WRITE_REVIEW_CODE = 'provider_write_requires_review'
@@ -82,7 +83,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
     return job, secret_object, target
 
 
-def application_objects(app, environment, settings, *, database_secret=None, object_secret=None):
+def application_objects(app, environment, settings, *, database_secret=None, object_secret=None, runtime_rights=None):
     name = app_name(app)
     namespace = 'codechat-user-' + environment.identity_hash[:40]
     owner = labels(app, environment.identity_hash)
@@ -112,7 +113,7 @@ def application_objects(app, environment, settings, *, database_secret=None, obj
                 'securityContext': {'runAsNonRoot': True, 'runAsUser': 10001, 'runAsGroup': 10001,
                                     'seccompProfile': {'type': 'RuntimeDefault'}},
                 'containers': [{'name': 'app', 'image': app.image, 'ports': [{'containerPort': 8080}],
-                    'resources': {'requests': {'cpu': '100m', 'memory': '128Mi'}, 'limits': {'cpu': '1', 'memory': '512Mi'}},
+                    'resources': container_resources(runtime_rights or plan_resources({})),
                     'securityContext': {'allowPrivilegeEscalation': False, 'capabilities': {'drop': ['ALL']}},
                     'readinessProbe': {'httpGet': {'path': '/', 'port': 8080}, 'periodSeconds': 5}}],
             }}}},

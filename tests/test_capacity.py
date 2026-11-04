@@ -59,12 +59,16 @@ def test_snapshot_idempotency_confirmation_and_cancellation(capacity_harness, mo
     client, auth, env_id, _, _ = capacity_harness
     before = client.get(PREFIX, headers=auth).json()
     assert before['plan']['storage_gib'] == 2 and before['applications']['limit'] == 3
+    assert before['plan']['application_cpu_millicores'] == 250
+    assert before['trial']['application_memory_mib'] == 256
     assert before['storage']['known_used_bytes'] == 12 and before['storage']['complete'] is False
     assert all(item['used_bytes'] is None for item in before['storage']['components'][1:])
     created = create_order(client, auth)
     assert created.status_code == 201
     order = created.json()
     assert order['status'] == 'pending_payment' and order['plan']['amount_minor'] == 1000
+    assert order['plan']['application_cpu_millicores'] == 500
+    assert order['plan']['application_memory_mib'] == 512
     assert create_order(client, auth).json()['id'] == order['id']
     assert create_order(client, auth, plan='pro').status_code == 409
     assert create_order(client, auth, key='capacity-key-0002').status_code == 409
@@ -72,6 +76,7 @@ def test_snapshot_idempotency_confirmation_and_cancellation(capacity_harness, mo
     again = client.post(PREFIX + '/orders/' + order['id'] + '/confirm-test', headers=auth).json()
     assert again['attempt'] == 1 and again['payment_status'] == 'confirmed'
     assert client.get(PREFIX, headers=auth).json()['plan']['storage_gib'] == 2
+    assert client.get(PREFIX, headers=auth).json()['plan']['application_cpu_millicores'] == 250
     assert client.post(PREFIX + '/orders/' + order['id'] + '/cancel', headers=auth).status_code == 409
     assert client.post(PREFIX + '/orders/' + order['id'] + '/confirm-test', headers={**auth, 'X-CodeChat-Subject': 'bob'}).status_code == 404
     monkeypatch.setenv('PLATFORM_TEST_PAYMENTS_ENABLED', 'false')
@@ -191,6 +196,8 @@ def test_resize_requires_kubernetes_and_filesystem_observation_and_recovers_lost
         run()
         result = client.get(PREFIX, headers=auth).json()
         assert result['plan']['storage_gib'] == 4 and result['applications']['limit'] == 5
+        assert result['plan']['application_cpu_millicores'] == 500
+        assert result['plan']['application_memory_mib'] == 512
         assert result['active_order'] is None
         assert transport.objects['PersistentVolumeClaim']['metadata']['uid'] == 'pvc-uid'
         assert client.post(PREFIX + '/orders/' + order['id'] + '/confirm-test', headers=auth).json()['attempt'] == 1

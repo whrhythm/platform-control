@@ -17,10 +17,11 @@ from sqlalchemy import select
 
 from .application_runtime import WRITE_REVIEW_CODE, application_objects, application_origin, app_name, build_objects, object_path
 from .application_observation import observe
+from .application_resources import active_resources, template_resources_match
 from .application_reviews import create_intent, existing_intent, now as review_now, reconcile_review
 from .database import SessionLocal
 from .project_database_controller import reconcile_databases
-from .models import UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
+from .models import AuditEvent, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from .registry import provision_registry, RegistryError
 from .settings import get_settings
 
@@ -142,11 +143,17 @@ def change_app(sessions, identifier, *, expected_revision=None, expected_desired
         if ((expected_revision is not None and app.revision != expected_revision) or
                 (expected_desired is not None and app.desired_state != expected_desired)):
             raise RevisionChanged()
+        runtime = fields.get('resources', {}).get('last_good', {}).get('runtime_rights')
+        if runtime and runtime != (app.resources or {}).get('last_good', {}).get('runtime_rights'):
+            env = db.get(UserEnvironment, app.environment_id)
+            db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer='platform-control', subject='application-controller',
+                action='application.resources.observed',
+                target_id=f"{identifier}/{runtime['application_cpu_millicores']}m/{runtime['application_memory_mib']}Mi"))
         for key, value in fields.items():
             setattr(app, key, value)
 
 
-def cleanup_failure(app, env, cluster, settings):
+def cleanup_failure(app, env, cluster, settings, runtime_rights=None):
     """Reclaim only recorded compute; keep files and any last successful release."""
     state = deepcopy(app.resources)
     state['cleanup'] = {'status': 'pending'}
@@ -170,7 +177,8 @@ def cleanup_failure(app, env, cluster, settings):
                                  project_path=getattr(app, 'project_path', ''),
                                  desired_state='running' if fallback else 'stopped')
         desired = application_objects(target, env, settings, database_secret=good.get('database_secret') if fallback else None,
-                                      object_secret=good.get('object_storage_secret') if fallback else None)[-1]
+                                      object_secret=good.get('object_storage_secret') if fallback else None,
+                                      runtime_rights=runtime_rights)[-1]
         path = object_path(desired['metadata']['namespace'], 'Deployment', desired['metadata']['name'])
         actual = cluster.get(path)
         if actual:
@@ -178,7 +186,8 @@ def cleanup_failure(app, env, cluster, settings):
             operations = []
             if actual['spec'].get('replicas') != desired['spec']['replicas']:
                 operations.append({'op': 'replace', 'path': '/spec/replicas', 'value': desired['spec']['replicas']})
-            if fallback and actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/revision') != good['revision']:
+            if fallback and (actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/revision') != good['revision'] or
+                             not template_resources_match(actual['spec']['template'], desired['spec']['template'])):
                 operations.append({'op': 'replace', 'path': '/spec/template', 'value': desired['spec']['template']})
             if operations:
                 cluster.patch(path, actual, operations)
@@ -218,6 +227,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
     with sessions() as db:
         app = db.get(UserApplication, app_id)
         env = db.get(UserEnvironment, app.environment_id)
+        runtime_rights = active_resources(db, env.id)
         registry = db.get(UserRegistry, env.id)
         binding, files = db.get(WorkspaceVolumeBinding, env.id), db.get(WorkspaceFileService, env.id)
         if app.status != 'failed' and registry and registry.status == 'requires_review':
@@ -237,7 +247,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         if app.error_code == WRITE_REVIEW_CODE or state.get('cleanup', {}).get('status') == 'complete':
             return
         try:
-            cleaned = cleanup_failure(app, env, cluster, settings)
+            cleaned = cleanup_failure(app, env, cluster, settings, runtime_rights)
         except KubernetesReadTimeout:
             raise
         except (DeliveryError, httpx.HTTPError):
@@ -288,7 +298,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         return
     if app.status in ('deploying', 'running', 'stopped', 'failed', 'changing'):
         objects = application_objects(app, env, settings, database_secret=state.get('database_secret'),
-                                      object_secret=state.get('object_storage_secret'))
+                                      object_secret=state.get('object_storage_secret'), runtime_rights=runtime_rights)
         workloads = deepcopy(state.get('workloads', {}))
         for desired in objects:
             kind, meta = desired['kind'], desired['metadata']
@@ -335,10 +345,12 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                     operations = []
                     if actual['spec'].get('replicas') != desired['spec']['replicas']:
                         operations.append({'op': 'replace', 'path': '/spec/replicas', 'value': desired['spec']['replicas']})
-                    if actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/revision') != app.revision:
+                    if (actual['spec']['template']['metadata'].get('annotations', {}).get('codechat.io/revision') != app.revision or
+                            not template_resources_match(actual['spec']['template'], desired['spec']['template'])):
                         operations.append({'op': 'replace', 'path': '/spec/template', 'value': desired['spec']['template']})
                     if operations:
                         cluster.patch(path, actual, operations)
+                        update(status='changing' if app.status in ('running', 'stopped') else app.status)
                         return
         if app.desired_state == 'deleted':
             if all(step.get('state') == 'deleted' for step in workloads.values()):
@@ -384,7 +396,8 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         except (httpx.HTTPError, ValueError, KeyError):
             observation = app.observation
         state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/',
-                              'database_secret': state.get('database_secret'), 'object_storage_secret': state.get('object_storage_secret')}
+                              'database_secret': state.get('database_secret'), 'object_storage_secret': state.get('object_storage_secret'),
+                              'runtime_rights': runtime_rights}
         update(expected_revision=app.revision, expected_desired=app.desired_state,
                    status='running', error_code=None, observation=observation, resources=state,
                    url=application_origin(app, settings) + '/')

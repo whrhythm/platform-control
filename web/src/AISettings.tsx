@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import './AISettings.css';
 
-type Plan = {id:string;version:string;name:string;amount_minor:number;currency:string;storage_gib:number;application_limit:number;model_credit_cny_minor:number;description:string;features:string[]};
+type Plan = {id:string;version:string;name:string;amount_minor:number;currency:string;storage_gib:number;application_limit:number;application_cpu_millicores:number;application_memory_mib:number;model_credit_cny_minor:number;description:string;features:string[]};
 type Policy = {chat_model:string;coding_model:string;allowed_models:string[];cny_per_usd:string;plans:Plan[]};
 type State = {revision:number;policy:Policy;catalog:{name:string;input_cost_per_token:number|null;output_cost_per_token:number|null}[]};
 
@@ -33,6 +33,9 @@ export default function AISettings() {
         <label>增加模型额度（元）<input type="number" min="0" step="0.01" required value={(value.model_credit_cny_minor??0)/100} onChange={event=>plan(index,{model_credit_cny_minor:Math.round(Number(event.target.value)*100)})}/></label>
         <label>个人磁盘（GiB）<input type="number" min="1" max="40" required value={value.storage_gib} onChange={event=>plan(index,{storage_gib:Number(event.target.value)})}/></label>
         <label>发布应用数<input type="number" min="1" max="100" required value={value.application_limit} onChange={event=>plan(index,{application_limit:Number(event.target.value)})}/></label>
+        <label>单应用 CPU 上限（核）<input type="number" min="0.05" max="4" step="0.001" required value={value.application_cpu_millicores/1000} onChange={event=>plan(index,{application_cpu_millicores:Math.round(Number(event.target.value)*1000)})}/></label>
+        <label>单应用内存上限（MiB）<input type="number" min="128" max="8192" step="1" required value={value.application_memory_mib} onChange={event=>plan(index,{application_memory_mib:Number(event.target.value)})}/></label>
+        <small>每个发布应用的硬上限，编程与构建任务另计。修改影响新订单；已有用户保留已生效的权益，购买较低套餐充值不会降级。</small>
         <label>适用人群<input maxLength={300} value={value.description??''} onChange={event=>plan(index,{description:event.target.value})}/></label>
         <label>详细说明（每行一项）<textarea rows={4} value={(value.features??[]).join('\n')} onChange={event=>plan(index,{features:event.target.value.split('\n').filter(Boolean)})}/></label>
       </fieldset>)}</div>

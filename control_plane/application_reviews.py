@@ -64,7 +64,9 @@ def _workload_summary(document):
     containers = _field(template, '/spec/containers') or []
     result = {'uid': _field(document, '/metadata/uid'), 'replicas': _field(document, '/spec/replicas'),
               'revision': template.get('metadata', {}).get('annotations', {}).get('codechat.io/revision'),
-              'image': containers[0].get('image') if containers else None}
+              'image': containers[0].get('image') if containers else None,
+              'cpu_limit': containers[0].get('resources', {}).get('limits', {}).get('cpu') if containers else None,
+              'memory_limit': containers[0].get('resources', {}).get('limits', {}).get('memory') if containers else None}
     return {k: v for k, v in result.items() if v is not None}
 
 

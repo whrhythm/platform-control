@@ -4359,6 +4359,14 @@
             "type": "integer",
             "title": "Application Limit"
           },
+          "application_cpu_millicores": {
+            "type": "integer",
+            "title": "Application Cpu Millicores"
+          },
+          "application_memory_mib": {
+            "type": "integer",
+            "title": "Application Memory Mib"
+          },
           "amount_minor": {
             "type": "integer",
             "title": "Amount Minor"
@@ -4430,6 +4438,8 @@
           "name",
           "storage_gib",
           "application_limit",
+          "application_cpu_millicores",
+          "application_memory_mib",
           "amount_minor",
           "currency"
         ],

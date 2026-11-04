@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from .auth import Principal
 from .capacity import GIB
+from .application_resources import CPU, MEMORY, plan_resources
 from .kubernetes_workspace_provider import KubernetesProviderError
 from .models import (AuditEvent, CapacityAccount, CapacityOrder, UserEnvironment,
                      WorkspaceProvisioningIntent, WorkspaceVolumeBinding, now)
@@ -96,6 +97,7 @@ def reconcile_capacity(sessions, provider, env_id, settings, *, probe=None):
                 env.storage_gib = order.plan['storage_gib']
                 active_plan = dict(account.plan) if order.evidence.get('keep_current_plan') else dict(order.plan)
                 active_plan.update(storage_gib=order.plan['storage_gib'], application_limit=order.plan['application_limit'])
+                active_plan.update({key: max(plan_resources(account.plan)[key], plan_resources(order.plan)[key]) for key in (CPU, MEMORY)})
                 account.plan, account.active_order_id, account.updated_at = active_plan, None, now()
                 order.status, order.completed_at, order.error_code = 'ready', now(), None
                 db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=issuer, subject=subject,

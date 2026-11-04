@@ -19,12 +19,12 @@ from control_plane.application_runtime import WRITE_REVIEW_CODE, application_obj
 from control_plane.auth import Principal, current_principal
 from control_plane.database import get_db, make_engine
 from control_plane.main import platform_admin
-from control_plane.models import Base, Tenant, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
+from control_plane.models import Base, CapacityAccount, Tenant, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from control_plane.settings import Settings
 
 
 @pytest.mark.parametrize('provider', ['local', 'postman'])
-@pytest.mark.parametrize('fault', ['read', 'committed_patch', 'changed_after_review'])
+@pytest.mark.parametrize('fault', ['read', 'committed_patch', 'changed_after_review', 'resource_patch'])
 def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monkeypatch, provider, fault):
     simulation = os.environ.get('CODECHAT_DELIVERY_SIM_URL') if provider == 'postman' else None
     if provider == 'postman' and not simulation:
@@ -49,6 +49,8 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
         db.add(env)
         db.flush()
         namespace = 'codechat-user-' + env.identity_hash[:40]
+        if fault == 'resource_patch':
+            db.add(CapacityAccount(environment_id=env.id, plan={'id': 'basic'}))
         db.add_all([
             WorkspaceVolumeBinding(environment_id=env.id, namespace_name=namespace, namespace_uid='ns-uid',
                                    pvc_uid='pvc-uid', pv_name='pv', pv_uid='pv-uid', volume_handle='volume'),
@@ -75,7 +77,9 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
                 deployment_path = path
                 obj['status'] = {'observedGeneration': 1, 'replicas': 1, 'updatedReplicas': 1,
                                  'readyReplicas': 1, 'availableReplicas': 1}
-                if fault != 'read':
+                if fault == 'resource_patch':
+                    obj['spec']['template']['spec']['containers'][0]['resources']['limits'] = {'cpu': '1', 'memory': '512Mi'}
+                elif fault != 'read':
                     obj['spec']['template']['metadata']['annotations']['codechat.io/revision'] = 'previous-revision'
         journal = {'workloads': workloads}
         app.resources = journal
@@ -180,6 +184,10 @@ def test_reconcile_distinguishes_query_timeout_from_unknown_write(tmp_path, monk
             objects, mutations = snapshot['objects'], snapshot['mutations']
     assert mutations == ([] if fault == 'read' else [['PATCH', deployment_path]])
     assert objects[deployment_path]['spec']['template']['metadata']['annotations']['codechat.io/revision'] == revision
+    if fault == 'resource_patch':
+        assert objects[deployment_path]['spec']['template']['spec']['containers'][0]['resources']['limits'] == {'cpu': '500m', 'memory': '512Mi'}
+        with sessions() as db:
+            assert db.get(UserApplication, identifier).resources['last_good']['runtime_rights']['application_cpu_millicores'] == 500
     engine.dispose()
 
 

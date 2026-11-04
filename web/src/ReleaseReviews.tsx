@@ -18,6 +18,7 @@ const label: Record<string, string> = {
   POST: '创建', PATCH: '更新', DELETE: '删除', running: '运行', stopped: '停止', deleted: '删除',
   confirmed: '已确认写入结果', unconfirmed: '证据不一致', unsupported: '需要线下核验',
   uid: '资源 UID', replicas: '副本数', revision: '版本', image: '镜像', exists: '资源存在', hosts: '域名',
+  cpu_limit: '单应用 CPU 上限', memory_limit: '单应用内存上限',
   metadata_unavailable: '控制器无法读取这类资源的证据', object_missing: '未找到目标资源',
   object_still_exists: '目标资源仍存在', object_terminating: '目标资源正在删除',
   ownership_mismatch: '归属或 UID 不匹配', attempt_mismatch: '无法证明由这次写入创建',
