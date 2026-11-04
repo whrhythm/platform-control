@@ -67,7 +67,7 @@ function App() {
 
   return <div className="shell">
     <aside>
-      <div className="brand">◈ <strong>CodeChat 管理平台</strong></div>
+      <div className="brand">◈ <strong>星桥管理平台</strong></div>
       <div className="aside-caption">模型、套餐与平台资源</div>
       {(Object.keys(consolePages) as (keyof typeof consolePages)[])
         .filter(key => key === 'settings' || (signedIn && isAdmin))

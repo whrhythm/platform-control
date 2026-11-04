@@ -12,6 +12,8 @@ from sqlalchemy.orm import sessionmaker
 
 from control_plane.application_runtime import WRITE_REVIEW_CODE, application_objects, build_objects
 from control_plane.application_observation import quantity
+from control_plane.applications import release_database
+from control_plane.project_databases import names as database_names
 from control_plane.database import make_engine
 from control_plane.models import Base, Tenant, UserEnvironment, UserRegistry
 from control_plane.registry import provision_registry, RegistryError
@@ -130,6 +132,21 @@ def test_registry_provisioning_journals_writes_encrypts_returned_secret_and_is_r
 def test_metric_quantities_keep_units():
     assert quantity('25000000n', cpu=True) == quantity('25m', cpu=True)
     assert quantity('128Mi') == 128 * 1024 ** 2
+
+
+def test_card_shows_only_database_bound_to_the_confirmed_release():
+    database = SimpleNamespace(generation=str(uuid4()), reserved_bytes=128, used_bytes=38, observed_at=None)
+    app = SimpleNamespace(status='running', revision='release-1', resources={
+        'last_good': {'revision': 'release-1', 'database_secret': database_names(database)[2]},
+    })
+    assert release_database(app, database) == {'reserved_bytes': 128, 'used_bytes': 38, 'observed_at': None}
+    app.revision = 'release-2'
+    assert release_database(app, database) is None
+    app.status = 'failed'
+    app.resources['cleanup'] = {'status': 'complete', 'runtime': 'previous_release'}
+    assert release_database(app, database)['used_bytes'] == 38
+    database.generation = str(uuid4())
+    assert release_database(app, database) is None
 
 
 @pytest.mark.parametrize('failure', ['build_failed', WRITE_REVIEW_CODE])

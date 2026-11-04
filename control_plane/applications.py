@@ -23,14 +23,27 @@ def application_out(app):
     return result
 
 
+def release_database(app, database):
+    release = app.resources.get('last_good') or {}
+    same_release = app.status in ('running', 'stopped') and release.get('revision') == app.revision
+    rolled_back = app.status == 'failed' and app.resources.get('cleanup', {}).get('runtime') == 'previous_release'
+    if not database or not (same_release or rolled_back) or release.get('database_secret') != database_names(database)[2]:
+        return None
+    return {key: getattr(database, key) for key in ('reserved_bytes', 'used_bytes', 'observed_at')}
+
+
 def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
     router = APIRouter(prefix=prefix, tags=['applications'])
 
     @router.get('/apps')
     def list_apps(principal=Depends(principal_dependency), db=Depends(get_db)):
         env = own_environment(db, principal)
-        return {'apps': [application_out(app) for app in db.scalars(select(UserApplication)
-            .where(UserApplication.environment_id == env.id).order_by(UserApplication.created_at))]}
+        apps = db.scalars(select(UserApplication).where(UserApplication.environment_id == env.id)
+                          .order_by(UserApplication.created_at)).all()
+        databases = {row.project_path: row for row in db.scalars(select(ProjectDatabase).where(
+            ProjectDatabase.environment_id == env.id, ProjectDatabase.status == 'ready'))} if apps else {}
+        return {'apps': [{**application_out(app), 'database': release_database(app, databases.get(app.project_path))}
+                         for app in apps]}
 
     @router.post('/apps', status_code=202)
     def publish(path: str = Query(min_length=1, max_length=255),
