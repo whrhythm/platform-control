@@ -1,0 +1,9 @@
+FROM ghcr.nju.edu.cn/openhands/agent-canvas@sha256:638c5e3ce76df74344bb18bd85f44af395337ade8e71f04532099fb380febadf
+USER root
+RUN pip install --no-cache-dir --index-url https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple 'psycopg[binary]==3.3.6' 'minio==7.2.20'
+WORKDIR /app
+COPY control_plane ./control_plane
+ENV OPENHANDS_SUPPRESS_BANNER=1 LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app HOME=/tmp
+USER 10001:10001
+RUN python -c "from control_plane.agent_sdk import ProjectTool; from control_plane.agent_worker import iteration"
+ENTRYPOINT ["python", "-m", "control_plane.agent_worker"]

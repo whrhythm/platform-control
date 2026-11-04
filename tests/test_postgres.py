@@ -64,6 +64,44 @@ def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):
     assert len(client.get(path + "/operations", headers=auth).json()) == 8
 
 
+def test_parallel_agent_submissions_create_one_task(postgres_harness, monkeypatch):
+    import httpx
+    from cryptography.fernet import Fernet
+    from sqlalchemy import delete
+    from control_plane.agent_tasks import submit_task
+    from control_plane.auth import Principal
+    from control_plane.models import AgentTask, AgentPreference
+    client, _ = postgres_harness
+    for name, value in {'WORKSPACE_FILES_ENABLED': 'true', 'AGENT_TASKS_ENABLED': 'true',
+                        'LIBRECHAT_SERVICE_TOKEN': 'x' * 40,
+                        'MODEL_CREDENTIAL_ENCRYPTION_KEY': Fernet.generate_key().decode()}.items():
+        monkeypatch.setenv('PLATFORM_' + name, value)
+    get_settings.cache_clear()
+    monkeypatch.setattr('control_plane.agent_tasks.call_files', lambda *a, **kw: httpx.Response(200, json={'entries': []}))
+    auth = {'X-CodeChat-Service-Token': 'x' * 40, 'X-CodeChat-Subject': 'agent-owner'}
+    assert client.post('/internal/v1/workspace/ensure', headers=auth).status_code == 200
+    assert client.put('/internal/v1/workspace/agent/preferences', headers=auth, json={
+        'conversation_id': 'default', 'revision': 0, 'project_path': 'demo',
+        'strategy': 'implement', 'approval': 'strict'}).status_code == 200
+    def submit(_):
+        with client.session_factory() as db:
+            return submit_task(db, Principal(get_settings().oidc_issuer, 'agent-owner'), get_settings(),
+                               'thread', 'synthetic instruction', 'synthetic-model').id
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            ids = list(pool.map(submit, range(16)))
+        assert len(set(ids)) == 1
+        with client.session_factory() as db:
+            assert len(list(db.scalars(select(AgentTask)))) == 1
+    finally:
+        with client.session_factory.begin() as db:
+            db.execute(delete(AgentTask))
+            db.execute(delete(AgentPreference))
+            identifiers = select(UserEnvironment.id).where(UserEnvironment.subject == 'agent-owner')
+            db.execute(delete(WorkspaceProvisioningIntent).where(WorkspaceProvisioningIntent.environment_id.in_(identifiers)))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.subject == 'agent-owner'))
+
+
 def test_parallel_idempotency_creates_one_resource(postgres_harness):
     client, token = postgres_harness
     auth, path, project = setup_tenant(client, token)

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -314,4 +314,30 @@ class UserApplication(Base):
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     observation: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AgentPreference(Base):
+    __tablename__ = 'agent_preferences'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class AgentTask(Base):
+    __tablename__ = 'agent_tasks'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_key'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    conversation_id: Mapped[str] = mapped_column(String(64))
+    request_key: Mapped[str] = mapped_column(String(64))
+    config: Mapped[dict] = mapped_column(JSON)
+    encrypted_prompt: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(32), default='queued', index=True)
+    encrypted_events: Mapped[str] = mapped_column(Text)
+    pending: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    resources: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

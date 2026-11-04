@@ -51,6 +51,15 @@ class Settings(BaseSettings):
     workspace_agent_image: str = ""
     workspace_agent_max_iterations: int = 40
     workspace_agent_max_seconds: int = 180
+    agent_tasks_enabled: bool = False
+    agent_command_image: str = ''
+    agent_platform_url: str = 'https://platform.k3s.local:30443'
+    agent_approval_seconds: int = 900
+    agent_command_seconds: int = 180
+    agent_command_cpu: str = '500m'
+    agent_command_memory: str = '512Mi'
+    agent_task_seconds: int = 1800
+    agent_concurrency: int = 2
     workspace_python_base_image: str = ""
     workspace_pip_index_url: str = ""
     workspace_service_ca: str = "/etc/platform-ca/internal-ca.crt"

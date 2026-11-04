@@ -12,6 +12,39 @@ http.createServer(async (req, res) => {
   const objects = (await pm.state.get('delivery_objects')) || {};
   const mutations = (await pm.state.get('delivery_mutations')) || [];
   if (req.method === 'GET' && path === '__test__/snapshot') return send(res, 200, {objects, mutations});
+  const agentCollection = /^apis\/batch\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/jobs$/.test(path);
+  const agentJob = /^apis\/batch\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/jobs\/agent-[a-f0-9-]{36}$/.test(path);
+  if (agentCollection && req.method === 'POST') {
+    const document = req.body;
+    const key = path + '/' + document.metadata.name;
+    if (objects[key]) return send(res, 409, {});
+    document.metadata.uid = 'synthetic-' + document.metadata.name;
+    document.metadata.resourceVersion = '1';
+    document.status = {conditions: [{type: 'Complete', status: 'True'}]};
+    objects[key] = document;
+    mutations.push(['POST', key]);
+    await pm.state.set('delivery_objects', objects);
+    await pm.state.set('delivery_mutations', mutations);
+    const fault = await pm.state.get('delivery_delay');
+    if (fault?.method === 'POST' && fault.path === path) {
+      await pm.state.set('delivery_delay', null);
+      await new Promise(resolve => setTimeout(resolve, fault.ms));
+    }
+    return send(res, 201, document);
+  }
+  if (agentJob) {
+    if (req.method === 'GET') return send(res, objects[path] ? 200 : 404, objects[path] || {});
+    if (req.method !== 'DELETE') return send(res, 501, {});
+    if (!objects[path]) return send(res, 404, {});
+    if (req.body?.preconditions?.uid !== objects[path].metadata.uid) return send(res, 409, {});
+    delete objects[path];
+    mutations.push(['DELETE', path]);
+    await pm.state.set('delivery_objects', objects);
+    await pm.state.set('delivery_mutations', mutations);
+    return send(res, 202, {});
+  }
+  if (req.method === 'GET' && /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/(pods|persistentvolumeclaims\/workspace-data)$/.test(path))
+    return send(res, objects[path] ? 200 : 404, objects[path] || {});
   if (req.method === 'GET' && /^api\/v1\/namespaces\/codechat-user-[a-f0-9]{40}\/persistentvolumeclaims$/.test(path)) {
     const inventory = objects[path];
     return send(res, inventory ? (inventory.__status || 200) : 404, inventory || {});

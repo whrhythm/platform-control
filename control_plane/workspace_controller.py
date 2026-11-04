@@ -35,14 +35,17 @@ def prepare_service(session_factory, provider, env_id, settings):
         token = cipher.decrypt(service.encrypted_token.encode()).decode()
         identity_hash = env.identity_hash
     objects = file_service_objects(provider.namespace, identity_hash, settings.workspace_service_image, token,
-        agent_image=settings.workspace_agent_image, llm_url=settings.litellm_url,
+        agent_image='' if settings.agent_tasks_enabled else settings.workspace_agent_image, llm_url=settings.litellm_url,
         llm_model=settings.litellm_models.split(',')[0], max_iterations=settings.workspace_agent_max_iterations,
         publisher_enabled=settings.publisher_enabled, max_seconds=settings.workspace_agent_max_seconds,
         databases_enabled=settings.project_databases_enabled, pip_index_url=settings.workspace_pip_index_url,
         objects_enabled=settings.object_storage_enabled)
+    if settings.agent_tasks_enabled:
+        from .agent_runtime import workspace_agent_objects
+        objects.extend(workspace_agent_objects(provider.namespace, identity_hash))
     for obj in objects:
-        key = obj['kind']
-        path = resource_path(provider.namespace, key)
+        key = obj['kind'] + ('/agent-worker' if obj['metadata']['name'] == 'agent-worker' else '')
+        path = resource_path(provider.namespace, obj['kind'])
         with session_factory.begin() as db:
             service = db.scalar(select(WorkspaceFileService).where(WorkspaceFileService.environment_id == env_id).with_for_update())
             step = service.resources.get(key)

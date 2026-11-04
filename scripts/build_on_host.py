@@ -13,7 +13,7 @@ from cluster_transport import HOST, SOCKET, remote
 def main():
     root = Path(__file__).resolve().parents[1]
     archive = root / "release" / "platform-build-context.tar.gz"
-    files = [root / name for name in ["Dockerfile.prebuilt-web", "Dockerfile.agent", "requirements.runtime.txt", "pyproject.toml", "uv.lock", "alembic.ini", "scripts/push_on_host.py"]]
+    files = [root / name for name in ["Dockerfile.prebuilt-web", "Dockerfile.agent", "Dockerfile.orchestrator", "requirements.runtime.txt", "pyproject.toml", "uv.lock", "alembic.ini", "scripts/push_on_host.py"]]
     files += [path for folder in ["control_plane", "migrations"] for path in (root / folder).rglob("*.py")]
     files += [path for path in (root / "web/dist").rglob("*") if path.is_file()]
     with tarfile.open(archive, "w:gz", compresslevel=6) as tar:
@@ -33,6 +33,8 @@ def main():
     remote(["mkdir", "-p", destination + "/context"])
     remote(["tar", "-xzf", destination + "/platform-build-context.tar.gz", "-C", destination + "/context"])
     dockerfile = 'Dockerfile.agent' if os.environ.get('PLATFORM_BUILD_TARGET') == 'agent' else 'Dockerfile.prebuilt-web'
+    if os.environ.get('PLATFORM_BUILD_TARGET') == 'orchestrator':
+        dockerfile = 'Dockerfile.orchestrator'
     command = "cd " + destination + "/context && docker build --network=host --provenance=false -f " + dockerfile + " -t platform-control:" + tag + " . && PLATFORM_IMAGE_TAG=" + tag + " python3 scripts/push_on_host.py > " + destination + "/published.json"
     # Keep the actual build alive if the operator's slow SSH link drops.
     launch = "nohup /bin/sh -ec " + shlex.quote(command) + " > " + destination + "/build.log 2>&1 < /dev/null & echo $!"
