@@ -100,6 +100,8 @@ def reconcile_capacity(sessions, provider, env_id, settings, *, probe=None):
                 active_plan.update({key: max(plan_resources(account.plan)[key], plan_resources(order.plan)[key]) for key in (CPU, MEMORY)})
                 from .code_execution import code_rights, FIELDS
                 active_plan.update({key: max(code_rights(account.plan)[key], code_rights(order.plan)[key]) for key in FIELDS})
+                from .plan_quotas import quota_rights, FIELDS as QUOTA_FIELDS
+                active_plan.update({key: max(quota_rights(account.plan)[key], quota_rights(order.plan)[key]) for key in QUOTA_FIELDS})
                 account.plan, account.active_order_id, account.updated_at = active_plan, None, now()
                 order.status, order.completed_at, order.error_code = 'ready', now(), None
                 db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=issuer, subject=subject,

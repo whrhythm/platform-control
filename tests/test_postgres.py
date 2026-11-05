@@ -341,6 +341,38 @@ def test_parallel_capacity_orders_and_confirmations_are_idempotent(postgres_harn
             db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
 
 
+def test_parallel_publications_cannot_overbook_compute(postgres_harness, monkeypatch):
+    import httpx
+    from sqlalchemy import delete
+    from control_plane.models import CapacityAccount, UserApplication, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity, PREFIX
+    client, _ = postgres_harness
+    client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
+    monkeypatch.setenv('PLATFORM_PUBLISHER_ENABLED', 'true')
+    get_settings.cache_clear()
+    monkeypatch.setattr('control_plane.applications.call_files', lambda *a: httpx.Response(200,
+        json={'entries': [{'name': 'Dockerfile', 'kind': 'file'}]}))
+    client.get(PREFIX, headers=auth)
+    with client.session_factory.begin() as db:
+        account = db.get(CapacityAccount, env_id)
+        account.plan = {**account.plan, 'application_limit': 20, 'applications_cpu_millicores': 500,
+                        'applications_memory_mib': 512, 'build_concurrency': 4}
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            statuses = list(pool.map(lambda index: client.post('/internal/v1/workspace/apps',
+                params={'path': f'project-{index}'}, headers=auth).status_code, range(16)))
+        assert statuses.count(202) == 2 and statuses.count(409) == 14
+        value = client.get(PREFIX, headers=auth).json()['quota_usage']
+        assert value['application_cpu_millicores'] == 500
+        assert value['application_memory_mib'] == 512
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (UserApplication, StorageMeasurement, CapacityAccount, WorkspaceFileService,
+                          WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_projectless_migration_preserves_existing_workspace_binding(postgres_harness):
     client, _token = postgres_harness
     sessions = client.session_factory

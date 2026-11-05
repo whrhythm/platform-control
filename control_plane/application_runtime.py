@@ -25,7 +25,9 @@ def labels(app, digest):
 
 
 def build_objects(app, environment, registry, settings, credential, workspace_token, ca):
-    if not 256 <= settings.build_scratch_mib <= 4096 or not settings.build_scratch_mib + 512 <= settings.build_memory_mib <= 8192:
+    quotas = getattr(app, 'resources', {}).get('build_quotas', {})
+    build_memory = quotas.get('build_memory_mib', settings.build_memory_mib)
+    if not 256 <= settings.build_scratch_mib <= 4096 or not settings.build_scratch_mib + 512 <= build_memory <= 8192:
         raise ValueError('Build memory must include scratch space and worker headroom')
     revision = app.revision.replace('-', '')
     name, secret = 'build-' + revision[:24], 'build-auth-' + revision[:24]
@@ -40,7 +42,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
         'type': 'Opaque', 'stringData': {'config.json': json.dumps(config), 'workspace-token': workspace_token, 'ca.crt': ca,
             'buildkitd.toml': f'[registry."{registry_host}"]\n  ca = ["/credentials/ca.crt"]\n'}}
     job = {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': metadata,
-        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 900, 'ttlSecondsAfterFinished': settings.build_job_retention_seconds,
+        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': quotas.get('build_timeout_seconds', 900), 'ttlSecondsAfterFinished': settings.build_job_retention_seconds,
             'template': {'metadata': {'labels': owner}, 'spec': {
                 'runtimeClassName': settings.runtime_class, 'automountServiceAccountToken': False,
                 'restartPolicy': 'Never', 'securityContext': {'fsGroup': 10001},
@@ -66,7 +68,7 @@ def build_objects(app, environment, registry, settings, credential, workspace_to
                     # Privilege is confined to the dedicated Kata VM. No host paths/sockets or SA token.
                     'securityContext': {'privileged': True, 'runAsUser': 0},
                     'resources': {'requests': {'cpu': '250m', 'memory': '512Mi', 'ephemeral-storage': '1Gi'},
-                                  'limits': {'cpu': '2', 'memory': f'{settings.build_memory_mib}Mi', 'ephemeral-storage': '2Gi'}},
+                                  'limits': {'cpu': f"{quotas['build_cpu_millicores']}m" if 'build_cpu_millicores' in quotas else '2', 'memory': f'{build_memory}Mi', 'ephemeral-storage': '2Gi'}},
                     'volumeMounts': [{'name': 'context', 'mountPath': '/context', 'readOnly': True},
                                      {'name': 'credentials', 'mountPath': '/credentials', 'readOnly': True},
                                      {'name': 'build', 'mountPath': '/var/lib/buildkit'}]}],
@@ -105,7 +107,8 @@ def application_objects(app, environment, settings, *, database_secret=None, obj
          'spec': {'ingressClassName': 'apisix', 'http': [{'name': 'app', 'match': {'hosts': [host], 'paths': ['/*']},
             'backends': [{'serviceName': name, 'servicePort': 8080}]}]}},
         {'apiVersion': 'apps/v1', 'kind': 'Deployment', 'metadata': meta,
-         'spec': {'replicas': 0 if app.desired_state != 'running' else 1, 'revisionHistoryLimit': 2, 'progressDeadlineSeconds': 180,
+         'spec': {'replicas': 0 if app.desired_state != 'running' else 1, 'strategy': {'type': 'Recreate'},
+                  'revisionHistoryLimit': 2, 'progressDeadlineSeconds': 180,
             'selector': {'matchLabels': owner}, 'template': {'metadata': {'labels': owner,
                 'annotations': {'codechat.io/revision': app.revision}}, 'spec': {
                 'runtimeClassName': settings.runtime_class, 'automountServiceAccountToken': False,

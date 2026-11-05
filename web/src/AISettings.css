@@ -11,3 +11,9 @@
 .ai-settings small{font-size:11px;opacity:.7}
 .ai-settings p{line-height:1.7}
 .ai-settings textarea{font:inherit;border:1px solid color-mix(in srgb,currentColor 20%,transparent);border-radius:8px;padding:10px}
+.quota-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:24px;align-items:start}
+.quota-group{padding:18px 0;border-bottom:1px solid color-mix(in srgb,currentColor 12%,transparent)}
+.quota-group h4{font-size:14px;margin:0 0 10px}
+.quota-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.quota-fields label+label{margin-top:0}
+.ai-settings .quota-help{font-size:12px;opacity:.8;margin:8px 0 14px;line-height:1.65}

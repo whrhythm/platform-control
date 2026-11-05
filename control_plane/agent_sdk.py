@@ -139,7 +139,7 @@ def run_agent(context, prompt, model, key, settings, *, readonly=False):
         conversation = Conversation(agent=agent, workspace=temporary, visualizer=None,
                                     token_callbacks=[stream],
                                     max_iteration_per_run=settings.workspace_agent_max_iterations)
-        deadline = time.monotonic() + settings.agent_task_seconds
+        deadline = time.monotonic() + task.config.get('quota', {}).get('agent_task_seconds', settings.agent_task_seconds)
         def monitor():
             while not finished.wait(1):
                 try:

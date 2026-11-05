@@ -20,7 +20,8 @@ def plan_resources(plan):
 
 def enriched_plan(plan):
     from .code_execution import code_rights
-    return {**plan, **plan_resources(plan), **code_rights(plan)}
+    from .plan_quotas import quota_rights
+    return {**plan, **plan_resources(plan), **code_rights(plan), **quota_rights(plan)}
 
 
 def active_resources(db, environment_id):

@@ -14,6 +14,8 @@ from .settings import get_settings
 from .workspace_gateway import own_environment, call_files
 from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
 from .capacity import application_limit
+from .application_resources import active_resources
+from .plan_quotas import active_quotas, admit_application
 
 
 def application_out(app):
@@ -89,6 +91,14 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                                                                       UserApplication.status != 'deleted')))
             if len(active) >= application_limit(db, env, settings):
                 raise HTTPException(409, 'Application limit reached')
+        rights = active_resources(db, env.id)
+        quotas = active_quotas(db, env.id)
+        builds = list(db.scalars(select(UserApplication.id).where(UserApplication.environment_id == env.id,
+            UserApplication.status.in_(('queued', 'preparing', 'building', 'deploying')))))
+        if len(builds) >= quotas['build_concurrency']:
+            raise HTTPException(409, 'application_build_allowance_exceeded')
+        admit_application(db, env, rights, exclude=app.id if app else None,
+            previous=app.resources.get('last_good', {}).get('runtime_rights') if app else None)
         if app is None:
             app = UserApplication(environment_id=env.id, project_path=path, resources={'request_id': x_codechat_task_id})
             db.add(app)
@@ -98,7 +108,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                              'last_good': app.resources.get('last_good', {})}
             app.status, app.desired_state, app.error_code = 'queued', 'running', None
         db.flush()
-        app.resources = {**app.resources, 'database_secret': database_secret, 'object_storage_secret': object_secret}
+        app.resources = {**app.resources, 'database_secret': database_secret, 'object_storage_secret': object_secret,
+                         'runtime_rights': rights, 'build_quotas': quotas}
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action='application.publish', target_id=app.id))
         try:
@@ -113,6 +124,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         if action not in ('start', 'stop', 'delete'):
             raise HTTPException(404, 'Action not found')
         env = own_environment(db, principal)
+        db.refresh(env, with_for_update=True)
         app = db.scalar(select(UserApplication).where(UserApplication.id == application_id,
                                                       UserApplication.environment_id == env.id).with_for_update())
         if not app:
@@ -126,6 +138,11 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(409, 'Wait for the current delivery task')
         if app.status == 'deleted' or not app.image and action != 'delete':
             raise HTTPException(409, 'Application is not available for this action')
+        if action == 'start':
+            rights = active_resources(db, env.id)
+            admit_application(db, env, rights, exclude=app.id,
+                previous=app.resources.get('last_good', {}).get('runtime_rights'))
+            app.resources = {**app.resources, 'runtime_rights': rights}
         app.desired_state = target
         app.status = 'changing'
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,

@@ -5454,6 +5454,18 @@
               }
             ],
             "title": "Code Execution"
+          },
+          "quota_usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quota Usage"
           }
         },
         "type": "object",
@@ -5567,6 +5579,188 @@
       },
       "CapacityPlanOut": {
         "properties": {
+          "applications_cpu_millicores": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 32000.0,
+                "minimum": 50.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applications Cpu Millicores"
+          },
+          "applications_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 65536.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applications Memory Mib"
+          },
+          "database_budget_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 40960.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Budget Mib"
+          },
+          "database_per_instance_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 40960.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Per Instance Mib"
+          },
+          "database_limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 100.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Limit"
+          },
+          "agent_cpu_millicores": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4000.0,
+                "minimum": 100.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Cpu Millicores"
+          },
+          "agent_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 128.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Memory Mib"
+          },
+          "agent_command_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1800.0,
+                "minimum": 10.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Command Seconds"
+          },
+          "agent_task_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 7200.0,
+                "minimum": 60.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Task Seconds"
+          },
+          "agent_concurrency": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 2.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Concurrency"
+          },
+          "build_cpu_millicores": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4000.0,
+                "minimum": 250.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Cpu Millicores"
+          },
+          "build_memory_mib": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 8192.0,
+                "minimum": 1536.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Memory Mib"
+          },
+          "build_timeout_seconds": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 1800.0,
+                "minimum": 60.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Timeout Seconds"
+          },
+          "build_concurrency": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "maximum": 4.0,
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Build Concurrency"
+          },
           "id": {
             "type": "string",
             "title": "Id"

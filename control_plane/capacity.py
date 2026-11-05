@@ -18,12 +18,13 @@ from .model_wallet import WalletOut, wallet_out, estimate_tokens
 from .application_resources import CPU, MEMORY, enriched_plan, plan_resources
 from .workspace_gateway import own_environment, call_files
 from .code_execution import code_rights, usage as code_usage
+from .plan_quotas import PlanQuotas, quota_rights, active_quotas, FIELDS as QUOTA_FIELDS
 
 GIB = 1024 ** 3
 COMPONENTS = ('files', 'database', 'objects', 'images', 'app_volumes')
 
 
-class CapacityPlan(BaseModel):
+class CapacityPlan(PlanQuotas):
     model_config = ConfigDict(extra='forbid', strict=True)
     id: str = Field(pattern=r'^[a-z][a-z0-9-]{0,39}$')
     version: str = Field(min_length=1, max_length=40, pattern=r'^[a-zA-Z0-9._-]+$')
@@ -47,6 +48,16 @@ class CapacityPlan(BaseModel):
         self.application_cpu_millicores, self.application_memory_mib = rights[CPU], rights[MEMORY]
         for key, value in code_rights(self.model_dump()).items():
             setattr(self, key, value)
+        for key, value in quota_rights(self.model_dump()).items():
+            setattr(self, key, value)
+        if (self.applications_cpu_millicores < self.application_cpu_millicores or
+                self.applications_memory_mib < self.application_memory_mib or
+                self.database_per_instance_mib > self.database_budget_mib or
+                self.database_budget_mib > self.storage_gib * 1024 or
+                (self.database_limit > 0 and self.database_per_instance_mib == 0) or
+                self.agent_command_seconds > self.agent_task_seconds or
+                self.build_memory_mib < get_settings().build_scratch_mib + 512):
+            raise ValueError('Inconsistent quota policy')
         return self
 
 
@@ -56,7 +67,7 @@ class CreateCapacityOrder(BaseModel):
     plan_version: str = Field(min_length=1, max_length=40)
 
 
-class CapacityPlanOut(BaseModel):
+class CapacityPlanOut(PlanQuotas):
     id: str
     version: str
     catalog_version: str | None = None
@@ -130,6 +141,7 @@ class CapacityAccountOut(BaseModel):
     wallet: WalletOut | None = None
     trial: dict | None = None
     code_execution: dict | None = None
+    quota_usage: dict | None = None
 
 
 def catalog(settings, db=None):
@@ -190,7 +202,8 @@ def eligible(plan, account, env):
             (plan['storage_gib'] > env.storage_gib or plan['application_limit'] > account.plan['application_limit'] or
              plan.get('model_credit_usd_micros', 0) > 0 or
              any(plan_resources(plan)[key] > plan_resources(account.plan)[key] for key in (CPU, MEMORY)) or
-             any(code_rights(plan)[key] > code_rights(account.plan)[key] for key in code_rights(plan))))
+             any(code_rights(plan)[key] > code_rights(account.plan)[key] for key in code_rights(plan)) or
+             any(quota_rights(plan)[key] > quota_rights(account.plan)[key] for key in QUOTA_FIELDS)))
 
 
 def order_out(order):
@@ -233,7 +246,7 @@ def sample_storage(db, env, observed):
             measured.status = 'ok'
         else:
             measured.status = 'stale' if measured.observed_at else 'unknown'
-        measured.budget_bytes = get_settings().project_database_budget_mib * 1024 ** 2
+        measured.budget_bytes = active_quotas(db, env.id)['database_budget_mib'] * 1024 ** 2
         measured.basis, measured.scope_id = 'pg_database_size', env.id
     for component in COMPONENTS:
         row = rows[component]
@@ -274,7 +287,7 @@ def create_router(principal_dependency):
         orders = list(db.scalars(select(CapacityOrder).where(CapacityOrder.environment_id == env.id)
                                  .order_by(CapacityOrder.created_at.desc()).limit(10)))
         active = db.get(CapacityOrder, account.active_order_id) if account.active_order_id else None
-        database_budget = settings.project_database_budget_mib * 1024 ** 2 if settings.project_databases_enabled else 0
+        database_budget = active_quotas(db, env.id)['database_budget_mib'] * 1024 ** 2 if settings.project_databases_enabled else 0
         components = [{'component': kind, 'budget_bytes': (env.storage_gib * GIB if kind == 'files' else
                 database_budget if kind == 'database' and database_budget else samples[kind].budget_bytes),
             'used_bytes': samples[kind].used_bytes, 'observed_at': samples[kind].observed_at,
@@ -284,11 +297,25 @@ def create_router(principal_dependency):
         apps = db.scalar(select(func.count(UserApplication.id)).where(UserApplication.environment_id == env.id,
                                                                      UserApplication.status != 'deleted'))
         available = settings.capacity_upgrades_enabled and settings.test_payments_enabled
+        from .plan_quotas import application_allocations
+        from .models import AgentTask
+        allocated = application_allocations(db, env.id)
+        database_rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id,
+            ProjectDatabase.status != 'deleted')))
         result = {'plan': enriched_plan(account.plan), 'mode': 'test' if available else 'disabled',
+            'quota_usage': {'application_cpu_millicores': allocated[CPU], 'application_memory_mib': allocated[MEMORY],
+                'database_count': len(database_rows), 'database_reserved_bytes': sum(row.reserved_bytes for row in database_rows),
+                'agent_active': db.scalar(select(func.count(AgentTask.id)).where(AgentTask.environment_id == env.id,
+                    AgentTask.status.in_(('queued', 'running', 'awaiting_approval', 'cancelling')))),
+                'build_active': db.scalar(select(func.count(UserApplication.id)).where(UserApplication.environment_id == env.id,
+                    UserApplication.status.in_(('queued', 'preparing', 'building', 'deploying')))),
+                'database_enforcement': 'allocation_and_warning', 'storage_enforcement': 'provider_limits_and_metering',
+                'effective_at': account.updated_at},
             'code_execution': code_usage(db, env),
             'trial': {'storage_gib': settings.default_environment_storage_gib,
                       **plan_resources({}),
                       **code_rights({}),
+                      **quota_rights({}),
                       'application_limit': settings.default_application_limit,
                       **estimate_tokens(db, settings, 1000000)},
             'plans': [plan for plan in catalog(settings, db) if eligible(plan, account, env)] if available else [],
@@ -332,7 +359,9 @@ def create_router(principal_dependency):
                 any(plan_resources(plan)[key] < plan_resources(account.plan)[key] for key in (CPU, MEMORY)))
         snapshot = {**plan, 'storage_gib': max(plan['storage_gib'], env.storage_gib),
                     'application_limit': max(plan['application_limit'], account.plan['application_limit']),
-                    **{key: max(plan_resources(plan)[key], plan_resources(account.plan)[key]) for key in (CPU, MEMORY)}}
+                    **{key: max(plan_resources(plan)[key], plan_resources(account.plan)[key]) for key in (CPU, MEMORY)},
+                    **{key: max(code_rights(plan)[key], code_rights(account.plan)[key]) for key in code_rights(plan)},
+                    **{key: max(quota_rights(plan)[key], quota_rights(account.plan)[key]) for key in QUOTA_FIELDS}}
         order = CapacityOrder(environment_id=env.id, idempotency_key=idempotency_key, plan=snapshot,
                               evidence={'keep_current_plan': keep})
         db.add(order)

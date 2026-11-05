@@ -227,7 +227,7 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
     with sessions() as db:
         app = db.get(UserApplication, app_id)
         env = db.get(UserEnvironment, app.environment_id)
-        runtime_rights = active_resources(db, env.id)
+        runtime_rights = app.resources.get('runtime_rights') or app.resources.get('last_good', {}).get('runtime_rights') or active_resources(db, env.id)
         registry = db.get(UserRegistry, env.id)
         binding, files = db.get(WorkspaceVolumeBinding, env.id), db.get(WorkspaceFileService, env.id)
         if app.status != 'failed' and registry and registry.status == 'requires_review':
@@ -349,6 +349,8 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                             not template_resources_match(actual['spec']['template'], desired['spec']['template'])):
                         operations.append({'op': 'replace', 'path': '/spec/template', 'value': desired['spec']['template']})
                     if operations:
+                        if actual['spec'].get('strategy', {}).get('type') != 'Recreate':
+                            operations.append({'op': 'add', 'path': '/spec/strategy', 'value': {'type': 'Recreate'}})
                         cluster.patch(path, actual, operations)
                         update(status='changing' if app.status in ('running', 'stopped') else app.status)
                         return

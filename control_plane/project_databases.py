@@ -15,6 +15,7 @@ from .models import AuditEvent, ProjectDatabase, UserApplication
 from .settings import get_settings
 from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
 from .workspace_gateway import own_environment, call_files
+from .plan_quotas import active_quotas
 
 MIB = 1024 ** 2
 
@@ -89,10 +90,11 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace', agen
         env, settings = own_environment(db, principal), get_settings()
         rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id)
                                .order_by(ProjectDatabase.created_at)))
-        return {'enabled': settings.project_databases_enabled, 'budget_bytes': settings.project_database_budget_mib * MIB,
+        quotas = active_quotas(db, env.id, settings)
+        return {'enabled': settings.project_databases_enabled, 'budget_bytes': quotas['database_budget_mib'] * MIB,
             'reserved_bytes': sum(row.reserved_bytes for row in rows if row.status != 'deleted'),
-            'reservation_bytes': settings.project_database_reservation_mib * MIB,
-            'limit': settings.project_database_limit, 'quota_mode': 'allocation_and_warning',
+            'reservation_bytes': quotas['database_per_instance_mib'] * MIB,
+            'limit': quotas['database_limit'], 'quota_mode': 'allocation_and_warning',
             'databases': [public_database(row) for row in rows]}
 
     @router.post('', status_code=202, response_model=DatabaseOut)
@@ -114,9 +116,10 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace', agen
         if row and row.status != 'deleted':
             return public_database(row)
         active = [value for value in rows if value.status != 'deleted']
-        reservation = settings.project_database_reservation_mib * MIB
-        if (reservation <= 0 or len(active) >= settings.project_database_limit or
-                sum(value.reserved_bytes for value in active) + reservation > settings.project_database_budget_mib * MIB):
+        quotas = active_quotas(db, env.id, settings)
+        reservation = quotas['database_per_instance_mib'] * MIB
+        if (reservation <= 0 or len(active) >= quotas['database_limit'] or
+                sum(max(value.reserved_bytes, value.used_bytes or 0) for value in active) + reservation > quotas['database_budget_mib'] * MIB):
             raise HTTPException(409, 'database_allowance_exceeded')
         encrypted = Fernet(settings.model_credential_encryption_key.encode()).encrypt(secrets.token_urlsafe(36).encode()).decode()
         if row is None:

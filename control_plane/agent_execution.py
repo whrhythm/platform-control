@@ -11,7 +11,7 @@ from sqlalchemy import select
 
 from .agent_runtime import command_job, owned_job, attach_services
 from .agent_tasks import append_event, now, unseal
-from .application_resources import active_resources, container_resources
+from .application_resources import container_resources
 from .auth import Principal
 from .models import AgentTask, AuditEvent, UserEnvironment, WorkspaceVolumeBinding, ProjectDatabase, UserObjectStorage
 from .workspace_files import WorkspaceFiles
@@ -161,7 +161,11 @@ class TaskTools:
                 profile = connection_profile(row, self.settings)
                 sensitive.extend([profile['AWS_SECRET_ACCESS_KEY'], profile['AWS_ACCESS_KEY_ID']])
             attach_services(desired, task.config['project_path'], database_secret=database_secret, object_secret=object_secret)
-            desired['spec']['template']['spec']['containers'][0]['resources'] = container_resources(active_resources(db, env.id))
+            from .plan_quotas import active_quotas
+            quotas = task.config.get('quota') or active_quotas(db, env.id)
+            desired['spec']['template']['spec']['containers'][0]['resources'] = container_resources({
+                'application_cpu_millicores': quotas['agent_cpu_millicores'],
+                'application_memory_mib': quotas['agent_memory_mib']})
             record = {'name': desired['metadata']['name'], 'namespace': binding.namespace_name,
                       'operation_id': operation_id, 'uid': None}
             task.resources = {**task.resources, 'job': record, 'cleanup': {'status': 'pending'}}
@@ -182,7 +186,7 @@ class TaskTools:
         with self.sessions.begin() as db:
             task = db.scalar(select(AgentTask).where(AgentTask.id == self.task_id).with_for_update())
             task.resources = {**task.resources, 'job': {**record, 'uid': uid}}
-        deadline = time.monotonic() + self.settings.agent_command_seconds + 90
+        deadline = time.monotonic() + desired['spec']['activeDeadlineSeconds'] + 90
         while time.monotonic() < deadline:
             with self.sessions() as db:
                 self.current(db)

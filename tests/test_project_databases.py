@@ -105,7 +105,7 @@ def test_controller_delivery_metering_stale_and_explicit_destroy(databases):
     assert listing['databases'][0]['used_bytes'] == 9 * 1024 ** 2
     account = client.get('/internal/v1/workspace/capacity', headers=auth).json()
     assert account['storage']['known_used_bytes'] == 12 + 9 * 1024 ** 2
-    assert account['storage']['budget_bytes'] == (2 * 1024 + 256) * 1024 ** 2
+    assert account['storage']['budget_bytes'] == 2 * 1024 ** 3
     assert account['storage']['complete'] is False
     with client.session_factory.begin() as db:
         db.get(ProjectDatabase, identifier).observed_at = now() - timedelta(minutes=5)

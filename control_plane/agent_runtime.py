@@ -7,6 +7,7 @@ from .workspace_files import WorkspaceFiles
 
 def command_job(task, environment, binding, operation_id, command, settings):
     project = task.config['project_path']
+    quotas = task.config.get('quota', {})
     WorkspaceFiles._parts(project)
     namespace = 'codechat-user-' + environment.identity_hash[:40]
     if binding.namespace_name != namespace or not binding.pvc_uid:
@@ -19,7 +20,7 @@ def command_job(task, environment, binding, operation_id, command, settings):
               'codechat.io/user-hash': environment.identity_hash[:40], 'codechat.io/agent-command': 'true'}
     return {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': {
         'name': 'agent-' + operation_id, 'namespace': namespace, 'labels': labels},
-        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': settings.agent_command_seconds,
+        'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': quotas.get('agent_command_seconds', settings.agent_command_seconds),
                  'ttlSecondsAfterFinished': 300, 'template': {'metadata': {'labels': deepcopy(labels)}, 'spec': {
             'runtimeClassName': settings.runtime_class, 'restartPolicy': 'Never',
             'automountServiceAccountToken': False, 'enableServiceLinks': False,

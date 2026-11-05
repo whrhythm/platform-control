@@ -141,8 +141,15 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
     previous = db.scalar(select(AgentTask).where(AgentTask.environment_id == env.id, AgentTask.request_key == request_key))
     if previous:
         return previous
-    if db.scalar(select(AgentTask.id).where(AgentTask.environment_id == env.id, AgentTask.status.in_(ACTIVE))):
+    from .plan_quotas import active_quotas
+    quotas = active_quotas(db, env.id, settings)
+    active = list(db.scalars(select(AgentTask).where(AgentTask.environment_id == env.id, AgentTask.status.in_(ACTIVE))))
+    project = config['project_path']
+    overlap = any(project == row.config['project_path'] or project.startswith(row.config['project_path'] + '/') or
+                  row.config['project_path'].startswith(project + '/') for row in active)
+    if len(active) >= quotas['agent_concurrency'] or overlap:
         raise HTTPException(409, 'agent_task_active')
+    config['quota'] = quotas
     task = AgentTask(environment_id=env.id, conversation_id=key, request_key=request_key, config=config,
                      encrypted_prompt=seal(prompt, settings), encrypted_events=seal([], settings))
     db.add(task)
