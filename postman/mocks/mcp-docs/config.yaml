@@ -1,0 +1,11 @@
+version: 1
+id: 4dcb652e-9890-4893-8ab4-c180250d7a43
+name: mcp-docs
+slug: mcp-docs
+protocol: http
+interceptRequests: true
+port: 4507
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

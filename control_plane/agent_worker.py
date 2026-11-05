@@ -102,6 +102,10 @@ def main():
     if not settings.agent_tasks_enabled:
         raise RuntimeError('agent_workbench_disabled')
     logging.basicConfig(level=logging.WARNING, force=True)
+    # MCP parsing errors may include provider-supplied content. Persist only our safe event codes.
+    mcp_logger = logging.getLogger('mcp')
+    mcp_logger.handlers = [logging.NullHandler()]
+    mcp_logger.propagate = False
     engine.echo = False
     engine.hide_parameters = True
     for name in ('sqlalchemy', 'sqlalchemy.engine', 'sqlalchemy.engine.Engine', 'httpx', 'httpcore', 'openhands'):

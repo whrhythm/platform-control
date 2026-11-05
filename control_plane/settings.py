@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     workspace_agent_max_iterations: int = 40
     workspace_agent_max_seconds: int = 180
     agent_tasks_enabled: bool = False
+    agent_mcp_seconds: int = Field(default=60, ge=5, le=120)
+    agent_mcp_calls: int = Field(default=8, ge=1, le=20)
     agent_command_image: str = ''
     agent_platform_url: str = 'https://platform.k3s.local:30443'
     agent_approval_seconds: int = 900

@@ -1668,6 +1668,57 @@
         }
       }
     },
+    "/internal/v1/workspace/agent/mcp": {
+      "get": {
+        "tags": [
+          "programming-workbench"
+        ],
+        "summary": "Get Mcp",
+        "operationId": "get_mcp_internal_v1_workspace_agent_mcp_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/agent/preferences": {
       "get": {
         "tags": [
@@ -3664,6 +3715,72 @@
         }
       }
     },
+    "/v1/admin/ai/mcp": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Get Mcp Policy",
+        "operationId": "get_mcp_policy_v1_admin_ai_mcp_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Save Mcp Policy",
+        "operationId": "save_mcp_policy_v1_admin_ai_mcp_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveMCP"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/v1/admin/ai": {
       "get": {
         "tags": [
@@ -4150,6 +4267,14 @@
             "maxItems": 10,
             "minItems": 1,
             "title": "Plans"
+          },
+          "mcp_servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Mcp Servers"
           }
         },
         "additionalProperties": false,
@@ -5383,6 +5508,14 @@
             "title": "Approval",
             "default": "strict"
           },
+          "mcp_servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Mcp Servers"
+          },
           "conversation_id": {
             "type": "string",
             "pattern": "^[a-zA-Z0-9_-]{1,64}$",
@@ -5729,6 +5862,30 @@
           "error_code"
         ],
         "title": "ReviewOut"
+      },
+      "SaveMCP": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "servers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 10,
+            "title": "Servers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "servers"
+        ],
+        "title": "SaveMCP"
       },
       "SavePolicy": {
         "properties": {

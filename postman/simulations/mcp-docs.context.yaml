@@ -1,0 +1,8 @@
+contract: MCP Streamable HTTP 2025-11-25
+source: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
+purpose: Exercise the pinned MCP SDK over real HTTP for successful queries, 503, tool errors and deadlines.
+data: Synthetic public repository names and documentation; no user credentials or source.
+limits:
+  - Local simulation replaces only the public-network transport; public DNS pinning and redirect rejection are covered separately.
+  - This mock does not prove DeepWiki availability, quality, or service limits. Live read-only validation is separate.
+  - No external writes, sampling, roots, elicitation or OAuth are exposed.

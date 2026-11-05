@@ -1,0 +1,6 @@
+simulation: mcp-docs
+routing: path
+mocks:
+  - name: mcp-docs
+    routeKey: docs
+    path: ../mocks/mcp-docs/config.yaml

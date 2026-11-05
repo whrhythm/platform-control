@@ -6,4 +6,5 @@ COPY control_plane ./control_plane
 ENV OPENHANDS_SUPPRESS_BANNER=1 LITELLM_LOCAL_MODEL_COST_MAP=True PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/app HOME=/tmp
 USER 10001:10001
 RUN python -c "from control_plane.agent_sdk import ProjectTool; from control_plane.agent_worker import iteration"
+RUN python -c "import importlib.metadata; from mcp.client.streamable_http import streamable_http_client; assert importlib.metadata.version('mcp') == '1.30.0'"
 ENTRYPOINT ["python", "-m", "control_plane.agent_worker"]

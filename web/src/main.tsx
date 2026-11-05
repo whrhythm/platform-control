@@ -5,6 +5,7 @@ import { api, desktop, identity, initTransport, setBearer } from './api';
 import type { IdentityConfig, Operation, Project, Quota, Resource, Tenant } from './api';
 import './style.css';
 import AISettings from './AISettings';
+import MCPSettings from './MCPSettings';
 import ReleaseReviews from './ReleaseReviews';
 import AdminUsers from './AdminUsers';
 
@@ -79,6 +80,7 @@ function App() {
       {error && <div className="error" role="alert">{error}</div>}
       {!signedIn ? <section className="panel welcome"><span className="symbol">↗</span><h2>从统一登录开始</h2><p>{desktop ? '桌面进程连接已就绪。桌面登录回调尚未接入，请通过浏览器使用。' : '使用组织账号，进入你的项目空间。'}</p><button disabled={!ready || !manager || busy} onClick={() => void perform(async () => manager?.signinRedirect())}>使用 Authentik 登录</button></section> : page === 'reviews' && isAdmin ? <ReleaseReviews/> : page === 'users' && isAdmin ? <AdminUsers/> : <>
         {isAdmin && <AISettings/>}
+        {isAdmin && <MCPSettings/>}
         <div className="notice">此处保留资源申请与规划记录。普通用户的聊天、编程、文件和应用管理请使用 LibreChat。</div>
         <section className="toolbar"><label>当前空间<select value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>当前项目<select value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">选择项目</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></section>
         {!tenantId ? <section className="panel"><h2>创建你的个人空间</h2><p>项目、开发和部署资源都记入这个空间的额度。</p><form onSubmit={e => {e.preventDefault(); void perform(async () => {await api('/v1/tenants', 'POST', {name}); await loadTenants(); setName('');});}}><input aria-label="空间名称" required value={name} onChange={e => setName(e.target.value)} placeholder="空间名称" maxLength={120}/><button disabled={busy}>创建空间</button></form></section> : <>

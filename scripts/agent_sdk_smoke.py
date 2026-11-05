@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from control_plane.agent_sdk import run_agent
 
 calls = []
+selected = False
 
 
 class Model(BaseHTTPRequestHandler):
@@ -15,10 +16,15 @@ class Model(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
         functions = [tool['function'] for tool in body['tools']]
         project = next(tool for tool in functions if 'project' in tool['name'].lower())
+        documentation = [tool for tool in functions if 'documentation' in tool['name'].lower()]
+        assert bool(documentation) == selected
         operations = project['parameters']['properties']['operation']['enum']
         assert operations == ['list', 'read', 'apps', 'databases', 'objects'], operations
         if not calls:
-            name, arguments = project['name'], {'operation': 'read', 'path': 'hello.py'}
+            if selected:
+                name, arguments = documentation[0]['name'], {'tool': 'read_wiki_structure', 'repoName': 'example/project'}
+            else:
+                name, arguments = project['name'], {'operation': 'read', 'path': 'hello.py'}
         else:
             finish = next(tool for tool in functions if 'finish' in tool['name'].lower())
             name, arguments = finish['name'], {'message': 'synthetic SDK success'}
@@ -48,7 +54,7 @@ class Context:
     stopped = False
 
     def current(self, db):
-        return None
+        return SimpleNamespace(config={'mcp_servers': ['deepwiki'] if selected else []}), None
 
     def file(self, operation, path, content, etag):
         assert operation == 'read' and path == 'hello.py'
@@ -63,5 +69,16 @@ try:
     assert result == 'synthetic SDK success', result
     assert len(calls) == 2, calls
     print('PASS: pinned SDK called only project read and finish; no local execution tools registered')
+    from control_plane import agent_mcp
+    def synthetic(context, server, tool, arguments):
+        assert server == 'deepwiki' and tool == 'read_wiki_structure'
+        assert arguments == {'repoName': 'example/project'}
+        return 'synthetic reference'
+    agent_mcp.execute = synthetic
+    selected = True
+    calls.clear()
+    result = run_agent(Context(), 'Read public repository documentation', 'test', 'synthetic-key', settings, readonly=True)
+    assert result == 'synthetic SDK success' and len(calls) == 2
+    print('PASS: selected documentation tool uses the MCP permission gateway; unselected tool absent')
 finally:
     server.shutdown()

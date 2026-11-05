@@ -18,9 +18,13 @@ class AIPolicy(BaseModel):
     allowed_models: list[str] = Field(min_length=1, max_length=30)
     cny_per_usd: str = Field(pattern=r'^\d{1,4}(?:\.\d{1,6})?$')
     plans: list[dict] = Field(min_length=1, max_length=10)
+    mcp_servers: list[str] = Field(default_factory=lambda: ['deepwiki'], max_length=10)
 
     @model_validator(mode='after')
     def validate_policy(self):
+        from .agent_mcp import CATALOG
+        if len(set(self.mcp_servers)) != len(self.mcp_servers) or not set(self.mcp_servers) <= CATALOG.keys():
+            raise ValueError('Invalid MCP connector selection')
         from .capacity import CapacityPlan
         if (self.chat_model not in self.allowed_models or self.coding_model not in self.allowed_models or
             len(set(self.allowed_models)) != len(self.allowed_models) or
@@ -37,12 +41,14 @@ def effective_policy(db, settings):
     from .capacity import CapacityPlan
     row = db.get(AIConfiguration, 'default')
     if row:
-        return {**row.config, 'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in row.config['plans']]}
+        return {**row.config, 'mcp_servers': row.config.get('mcp_servers', ['deepwiki']),
+                'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in row.config['plans']]}
     import json
     allowed = [value.strip() for value in settings.litellm_models.split(',') if value.strip()]
     first = allowed[0] if allowed else ''
     return {'chat_model': settings.capability_chat_model or first, 'coding_model': first,
             'allowed_models': allowed, 'cny_per_usd': settings.model_settlement_cny_per_usd,
+            'mcp_servers': ['deepwiki'],
             'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in json.loads(settings.capacity_plans_json)]}
 
 
@@ -79,6 +85,39 @@ def provider_catalog(settings):
 
 def admin_router(admin_dependency):
     router = APIRouter(prefix='/v1/admin/ai', tags=['administration'])
+
+    @router.get('/mcp')
+    def get_mcp_policy(principal=Depends(admin_dependency), db=Depends(get_db)):
+        from .agent_mcp import public_catalog
+        row = db.get(AIConfiguration, 'default')
+        return {'revision': row.revision if row else 0, **public_catalog(db, get_settings())}
+
+    class SaveMCP(BaseModel):
+        model_config = ConfigDict(extra='forbid')
+        revision: int = Field(ge=0)
+        servers: list[str] = Field(max_length=10)
+
+    @router.put('/mcp')
+    def save_mcp_policy(body: SaveMCP, principal=Depends(admin_dependency), db=Depends(get_db)):
+        from .agent_mcp import CATALOG, public_catalog
+        if len(set(body.servers)) != len(body.servers) or not set(body.servers) <= CATALOG.keys():
+            raise HTTPException(422, 'mcp_connector_unknown')
+        row = db.get(AIConfiguration, 'default', with_for_update=True)
+        if (row.revision if row else 0) != body.revision:
+            raise HTTPException(409, 'ai_policy_changed')
+        config = effective_policy(db, get_settings())
+        if row is None:
+            row = AIConfiguration(id='default', revision=0)
+            db.add(row)
+        row.config, row.revision = {**config, 'mcp_servers': body.servers}, row.revision + 1
+        db.add(AuditEvent(tenant_id='platform', issuer=principal.issuer, subject=principal.subject,
+                         action='mcp.policy.updated', target_id='default'))
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(409, 'ai_policy_changed') from None
+        return {'revision': row.revision, **public_catalog(db, get_settings())}
 
     @router.get('')
     def get_policy(principal=Depends(admin_dependency), db=Depends(get_db)):

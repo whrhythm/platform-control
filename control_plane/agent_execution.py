@@ -45,11 +45,11 @@ class TaskTools:
         operation_id = str(uuid4())
         with self.sessions.begin() as db:
             task, env = self.current(db, lock=True)
-            if task.config['strategy'] != 'implement':
+            if task.config['strategy'] != 'implement' and operation != 'mcp_read':
                 raise TaskStopped('agent_strategy_read_only')
             digest = hashlib.sha256(json.dumps([task.config, operation, arguments], sort_keys=True).encode()).hexdigest()
             required = (task.config['approval'] == 'strict'
-                        or operation in ('publish', 'start', 'stop', 'delete', 'database')
+                        or operation in ('publish', 'start', 'stop', 'delete', 'database', 'mcp_read')
                         or (operation == 'command' and (arguments.get('database') or arguments.get('objects'))))
             deadline = now() + timedelta(seconds=self.settings.agent_approval_seconds)
             task.pending = {'id': operation_id, 'digest': digest, 'expires_at': deadline.isoformat(),
