@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0015_agent_tasks":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0016_mcp_catalog":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -685,6 +685,9 @@ def set_quota(tenant_id: str, body: QuotaInput, principal: Principal = Depends(p
 
 from .ai_policy import admin_router as create_ai_admin_router, public_models
 app.include_router(create_ai_admin_router(platform_admin))
+from .mcp_admin import admin_router as create_mcp_admin_router, credential_router as create_mcp_credential_router
+app.include_router(create_mcp_admin_router(platform_admin))
+app.include_router(create_mcp_credential_router(workspace_service_principal))
 app.include_router(create_review_router(platform_admin))
 app.include_router(create_admin_users_router(platform_admin))
 

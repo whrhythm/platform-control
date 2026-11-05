@@ -26,6 +26,28 @@ class AIConfiguration(Base):
     observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class MCPServer(Base):
+    __tablename__ = 'mcp_servers'
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    state: Mapped[str] = mapped_column(String(16), default='draft')
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    discovered: Mapped[list] = mapped_column(JSON, default=list)
+    approved: Mapped[list] = mapped_column(JSON, default=list)
+    addresses: Mapped[list] = mapped_column(JSON, default=list)
+    encrypted_credential: Mapped[str | None] = mapped_column(Text, nullable=True)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MCPCredential(Base):
+    __tablename__ = 'mcp_credentials'
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    server_id: Mapped[str] = mapped_column(ForeignKey('mcp_servers.id'), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    server_revision: Mapped[int] = mapped_column(Integer)
+    encrypted_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ModelCredit(Base):
     __tablename__ = 'model_credits'
     order_id: Mapped[str] = mapped_column(ForeignKey('capacity_orders.id'), primary_key=True)

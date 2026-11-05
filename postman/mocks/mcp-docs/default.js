@@ -14,7 +14,7 @@ http.createServer(async (req,res) => {
   const reply = result => send(res,200,{jsonrpc:'2.0',id:body.id,result});
   if(body.method === 'initialize') return reply({protocolVersion:'2025-11-25',capabilities:{tools:{}},serverInfo:{name:'synthetic-docs',version:'1'}});
   if(body.method === 'notifications/initialized') {res.writeHead(202);return res.end();}
-  if(body.method === 'tools/list') return reply({tools:[{name:'read_wiki_structure',description:'Synthetic docs',inputSchema:{type:'object',properties:{repoName:{type:'string'}},required:['repoName']}}]});
+  if(body.method === 'tools/list') return reply({tools:[{name:'read_wiki_structure',description:(await pm.state.get('mcp_docs_mode')) === 'drift'?'Changed tool':'Synthetic docs',inputSchema:{type:'object',properties:{repoName:{type:'string'}},required:['repoName']}}]});
   if(body.method === 'tools/call') {
     await pm.state.set('mcp_docs_calls', ((await pm.state.get('mcp_docs_calls')) || 0) + 1);
     const mode = await pm.state.get('mcp_docs_mode');

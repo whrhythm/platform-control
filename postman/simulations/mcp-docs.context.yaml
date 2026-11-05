@@ -1,8 +1,12 @@
 contract: MCP Streamable HTTP 2025-11-25
 source: https://modelcontextprotocol.io/specification/2025-11-25/basic/transports
-purpose: Exercise the pinned MCP SDK over real HTTP for successful queries, 503, tool errors and deadlines.
+purpose: Exercise the pinned MCP SDK and dedicated gateway over real HTTP for success, 503, tool errors, deadlines, oversized responses and changed tool definitions.
 data: Synthetic public repository names and documentation; no user credentials or source.
 limits:
   - Local simulation replaces only the public-network transport; public DNS pinning and redirect rejection are covered separately.
   - This mock does not prove DeepWiki availability, quality, or service limits. Live read-only validation is separate.
-  - No external writes, sampling, roots, elicitation or OAuth are exposed.
+  - This mock performs no external writes. Uncertain write handling is separately exercised by the task lifecycle test; it does not establish any vendor's idempotency behavior.
+verification:
+  date: '2026-11-05'
+  result: scripts/test_mcp_gateway_simulation.py passed six real HTTP scenarios. Tools/call appeared exactly once for success and each failure, and zero times after discovery fingerprint drift. Local Postman request events were inspected.
+  cli: 1.74.0; status command unavailable, no signed-in owner mock search or cloud publication.

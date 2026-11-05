@@ -135,9 +135,8 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
     if config != preference(db, env.id, key):
         raise HTTPException(409, 'agent_settings_changed')
     config = {**config, 'model': model}
-    from .agent_mcp import CATALOG, validate_selection
-    validate_selection(db, settings, config['mcp_servers'])
-    config['mcp_versions'] = {key: CATALOG[key]['version'] for key in config['mcp_servers']}
+    from .mcp_catalog import snapshot
+    config['mcp_versions'], config['mcp_credentials'] = snapshot(db, settings, config['mcp_servers'], env.id)
     request_key = hashlib.sha256((key + '\n' + message_id + '\n' + (prompt if request_prompt is None else request_prompt) + '\n' + json.dumps(config, sort_keys=True)).encode()).hexdigest()
     previous = db.scalar(select(AgentTask).where(AgentTask.environment_id == env.id, AgentTask.request_key == request_key))
     if previous:
@@ -164,9 +163,9 @@ def create_agent_router(principal_dependency):
 
     @router.get('/mcp', dependencies=[Depends(enabled)])
     def get_mcp(principal=Depends(principal_dependency), db=Depends(get_db)):
-        from .agent_mcp import public_catalog
-        own_environment(db, principal)
-        return public_catalog(db, get_settings())
+        from .mcp_catalog import catalog
+        env = own_environment(db, principal)
+        return catalog(db, get_settings(), env.id)
 
     @router.get('/preferences', dependencies=[Depends(enabled)])
     def get_preferences(conversation_id: str = Query(default='default', pattern=r'^[a-zA-Z0-9_-]{1,64}$'),
@@ -176,9 +175,9 @@ def create_agent_router(principal_dependency):
 
     @router.put('/preferences', dependencies=[Depends(enabled)])
     def set_preferences(body: PreferenceInput, principal=Depends(principal_dependency), db=Depends(get_db)):
-        from .agent_mcp import validate_selection
+        from .mcp_catalog import snapshot
         env = own_environment(db, principal)
-        validate_selection(db, get_settings(), body.mcp_servers)
+        snapshot(db, get_settings(), body.mcp_servers, env.id)
         if env.status == 'suspended':
             raise HTTPException(403, 'agent_account_suspended')
         if body.project_path:

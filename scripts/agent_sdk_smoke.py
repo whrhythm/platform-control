@@ -22,7 +22,7 @@ class Model(BaseHTTPRequestHandler):
         assert operations == ['list', 'read', 'apps', 'databases', 'objects'], operations
         if not calls:
             if selected:
-                name, arguments = documentation[0]['name'], {'tool': 'read_wiki_structure', 'repoName': 'example/project'}
+                name, arguments = documentation[0]['name'], {'operation': 'call', 'server': 'deepwiki', 'tool': 'read_wiki_structure', 'arguments_json': '{"repoName":"example/project"}'}
             else:
                 name, arguments = project['name'], {'operation': 'read', 'path': 'hello.py'}
         else:

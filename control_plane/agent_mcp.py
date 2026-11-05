@@ -76,8 +76,8 @@ class PublicTransport(httpx.AsyncBaseTransport):
     Checking DNS then letting HTTP resolve again would permit DNS rebinding.
     No proxies, redirects, alternate ports, URLs, credentials or compressed bodies.
     """
-    def __init__(self, server, maximum=262144):
-        self.server, self.maximum = server, maximum
+    def __init__(self, server, maximum=262144, secret=''):
+        self.server, self.maximum, self.secret = server, maximum, secret
         # The worker's SSL_CERT_FILE trusts the cluster CA only. Public MCP must
         # use the system/public CA bundle rather than that internal-service override.
         self.transport = httpx.AsyncHTTPTransport(retries=0, trust_env=False)
@@ -91,11 +91,17 @@ class PublicTransport(httpx.AsyncBaseTransport):
         ips = [ipaddress.ip_address(value[4][0]) for value in addresses]
         if not ips or any(not ip.is_global or ip.is_multicast or ip.is_unspecified for ip in ips):
             raise ValueError('mcp_address_not_public')
+        if self.server.get('addresses') and not {str(ip) for ip in ips if ip.version == 4} <= set(self.server['addresses']):
+            raise ValueError('mcp_address_changed_review_required')
         address = next((ip for ip in ips if ip.version == 4), ips[0])
+        if self.server.get('addresses') and str(address) not in self.server['addresses']:
+            raise ValueError('mcp_address_changed_review_required')
         request.url = request.url.copy_with(host=str(address))
         request.headers['Host'] = self.server['host']
         request.headers['Accept-Encoding'] = 'identity'
         request.extensions['sni_hostname'] = self.server['host']
+        if self.secret:
+            request.headers['Authorization'] = 'Bearer ' + self.secret
         response = await self.transport.handle_async_request(request)
         if response.is_redirect or response.headers.get('content-encoding', 'identity') != 'identity':
             await response.aclose()
@@ -128,41 +134,78 @@ async def invoke(server, tool, arguments, settings):
     return await asyncio.wait_for(perform(), timeout=settings.agent_mcp_seconds)
 
 
+def task_connection(context, db, identifier):
+    from .mcp_catalog import server, published, secret_for
+    task, env = context.current(db)
+    row = server(db, identifier)
+    if (identifier not in task.config.get('mcp_servers', []) or not published(db, context.settings, row)
+            or task.config.get('mcp_versions', {}).get(identifier) != row.revision):
+        raise ValueError('mcp_connection_disabled')
+    secret, revision = secret_for(db, context.settings, row, env.id)
+    if revision != task.config.get('mcp_credentials', {}).get(identifier, 0):
+        raise ValueError('mcp_credential_changed')
+    return task, row, secret
+
+
+def describe(context, identifier=''):
+    with context.sessions() as db:
+        task, _ = context.current(db)
+        result = []
+        for key in task.config.get('mcp_servers', []):
+            if identifier and key != identifier:
+                continue
+            try:
+                _, row, _ = task_connection(context, db, key)
+            except (ValueError, HTTPException):
+                continue
+            result.append({'id': row.id, 'name': row.config['name'], 'tools': [
+                {k: tool.get(k) for k in ('name', 'description', 'inputSchema', 'permission')} for tool in row.approved
+                if task.config['strategy'] == 'implement' or tool['permission'] == 'read']})
+        return json.dumps(result, ensure_ascii=False)
+
+
 def execute(context, server, tool, arguments):
     from .agent_tasks import unseal
-    arguments = validate_arguments(server, tool, arguments)
+    from .mcp_client import gateway
+    from .mcp_catalog import safe_schema
+    from .agent_execution import TaskStopped
+    from jsonschema import Draft202012Validator
+    from referencing import Registry
 
-    def check():
+    def check(budget=True):
         with context.sessions() as db:
-            task, _ = context.current(db)
-            if (server not in task.config.get('mcp_servers', [])
-                    or task.config.get('mcp_versions', {}).get(server) != CATALOG[server]['version']
-                    or server not in enabled_servers(db, context.settings)):
-                raise ValueError('mcp_connection_disabled')
-            events = unseal(task.encrypted_events, context.settings)
-            if sum(e['kind'] == 'mcp_started' for e in events) >= context.settings.agent_mcp_calls:
+            task, row, secret = task_connection(context, db, server)
+            approved = next((item for item in row.approved if item['name'] == tool), None)
+            if not approved or (task.config['strategy'] != 'implement' and approved['permission'] != 'read'):
+                raise ValueError('mcp_tool_not_allowed')
+            if not safe_schema(approved['inputSchema']) or len(json.dumps(arguments)) > 8192:
+                raise ValueError('mcp_arguments_invalid')
+            Draft202012Validator(approved['inputSchema'], registry=Registry()).validate(arguments)
+            if budget and sum(e['kind'] == 'mcp_started' for e in unseal(task.encrypted_events, context.settings)) >= context.settings.agent_mcp_calls:
                 raise ValueError('mcp_call_limit')
+            return row, approved, secret
     try:
-        check()
-    except ValueError:
-        return json.dumps({'error': 'mcp_connection_unavailable'}, ensure_ascii=False)
-    context.authorize('mcp_read', {'server': server, 'destination': CATALOG[server]['host'],
-                                  'tool': tool, 'query': json.dumps(arguments, ensure_ascii=False)})
-    # Revocation/cancellation while waiting for approval takes effect before dispatch.
+        row, approved, _ = check()
+    except Exception as error:
+        if isinstance(error, TaskStopped):
+            raise
+        return json.dumps({'error': 'mcp_connection_or_arguments_unavailable'})
+    operation = 'mcp_write' if approved['permission'] == 'write' else 'mcp_read'
+    context.authorize(operation, {'server': row.config['name'], 'destination': row.config['url'],
+                                 'tool': tool, 'query': json.dumps(arguments, ensure_ascii=False),
+                                 'external_write': operation == 'mcp_write'})
     try:
-        check()
-    except ValueError:
-        return json.dumps({'error': 'mcp_connection_unavailable'}, ensure_ascii=False)
-    context.event('mcp_started', text='正在查询 ' + CATALOG[server]['name'], operation='mcp_read')
+        row, approved, secret = check()
+    except (ValueError, HTTPException):
+        return json.dumps({'error': 'mcp_connection_unavailable'})
+    context.event('mcp_started', text='正在调用 ' + row.config['name'], operation=operation)
     async def guarded():
-        pending = asyncio.create_task(invoke(CATALOG[server], tool, arguments, context.settings))
+        pending = asyncio.create_task(gateway(context.settings, 'call', row.config, secret=secret,
+            addresses=row.addresses, tool=approved, arguments=arguments))
         try:
             while not pending.done():
                 await asyncio.wait([pending], timeout=1)
-                with context.sessions() as db:
-                    context.current(db)
-                    if server not in enabled_servers(db, context.settings):
-                        raise ValueError('mcp_connection_disabled')
+                check(budget=False)
             return await pending
         finally:
             if not pending.done():
@@ -170,9 +213,13 @@ def execute(context, server, tool, arguments):
             await asyncio.gather(pending, return_exceptions=True)
     try:
         result = asyncio.run(guarded())
+    except TaskStopped:
+        raise
     except Exception:
-        # No SDK/provider exception strings, URLs, headers or remote bodies in user diagnostics.
-        result = {'error': 'mcp_unavailable', 'message': '外部文档服务暂时不可用，本次查询未自动重试。'}
-    context.event('mcp_result', text='文档查询未完成' if 'error' in result else '文档查询已完成',
+        result = {'error': 'mcp_unavailable'}
+    context.event('mcp_result', text='外部工具未完成' if 'error' in result else '外部工具已完成',
                   output=json.dumps(result, ensure_ascii=False))
+    if operation == 'mcp_write' and 'error' in result and result.get('dispatched') is not False:
+        context.stopped, context.stop_reason = True, 'agent_mcp_write_requires_review'
+        raise TaskStopped(context.stop_reason)
     return json.dumps(result, ensure_ascii=False)

@@ -86,7 +86,10 @@ def iteration(sessions, cluster, settings, run_agent):
             finish(sessions, identifier, settings, 'completed', text=result[:32768])
     except Exception as error:
         code = str(error) if isinstance(error, TaskStopped) else 'agent_execution_failed'
-        finish(sessions, identifier, settings, 'failed', code, '本轮未完成，请查看执行记录；源文件保留，未自动重放操作。')
+        message = ('外部 MCP 写入结果尚未确认，任务已停止且不会自动重试。请先到目标服务核验是否已经生效，再决定下一步，避免重复写入。'
+                   if code == 'agent_mcp_write_requires_review'
+                   else '本轮未完成，请查看执行记录；源文件保留，未自动重放操作。')
+        finish(sessions, identifier, settings, 'failed', code, message)
         logging.warning('Agent task=%s status=%s', identifier, code)
     finally:
         try:

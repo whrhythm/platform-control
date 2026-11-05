@@ -60,7 +60,7 @@ def test_selection_frozen_owner_scoped_and_rejected_when_disabled(workspace):
         from control_plane.ai_policy import effective_policy
         policy = effective_policy(db, get_settings())
         db.add(AIConfiguration(id='default', config={**policy, 'mcp_servers': []}))
-    assert json.loads(execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName': 'example/project'}))['error'] == 'mcp_connection_unavailable'
+    assert json.loads(execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName': 'example/project'}))['error'] == 'mcp_connection_or_arguments_unavailable'
     saved = client.get(base + '/preferences', headers=headers).json()
     saved['mcp_servers'] = ['deepwiki']
     assert client.put(base + '/preferences', headers=headers, json=saved).status_code == 409
@@ -71,15 +71,15 @@ def test_every_external_query_requires_approval_even_review_auto(workspace, monk
     client, headers, base = workspace
     task, tools = select_mcp(workspace)
     calls = []
-    async def provider(*args):
+    async def provider(*args, **kwargs):
         calls.append(args)
         return {'text': 'public documentation', 'untrusted_external_data': True}
-    monkeypatch.setattr('control_plane.agent_mcp.invoke', provider)
+    monkeypatch.setattr('control_plane.mcp_client.gateway', provider)
     def approve(_):
         current = client.get(base + '/tasks/' + task.id, headers=headers).json()
         assert not calls
         assert current['status'] == 'awaiting_approval'
-        assert current['events'][-1]['arguments']['destination'] == 'mcp.deepwiki.com'
+        assert current['events'][-1]['arguments']['destination'] == 'https://mcp.deepwiki.com/mcp'
         assert client.post(base + '/tasks/' + task.id + '/decision', headers=headers,
             json={'operation_id': current['pending']['id'], 'decision': decision}).status_code == 200
     monkeypatch.setattr('control_plane.agent_execution.time.sleep', approve)
@@ -100,7 +100,7 @@ def test_unselected_and_invalid_tools_never_call_external_service(workspace):
     with client.session_factory.begin() as db:
         db.get(AgentTask, task.id).status = 'running'
     tools = TaskTools(client.session_factory, task.id, None, get_settings(), None)
-    assert 'mcp_connection_unavailable' in execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName': 'example/project'})
+    assert 'mcp_connection_or_arguments_unavailable' in execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName': 'example/project'})
     with pytest.raises(ValueError):
         validate_arguments('deepwiki', 'execute_command', {})
     with pytest.raises(ValidationError):
@@ -116,9 +116,9 @@ def test_revocation_while_waiting_for_consent_prevents_dispatch(workspace, monke
             db.add(AIConfiguration(id='default', config={**effective_policy(db, get_settings()), 'mcp_servers': []}))
         return 'approved'
     monkeypatch.setattr(tools, 'authorize', revoked_after_approval)
-    async def never(*_args):
+    async def never(*_args, **_kwargs):
         pytest.fail('revoked connector dispatched')
-    monkeypatch.setattr('control_plane.agent_mcp.invoke', never)
+    monkeypatch.setattr('control_plane.mcp_client.gateway', never)
     assert 'mcp_connection_unavailable' in execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName':'example/project'})
 
 
@@ -127,10 +127,10 @@ def test_query_failure_is_safe_and_not_automatically_replayed(workspace, monkeyp
     task, tools = select_mcp(workspace)
     monkeypatch.setattr(tools, 'authorize', lambda *_: 'synthetic-approved')
     calls = []
-    async def failed(*args):
+    async def failed(*args, **kwargs):
         calls.append(args)
         raise RuntimeError('private provider diagnostic secret')
-    monkeypatch.setattr('control_plane.agent_mcp.invoke', failed)
+    monkeypatch.setattr('control_plane.mcp_client.gateway', failed)
     result = execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName':'example/project'})
     assert len(calls) == 1 and json.loads(result)['error'] == 'mcp_unavailable'
     assert 'secret' not in result

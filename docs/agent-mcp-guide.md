@@ -2,6 +2,8 @@
 
 更新：2026-11-05。适用于星桥定制 LibreChat、Platform Control 和共享 OpenHands SDK 执行器。
 
+> 本文保留首版 DeepWiki 接入记录。当前版本已升级为管理员审核发布的动态服务目录，新增、审核、凭据配置、停用和网络设计请以 [MCP 服务管理手册](mcp-service-management.md) 为准。下文“仅支持 DeepWiki”和旧版保存配置入口已被替代。
+
 ## 用户如何使用
 
 1. 在 LibreChat 左上角选择 OpenHands 编程助手，打开“编程设置”。
