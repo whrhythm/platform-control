@@ -17,6 +17,41 @@ from control_plane.models import AgentTask, UserEnvironment
 from control_plane.settings import get_settings, Settings
 
 
+def test_worker_reports_invalid_policy_instead_of_requeuing_forever(workspace, caplog):
+    from control_plane.ai_policy import effective_policy
+    from control_plane.agent_worker import iteration
+    from control_plane.models import AIConfiguration, ModelCredential
+
+    client, headers, base = workspace
+    settings = get_settings()
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        env = db.get(UserEnvironment, task.environment_id)
+        db.add(ModelCredential(issuer=env.issuer, subject=env.subject, status='ready',
+            encrypted_key=Fernet(settings.model_credential_encryption_key.encode()).encrypt(b'synthetic-key').decode()))
+        policy = effective_policy(db, settings)
+        policy['plans'][0]['future_quota_field'] = 'private-admin-value'
+        db.add(AIConfiguration(id='default', revision=1, config=policy))
+
+    def unexpected_agent(*args, **kwargs):
+        pytest.fail('An invalid configuration must never reach the model or tools')
+
+    # Real validation against an incompatible stored plan, with no external calls.
+    iteration(client.session_factory, None, settings, unexpected_agent)
+    observed = client.get(base + '/tasks/' + task.id, headers=headers).json()
+    assert observed['status'] == 'failed'
+    assert observed['error_code'] == 'agent_configuration_invalid'
+    assert observed['events'][-1]['kind'] == 'finished'
+    assert '尚未执行' in observed['events'][-1]['text']
+    assert 'private-admin-value' not in caplog.text
+    assert 'synthetic-key' not in caplog.text
+    # A further reconciliation does not replay or duplicate the final event.
+    iteration(client.session_factory, None, settings, unexpected_agent)
+    assert client.get(base + '/tasks/' + task.id, headers=headers).json() == observed
+    # The failed claim no longer prevents the owner from creating a new task.
+    assert create(workspace, 'new request after configuration repair').status == 'queued'
+
+
 @pytest.fixture
 def workspace(harness, monkeypatch):
     client, _ = harness

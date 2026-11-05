@@ -7,6 +7,7 @@ from pathlib import Path
 
 import httpx
 from cryptography.fernet import Fernet
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from .agent_execution import TaskTools, TaskStopped, cleanup
@@ -71,7 +72,18 @@ def iteration(sessions, cluster, settings, run_agent):
         key = Fernet(settings.model_credential_encryption_key.encode()).decrypt(credential.encrypted_key.encode()).decode()
         prompt, config = unseal(task.encrypted_prompt, settings), task.config
         from .ai_policy import effective_policy
-        if config['model'] not in effective_policy(db, settings)['allowed_models']:
+        try:
+            policy = effective_policy(db, settings)
+        except ValidationError:
+            # A permanent schema mismatch must not roll back the claim forever.
+            # Never log validation inputs: they can contain administrator data.
+            task.status, task.error_code = 'failed', 'agent_configuration_invalid'
+            append_event(db, task, settings, 'finished', status='failed',
+                         error_code=task.error_code,
+                         text='编程执行器配置不兼容，任务尚未执行。请联系管理员更新服务后再重试；文件未修改。')
+            logging.warning('Agent task=%s status=agent_configuration_invalid', identifier)
+            return
+        if config['model'] not in policy['allowed_models']:
             task.status, task.error_code = 'failed', 'agent_model_not_available'
             return
         prompt = '当前工作方式：' + config['strategy'] + '。当前工程：' + config['project_path'] + '。\n' + prompt

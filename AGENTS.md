@@ -14,3 +14,5 @@ Python business backend and React UI. Keep Tauri Rust limited to GUI and child-p
 Run pytest and `npm ci && npm run build` in web. PostgreSQL concurrency checks use `python scripts/test_postgres.py` and a disposable local Docker container, never the live cluster database. Supported image may be selected with PLATFORM_TEST_POSTGRES_IMAGE.
 
 Keep credentials, personal prompts, kubeconfig and customer source out of Git, logs and plans. Current resources are metadata/plans only; preserve this distinction in the UI/docs until apply adapters and acceptance tests exist. Do not overwrite unrelated work in adjacent `ops/` or `openhands-upstream/` directories.
+
+Changes to persisted policy schemas (especially CapacityPlan) must include a compatibility review of every consumer image, including agent-worker and workspace-controller. Before administrators save new fields, deploy compatible readers; after deployment, verify effective_policy on the actual agent-worker and a real queued task. A Running Pod alone is not an agent readiness check. Do not remove strict quota validation merely to make an old image accept new configuration.
