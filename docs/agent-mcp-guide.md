@@ -66,7 +66,7 @@ OpenHands SDK 为 **1.58.1**，MCP Python SDK 为 **1.30.0**，采用 Streamable
 | 审批 | 每次外发均确认；“工程内自动执行”不免除 MCP 确认 |
 | 网络 | 固定 HTTPS 端点及路径；无代理、任意 URL、重定向、私网地址或本地进程 |
 | DNS | 每次连接解析并检查全部结果，连接固定到已验证的公网 IP，同时保持原域名 TLS/SNI 验证 |
-| 集群出口 | 执行器增加公网 TCP 443；排除私网等范围。标准 NetworkPolicy 不能按域名过滤，域名限制由适配器执行；原有受管内部服务访问保留 |
+| 集群出口 | 只新增 DeepWiki 当前解析的 3 个 IPv4 `/32` 地址的 TCP 443 白名单：`32.186.91.142`、`32.191.178.174`、`35.80.103.206`。原有受管内部服务访问保留。域名、路径与证书继续由适配器验证 |
 | 时限 | 每次最多 60 秒，可用 `PLATFORM_AGENT_MCP_SECONDS` 配置为 5–120 秒 |
 | 次数 | 每任务最多 8 次，可用 `PLATFORM_AGENT_MCP_CALLS` 配置为 1–20 次 |
 | 响应 | 每条 HTTP 响应最多 256 KiB；仅文本提供给模型，最多 12000 字符并标注截断；执行记录展示尾部最多 8192 字符 |
@@ -88,6 +88,8 @@ OpenHands SDK 为 **1.58.1**，MCP Python SDK 为 **1.30.0**，采用 Streamable
 ## 运维与验证
 
 现有任务不因升级而自动重放。更新共享执行器前检查活动任务，等待空闲；意外重启仍按既有逻辑标为中断。
+
+公网地址于 2026-11-05 从集群解析并核对。标准 NetworkPolicy 不跟随域名变化：若 DeepWiki 地址改变，查询会超时并给出失败提示，不会自动扩大出口。运维应核验新解析结果后更新 `ops/apps/platform-control/runtime/agent.yaml` 的精确 `/32` 白名单，通过 Argo CD 发布。后续连接规模扩大时应建设专用域名出口代理，不能直接把共享执行器放开为全公网出口。
 
 本地权限和网络边界测试：`tests/test_agent_mcp.py`。固定 SDK 适配测试：`scripts/agent_sdk_smoke.py`，在执行器镜像中运行。故障模拟：`postman/simulations/mcp-docs.sim.yaml` 与 `scripts/test_mcp_simulation.py`，只用合成数据。模拟运行时必须显式提供 `MCP_SIMULATION_URL`；生产路径没有这个地址覆盖开关。
 

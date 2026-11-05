@@ -78,7 +78,9 @@ class PublicTransport(httpx.AsyncBaseTransport):
     """
     def __init__(self, server, maximum=262144):
         self.server, self.maximum = server, maximum
-        self.transport = httpx.AsyncHTTPTransport(retries=0)
+        # The worker's SSL_CERT_FILE trusts the cluster CA only. Public MCP must
+        # use the system/public CA bundle rather than that internal-service override.
+        self.transport = httpx.AsyncHTTPTransport(retries=0, trust_env=False)
 
     async def handle_async_request(self, request):
         if (str(request.url) != self.server['url'] or request.method not in ('POST', 'GET', 'DELETE')

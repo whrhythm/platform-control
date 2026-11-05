@@ -152,3 +152,11 @@ def test_stream_limit():
             async for _ in LimitedStream(Stream(), 30):
                 pass
     asyncio.run(run())
+
+
+def test_public_transport_ignores_internal_only_ca_environment(monkeypatch):
+    monkeypatch.setenv('SSL_CERT_FILE', '/nonexistent/internal-only-ca.pem')
+    async def run():
+        async with PublicTransport(CATALOG['deepwiki']):
+            pass
+    asyncio.run(run())
