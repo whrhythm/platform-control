@@ -33,3 +33,18 @@
 先升级 agent-worker、MCP、工作空间、计费、存储和发布等读取配置的后台服务，再升级 API/管理页面，避免旧服务读取新字段报错。验证实际后台的配置解析和真实编程任务。
 
 自动测试覆盖管理员权限、修订冲突、错误配额、兼容旧客户端、新用户快照、重复登录不覆盖权益、不同身份空间不同、旧项目接口一致性。PostgreSQL 并发测试运行于本机临时数据库，不操作生产用户数据。浏览器检查套餐切换、折叠组、汇率解释、保存、窄屏和 1440px 对齐；管理员验收仅使用 akadmin 查看和保存配置，普通用户验收使用已指定账号。
+
+### 2026-11-05 实测结果
+
+- 后端全量：264 passed、29 skipped；跳过项包含需独立 PostgreSQL / 模拟服务环境的测试。
+- 临时本地 PostgreSQL：15 passed，涵盖并发登录、唯一环境/权益账户和并发配额控制。
+- 管理页面：`npm ci`、TypeScript、Vite 构建通过。
+- 线上浏览器：1440px 同行标签对齐断言通过；1280px、600px 无横向溢出；体验套餐、基础套餐切换与 OpenHands 配额折叠组可用。
+- akadmin 仅查看/保存配置：通过真实页面保存等值汇率（7.000000 → 7），配置 revision 5 → 6，资源值和价格没有改变。体验资源默认值随完整策略持久化，API 审计记录存在。
+- 指定普通账号：保存前后的完整权益快照一致，逻辑容量仍为 4 GiB；新的真实 OpenHands 聊天任务完成，实际 worker 能严格解析包含 trial_plan 的配置。
+- 实际集群：该账号命名空间存在，workspace-data PVC Bound / 4 GiB，ResourceQuota 和默认拒绝网络策略存在。命名空间内现有应用和文件服务保持运行。本次没有删除或迁移用户文件。
+- 最终 Argo CD：platform-control Synced / Healthy，ops revision `4d8bdc4`。
+- API 镜像：`harbor.k3s.local/internal/platform-control@sha256:0cf61c38f93e110ea9cbe9aea44d936ce06315f607a93725f9a5a56807773eae`。
+- 编程/MCP reader 镜像：`harbor.k3s.local/internal/platform-control@sha256:cae4dbcdaec47002cf94fada8e1e0ba3ac5d5e2687daafbb1588f52bea1e011a`。
+
+新身份开通、非默认体验配额与并发首次登录由本地自动测试验证；未额外注册线上验收账号，也未修改现有用户的套餐和充值余额。没有重跑未变化的真实支付/外部计费流程。
