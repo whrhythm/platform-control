@@ -1,6 +1,3 @@
-from copy import deepcopy
-from types import SimpleNamespace
-
 import httpx
 import pytest
 from fastapi import HTTPException
@@ -9,11 +6,8 @@ from sqlalchemy import select
 from control_plane.capacity import CapacityPlan
 from control_plane.capacity_controller import reconcile_capacity
 from control_plane.model_billing_controller import apply_credit
-from control_plane.models import CapacityAccount, UserApplication, UserEnvironment, AgentTask
+from control_plane.models import CapacityAccount, UserApplication, UserEnvironment
 from control_plane.settings import get_settings
-from control_plane.plan_quotas import application_allocations
-from control_plane.application_runtime import build_objects
-from control_plane.agent_runtime import command_job
 from test_capacity import capacity_harness, create_order, PREFIX, ResizeHTTP, provider_for, GIB
 from test_model_membership import membership
 from test_project_databases import databases, request as request_database
