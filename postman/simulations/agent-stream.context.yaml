@@ -1,0 +1,13 @@
+contract: OpenAI-compatible streamed chat.completion.chunk consumed by the pinned OpenHands SDK
+source: https://github.com/OpenHands/software-agent-sdk/blob/main/examples/01_standalone_sdk/29_llm_streaming.py
+purpose: Verify incremental finish.message extraction using the actual SDK before conversation.run returns, and observe command logs without replaying mutations.
+data: Synthetic messages, credentials and command logs only.
+limits:
+  - The mock exercises transport and tool-call argument deltas, not model answer quality.
+  - The Kubernetes member does not simulate real scheduling or Kata startup; live command verification is separate.
+  - Local CLI lacks status; owner mock search and cloud publication are unavailable. The mock follows the observed installed SDK contract.
+verification:
+  date: '2026-11-05'
+  sdk: Actual pinned orchestrator SDK received 13 public answer snapshots before completion; final text matched and reasoning content was excluded.
+  kubernetes: Existing unknown-create test exercised real HTTP and observed exactly one POST and one DELETE; snapshot and request events verified no replay.
+  live: Browser received growing answers before completion, resumed the same task after offline/reload, and saw two command-output stages before the third stage and final result.

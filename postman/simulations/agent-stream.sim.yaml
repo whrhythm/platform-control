@@ -1,0 +1,9 @@
+simulation: agent-stream
+routing: path
+mocks:
+  - name: agent-stream
+    routeKey: model
+    path: ../mocks/agent-stream/config.yaml
+  - name: kubernetes-delivery
+    routeKey: cluster
+    path: ../mocks/kubernetes-delivery/config.yaml

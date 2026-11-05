@@ -121,13 +121,15 @@ def run_agent(context, prompt, model, key, settings, *, readonly=False):
     import tempfile
     import threading
     import time
+    from .agent_stream import AnswerStream
+    stream = AnswerStream(context)
     CONTEXTS[context.task_id] = context
     finished = threading.Event()
     # This directory is orchestration state only. No user source is mounted here.
     with tempfile.TemporaryDirectory(prefix='agent-state-') as temporary:
         llm = LLM(model='openai/' + model, base_url=settings.litellm_url.rstrip('/') + '/v1', api_key=key,
                   max_output_tokens=8192, timeout=180, num_retries=1, reasoning_effort=None,
-                  log_completions=False, caching_prompt=False)
+                  log_completions=False, caching_prompt=False, stream=True)
         tools = [Tool(name=ProjectTool.name, params={'task_id': context.task_id, 'readonly': readonly})]
         with context.sessions() as db:
             task, _ = context.current(db)
@@ -135,6 +137,7 @@ def run_agent(context, prompt, model, key, settings, *, readonly=False):
                 tools.append(Tool(name=DocumentationTool.name, params={'task_id': context.task_id}))
         agent = Agent(llm=llm, tools=tools)
         conversation = Conversation(agent=agent, workspace=temporary, visualizer=None,
+                                    token_callbacks=[stream],
                                     max_iteration_per_run=settings.workspace_agent_max_iterations)
         deadline = time.monotonic() + settings.agent_task_seconds
         def monitor():
@@ -152,6 +155,7 @@ def run_agent(context, prompt, model, key, settings, *, readonly=False):
         try:
             conversation.send_message(prompt)
             conversation.run()
+            stream.flush(force=True)
             with context.sessions() as db:
                 context.current(db)
             return get_agent_final_response(conversation.state.events) or '本轮执行已结束，请查看项目文件和运行记录。'

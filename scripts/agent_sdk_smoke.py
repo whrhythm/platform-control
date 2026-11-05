@@ -35,9 +35,15 @@ class Model(BaseHTTPRequestHandler):
                                'function': {'name': name, 'arguments': json.dumps(arguments)}}]}}],
             'usage': {'prompt_tokens': 1, 'completion_tokens': 1, 'total_tokens': 2}}
         self.send_response(200)
-        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Type', 'text/event-stream' if body.get('stream') else 'application/json')
         self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
+        if body.get('stream'):
+            choice = payload['choices'][0]
+            choice['delta'] = choice.pop('message')
+            choice['delta']['tool_calls'][0]['index'] = 0
+            self.wfile.write(('data: ' + json.dumps(payload) + '\n\ndata: [DONE]\n\n').encode())
+        else:
+            self.wfile.write(json.dumps(payload).encode())
 
     def log_message(self, *_):
         pass
@@ -52,6 +58,9 @@ class Context:
     task_id = 'smoke'
     sessions = staticmethod(sessions)
     stopped = False
+
+    def progress(self, *args, **kwargs):
+        pass
 
     def current(self, db):
         return SimpleNamespace(config={'mcp_servers': ['deepwiki'] if selected else []}), None

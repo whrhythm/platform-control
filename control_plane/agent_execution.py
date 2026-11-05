@@ -44,6 +44,22 @@ class TaskTools:
             task, _ = self.current(db, lock=True)
             append_event(db, task, self.settings, kind, **data)
 
+    def progress(self, kind, identifier, **data):
+        """Replace a bounded encrypted snapshot, not a new event for every token/log poll."""
+        if kind not in ('assistant', 'command_progress'):
+            raise ValueError('agent_progress_invalid')
+        with self.sessions.begin() as db:
+            task, _ = self.current(db, lock=True)
+            events = unseal(task.encrypted_events, self.settings)
+            current = next((e for e in events if e['kind'] == kind and e.get('stream_id') == identifier), None)
+            if current is None:
+                append_event(db, task, self.settings, kind, stream_id=identifier, **data)
+                return
+            current.update(data)
+            current['at'] = now().isoformat()
+            from .agent_tasks import seal
+            task.encrypted_events, task.updated_at = seal(events, self.settings), now()
+
     def authorize(self, operation, arguments):
         operation_id = str(uuid4())
         with self.sessions.begin() as db:
@@ -120,6 +136,7 @@ class TaskTools:
         if not command or len(command) > 16384:
             raise ValueError('agent_command_invalid')
         operation_id = self.authorize('command', {'command': command, 'database': database, 'objects': objects})
+        self.progress('command_progress', operation_id, phase='preparing', output='')
         sensitive = []
         with self.sessions.begin() as db:
             task, env = self.current(db, lock=True)
@@ -178,6 +195,7 @@ class TaskTools:
                 raise TaskStopped('agent_command_result_unknown')
             owned_job(actual, self.task_id, operation_id, uid)
             conditions = actual.get('status', {}).get('conditions', [])
+            self.command_progress(record, uid, sensitive)
             if any(value.get('type') in ('Complete', 'Failed') and value.get('status') == 'True' for value in conditions):
                 break
             time.sleep(2)
@@ -202,6 +220,35 @@ class TaskTools:
                    success=any(c.get('type') == 'Complete' and c.get('status') == 'True' for c in conditions))
         cleanup(self.sessions, self.task_id, self.cluster)
         return json.dumps({'exit_code': exit_code, 'output': output}, ensure_ascii=False)
+
+    def command_progress(self, record, uid, sensitive):
+        """Observe only owned pods; transient log-read failures never replay the command."""
+        try:
+            pods = self.cluster.get(f"api/v1/namespaces/{record['namespace']}/pods?labelSelector=job-name%3D{record['name']}")
+            for pod in (pods or {}).get('items', []):
+                meta = pod.get('metadata', {})
+                if not any(owner.get('uid') == uid and owner.get('kind') == 'Job' for owner in meta.get('ownerReferences', [])):
+                    continue
+                phase = pod.get('status', {}).get('phase')
+                if phase not in ('Running', 'Succeeded', 'Failed'):
+                    continue
+                result = self.cluster.client.get(f"api/v1/namespaces/{record['namespace']}/pods/{meta['name']}/log",
+                    params={'container': 'command', 'limitBytes': 32768, 'tailLines': 100}, timeout=3)
+                if result.status_code != 200:
+                    continue
+                output = result.text
+                for secret in sensitive:
+                    output = output.replace(secret, '[redacted]')
+                    # A still-growing log may end part-way through a credential.
+                    for size in range(min(len(secret) - 1, len(output)), 0, -1):
+                        if output.endswith(secret[:size]):
+                            output = output[:-size]
+                            break
+                self.progress('command_progress', record['operation_id'],
+                    phase={'Running': 'running', 'Succeeded': 'completed', 'Failed': 'failed'}[phase],
+                    output=output[-8192:])
+        except httpx.HTTPError:
+            return
 
     def services(self, action):
         with self.sessions() as db:

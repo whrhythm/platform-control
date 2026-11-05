@@ -1,0 +1,10 @@
+version: 1
+id: 3ca34dda-5c53-4b1d-aee3-e8a2c888e512
+name: agent-stream
+slug: agent-stream
+protocol: http
+interceptRequests: true
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true
