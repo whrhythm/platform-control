@@ -106,7 +106,7 @@ def test_agent_overlap_and_quota_snapshot(workspace):
     client, headers, base = workspace
     with client.session_factory.begin() as db:
         env = db.scalar(select(UserEnvironment).where(UserEnvironment.subject == 'alice'))
-        db.add(CapacityAccount(environment_id=env.id, plan={'id': 'basic', 'agent_concurrency': 2,
+        db.merge(CapacityAccount(environment_id=env.id, plan={'id': 'basic', 'agent_concurrency': 2,
             'agent_cpu_millicores': 750, 'agent_memory_mib': 768, 'agent_command_seconds': 90}))
     task = create(workspace)
     assert task.config['quota']['agent_cpu_millicores'] == 750

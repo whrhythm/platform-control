@@ -60,7 +60,7 @@ def test_limits_identity_idempotency_and_timeout(code_harness):
     assert client.post(PREFIX+'exec', headers=header, json={'code':'1','lang':'py'}).status_code == 409
     assert len(calls) == 1
     with client.session_factory.begin() as db:
-        db.add(CapacityAccount(environment_id=env_id, plan={'id':'existing','code_runs_monthly':1}))
+        db.merge(CapacityAccount(environment_id=env_id, plan={'id':'existing','code_runs_monthly':1}))
     assert client.post(PREFIX+'exec', headers=signed(), json={'code':'1','lang':'py'}).status_code == 429
     with client.session_factory.begin() as db:
         account = db.get(CapacityAccount, env_id)
@@ -98,7 +98,7 @@ def test_definite_preexecution_rejection_not_charged_and_month_rollover(code_har
 def test_upload_reservations_bounded_and_count_separate(code_harness):
     client, signed, env_id, calls, issuer = code_harness
     with client.session_factory.begin() as db:
-        db.add(CapacityAccount(environment_id=env_id, plan={'code_runs_monthly':1}))
+        db.merge(CapacityAccount(environment_id=env_id, plan={'code_runs_monthly':1}))
     with client.session_factory() as db:
         row = reserve(db, Principal(issuer, 'alice'), 'synthetic-upload-0001', '0'*64, 'upload', 16*1024*1024)
         row.state = 'complete'; db.commit()

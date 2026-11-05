@@ -29,12 +29,13 @@ const groups: {title:string;help:string;fields:Field[]}[] = [
 ];
 
 export default function QuotaFields({value,onChange}:{value:Quotas;onChange:(change:Partial<Quotas>)=>void}) {
-  return <>{groups.map(group=><section className="quota-group" key={group.title}>
-    <h4>{group.title}</h4><p className="quota-help">{group.help}</p>
+  return <>{groups.map(group=><details className="quota-group quota-details" key={group.title}>
+    <summary>{group.title}<span>{group.fields.slice(0,2).map(([key,label,,,scale=1])=>`${label.includes('CPU')?'CPU':label.includes('内存')?'内存':label.split('（')[0]} ${value[key]==null?'—':value[key]!/scale}${scale===1000?' 核':key.endsWith('_mib')?' MiB':''}`).join(' · ')}</span></summary><p className="quota-help">{group.help}</p>
     <div className="quota-fields">{group.fields.map(([key,label,min,max,scale=1])=><label key={key}>{label}
       <input type="number" required min={min} max={max} step={scale===1000?0.001:1}
+        onInvalid={event=>{const details=event.currentTarget.closest('details');if(details)details.open=true;}}
         value={value[key]==null?'':value[key]!/scale}
         onChange={event=>onChange({[key]:Math.round(Number(event.target.value)*scale)})}/>
     </label>)}</div>
-  </section>)}</>;
+  </details>)}</>;
 }

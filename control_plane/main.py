@@ -268,14 +268,18 @@ def ensure_personal_environment(principal: Principal, tenant_id: str, db: Sessio
     try:
         environment = db.scalar(select(UserEnvironment).where(*identity).with_for_update())
         if environment is None:
+            from .ai_policy import trial_plan
+            from .models import CapacityAccount
+            allowance = trial_plan(db, get_settings())
             environment = UserEnvironment(
                 issuer=principal.issuer, subject=principal.subject,
                 identity_hash=identity_digest(principal.issuer, principal.subject),
-                storage_gib=get_settings().default_environment_storage_gib,
+                storage_gib=allowance['storage_gib'],
                 first_tenant_id=tenant_id, first_project_id=None,
             )
             db.add(environment)
             db.flush()
+            db.add(CapacityAccount(environment_id=environment.id, plan=allowance))
             audit(db, principal, tenant_id, 'environment.create', environment.id)
         if environment.status == 'requested' and db.get(WorkspaceProvisioningIntent, environment.id) is None:
             db.add(WorkspaceProvisioningIntent(environment_id=environment.id, state='requested'))
@@ -444,10 +448,14 @@ def request_environment(tenant_id: str, project_id: str, principal: Principal = 
     if existing is not None:
         return environment_response(existing)
     settings = get_settings()
-    environment = UserEnvironment(issuer=principal.issuer, subject=principal.subject, identity_hash=identity_digest(principal.issuer, principal.subject), storage_gib=settings.default_environment_storage_gib, first_tenant_id=tenant_id, first_project_id=project_id)
+    from .ai_policy import trial_plan
+    from .models import CapacityAccount
+    allowance = trial_plan(db, settings)
+    environment = UserEnvironment(issuer=principal.issuer, subject=principal.subject, identity_hash=identity_digest(principal.issuer, principal.subject), storage_gib=allowance['storage_gib'], first_tenant_id=tenant_id, first_project_id=project_id)
     db.add(environment)
     try:
         db.flush()
+        db.add(CapacityAccount(environment_id=environment.id, plan=allowance))
         audit(db, principal, tenant_id, "environment.create", environment.id)
         db.commit()
     except IntegrityError:

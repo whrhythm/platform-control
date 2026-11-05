@@ -7,13 +7,13 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import make_url
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 
 from control_plane.database import get_db, make_engine
 from control_plane.main import app
-from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding, WorkspaceProvisioningIntent
+from control_plane.models import Base, Tenant, UserEnvironment, WorkspaceVolumeBinding, WorkspaceProvisioningIntent, CapacityAccount
 from control_plane.workspace_provisioning import observe_and_record_volume, provision_one, request_intent
 from control_plane.settings import get_settings
 from control_plane.worker import plan_one
@@ -41,6 +41,10 @@ def postgres_harness(harness, monkeypatch):
     client, token = harness
     client.session_factory = sessions
     yield client, token
+    # First provisioning now atomically persists trial rights. Remove only this
+    # disposable fixture's snapshots before exercising guarded schema downgrade.
+    with sessions.begin() as db:
+        db.execute(delete(CapacityAccount))
     engine.dispose()
     command.downgrade(config, "base")
     get_settings.cache_clear()
@@ -127,6 +131,7 @@ def test_parallel_agent_submissions_create_one_task(postgres_harness, monkeypatc
             db.execute(delete(AgentTask))
             db.execute(delete(AgentPreference))
             identifiers = select(UserEnvironment.id).where(UserEnvironment.subject == 'agent-owner')
+            db.execute(delete(CapacityAccount).where(CapacityAccount.environment_id.in_(identifiers)))
             db.execute(delete(WorkspaceProvisioningIntent).where(WorkspaceProvisioningIntent.environment_id.in_(identifiers)))
             db.execute(delete(UserEnvironment).where(UserEnvironment.subject == 'agent-owner'))
 
@@ -175,6 +180,9 @@ def test_parallel_first_requests_create_one_environment(postgres_harness):
         responses = list(pool.map(create, range(20)))
     assert all(response.status_code == 200 for response in responses)
     assert len({response.json()["id"] for response in responses}) == 1
+    with client.session_factory() as db:
+        accounts = list(db.scalars(select(CapacityAccount)))
+        assert len(accounts) == 1 and accounts[0].plan['id'] == 'trial'
 
 
 def test_volume_identifier_cannot_be_bound_to_two_users_concurrently(postgres_harness):
@@ -311,6 +319,7 @@ def test_parallel_login_provisions_only_one_key(postgres_harness, monkeypatch):
         assert environments[0].status == 'requested'
         # This fixture uses a guarded, disposable local database only.
         db.delete(db.get(WorkspaceProvisioningIntent, environments[0].id))
+        db.delete(db.get(CapacityAccount, environments[0].id))
         db.flush()
         db.delete(environments[0])
 

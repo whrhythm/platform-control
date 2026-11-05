@@ -1,98 +1,51 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { UserManager } from 'oidc-client-ts';
 import { api, desktop, identity, initTransport, setBearer } from './api';
-import type { IdentityConfig, Operation, Project, Quota, Resource, Tenant } from './api';
+import type { IdentityConfig } from './api';
 import './style.css';
 import AISettings from './AISettings';
 import MCPSettings from './MCPSettings';
 import ReleaseReviews from './ReleaseReviews';
 import AdminUsers from './AdminUsers';
-
-const labels: Record<string, string> = {workspace: '工作空间', agent: '编程助手', database: '数据库', bucket: '对象存储', deployment: '应用部署', requested: '已提交', planned: '方案已生成', cancelled: '已取消'};
-const consolePages = {
-  settings: { nav: '平台管理', title: '管理模型与服务权益', description: '配置普通聊天与编程模型、充值折算规则及套餐。用户请从 LibreChat 使用个人空间。' },
-  reviews: { nav: '待核验', title: '发布核验工作台', description: '核对集群写入结果并处理暂停的发布任务。' },
-  users: { nav: '用户与资源', title: '用户与资源总览', description: '查看平台工作空间、应用、存储、模型用量和套餐记录。' },
+const pages = {
+  plans: {nav:'套餐与配额', title:'套餐与配额', description:'设置新用户的体验权益，以及付费套餐的价格、模型额度和资源上限。'},
+  models: {nav:'模型与结算', title:'模型与结算', description:'管理聊天和编程模型，明确人民币模型额度到美元预算的折算规则。'},
+  users: {nav:'用户与资源', title:'用户与资源', description:'查看用户的独立空间、实际用量和已生效权益。'},
+  reviews: {nav:'待核验', title:'发布核验工作台', description:'对比发布意图与集群状态，核验后恢复任务并保留审计记录。'},
+  mcp: {nav:'MCP 服务', title:'MCP 服务', description:'接入、审核和管理可供用户选择的编程工具服务。'},
 } as const;
-
 function App() {
-  const [manager, setManager] = useState<UserManager>();
-  const [ready, setReady] = useState(false);
-  const [signedIn, setSignedIn] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [page, setPage] = useState<keyof typeof consolePages>('settings');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [tenantId, setTenantId] = useState('');
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [projectId, setProjectId] = useState('');
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [quota, setQuota] = useState<Quota>();
-  const [operations, setOperations] = useState<Operation[]>([]);
-  const [name, setName] = useState('');
-  const [kind, setKind] = useState('workspace');
-  const [resourceName, setResourceName] = useState('');
-  const [image, setImage] = useState('');
-  const [workspace, setWorkspace] = useState('');
-  const tenantPath = `/v1/tenants/${tenantId}`;
-
-  async function perform(action: () => Promise<unknown>) {
-    setError(''); setBusy(true);
-    try {await action();} catch (e) {setError(e instanceof Error ? e.message : '操作未完成。');} finally {setBusy(false);}
-  }
-  async function loadTenants() {const [values,me] = await Promise.all([api<Tenant[]>('/v1/tenants'),api<{platform_admin:boolean}>('/v1/me')]); setIsAdmin(me.platform_admin); setTenants(values); setTenantId(values[0]?.id || '');}
-  async function refreshResources() {
-    const [r, q, o] = await Promise.all([api<Resource[]>(`${tenantPath}/projects/${projectId}/resources`), api<Quota>(tenantPath + '/quota'), api<Operation[]>(tenantPath + '/operations')]);
-    setResources(r); setQuota(q); setOperations(o);
-  }
-  useEffect(() => {void perform(async () => {
-    await initTransport();
-    const config = await api<IdentityConfig>('/v1/config');
-    if (desktop) {setReady(true); return;}
-    if (!config.issuer || !config.client_id) throw new Error('请先由管理员完成统一登录配置。');
-    const auth = identity(config); setManager(auth);
-    const query = new URLSearchParams(location.search);
-    if (query.has('code') && query.has('state')) {
-      const user = await auth.signinRedirectCallback(location.href);
-      history.replaceState({}, '', '/'); setBearer(user.access_token); setSignedIn(true); await loadTenants();
+  const [manager,setManager]=useState<UserManager>();
+  const [ready,setReady]=useState(false);
+  const [signedIn,setSignedIn]=useState(false);
+  const [admin,setAdmin]=useState(false);
+  const [page,setPage]=useState<keyof typeof pages>('plans');
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [dirty,setDirty]=useState(false);
+  async function perform(action:()=>Promise<unknown>){setError('');setBusy(true);try{await action();}catch(e){setError(e instanceof Error?e.message:'操作未完成。');}finally{setBusy(false);}}
+  useEffect(()=>{void perform(async()=>{
+    await initTransport();const config=await api<IdentityConfig>('/v1/config');
+    if(desktop){setReady(true);return;}
+    if(!config.issuer||!config.client_id)throw new Error('请先完成统一登录配置。');
+    const auth=identity(config);setManager(auth);
+    const query=new URLSearchParams(location.search);
+    if(query.has('code')&&query.has('state')){
+      const user=await auth.signinRedirectCallback(location.href);
+      history.replaceState({},'', '/');setBearer(user.access_token);
+      const me=await api<{platform_admin:boolean}>('/v1/me');setAdmin(me.platform_admin);setSignedIn(true);
     }
     setReady(true);
-  });}, []);
-  useEffect(() => {
-    setProjectId(''); setProjects([]); setResources([]); setQuota(undefined); setOperations([]);
-    if (tenantId) void perform(async () => {const p = await api<Project[]>(tenantPath + '/projects'); setProjects(p); setProjectId(p[0]?.id || '');});
-  }, [tenantId]);
-  useEffect(() => {setResources([]); if (projectId) void perform(refreshResources);}, [projectId]);
-
-  return <div className="shell">
-    <aside>
-      <div className="brand">◈ <strong>星桥管理平台</strong></div>
-      <div className="aside-caption">模型、套餐与平台资源</div>
-      {(Object.keys(consolePages) as (keyof typeof consolePages)[])
-        .filter(key => key === 'settings' || (signedIn && isAdmin))
-        .map(key => <button key={key} className={`nav review-nav ${page === key ? 'active' : ''}`}
-          aria-current={page === key ? 'page' : undefined} onClick={() => setPage(key)}>{consolePages[key].nav}</button>)}
-      <div className="aside-footer">内部预览</div>
-    </aside>
-    <main><header><div><div className="eyebrow">管理员控制台</div><h1>{consolePages[page].title}</h1><p>{consolePages[page].description}</p></div>{signedIn && <button className="subtle" onClick={() => void manager?.signoutRedirect()}>退出登录</button>}</header>
-      {error && <div className="error" role="alert">{error}</div>}
-      {!signedIn ? <section className="panel welcome"><span className="symbol">↗</span><h2>从统一登录开始</h2><p>{desktop ? '桌面进程连接已就绪。桌面登录回调尚未接入，请通过浏览器使用。' : '使用组织账号，进入你的项目空间。'}</p><button disabled={!ready || !manager || busy} onClick={() => void perform(async () => manager?.signinRedirect())}>使用 Authentik 登录</button></section> : page === 'reviews' && isAdmin ? <ReleaseReviews/> : page === 'users' && isAdmin ? <AdminUsers/> : <>
-        {isAdmin && <AISettings/>}
-        {isAdmin && <MCPSettings/>}
-        <div className="notice">此处保留资源申请与规划记录。普通用户的聊天、编程、文件和应用管理请使用 LibreChat。</div>
-        <section className="toolbar"><label>当前空间<select value={tenantId} onChange={e => setTenantId(e.target.value)}>{tenants.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label><label>当前项目<select value={projectId} onChange={e => setProjectId(e.target.value)}><option value="">选择项目</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label></section>
-        {!tenantId ? <section className="panel"><h2>创建你的个人空间</h2><p>项目、开发和部署资源都记入这个空间的额度。</p><form onSubmit={e => {e.preventDefault(); void perform(async () => {await api('/v1/tenants', 'POST', {name}); await loadTenants(); setName('');});}}><input aria-label="空间名称" required value={name} onChange={e => setName(e.target.value)} placeholder="空间名称" maxLength={120}/><button disabled={busy}>创建空间</button></form></section> : <>
-          <section className="stats">{[['cpu_millicores', 'CPU 预留', 'm'], ['memory_mib', '内存预留', ' MiB'], ['storage_gib', '存储预留', ' GiB']].map(([key, title, unit]) => <article key={key}><span>{title}</span><strong>{quota?.reserved[key] ?? '—'}<small> / {quota?.limits[key] ?? '—'}{unit}</small></strong></article>)}</section>
-          <section className="panel"><h2>新建项目</h2><form onSubmit={e => {e.preventDefault(); void perform(async () => {const p = await api<Project>(tenantPath + '/projects', 'POST', {name}); setProjects([...projects, p]); setProjectId(p.id); setName('');});}}><input aria-label="项目名称" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={name} onChange={e => setName(e.target.value)} placeholder="项目名称，例如 my-project" maxLength={63}/><button disabled={busy}>创建项目</button></form></section>
-          {projectId && <><section className="panel"><div className="panel-heading"><h2>项目资源</h2><button className="subtle" disabled={busy} onClick={() => void perform(refreshResources)}>刷新</button></div>{resources.length ? <div className="resource-list">{resources.map(r => <div className="resource" key={r.id}><div><strong>{r.name}</strong><span>{labels[r.kind]}</span></div><span className={`badge ${r.status}`}>{labels[r.status] || r.status}</span>{r.status !== 'cancelled' && <button className="subtle" disabled={busy} onClick={() => void perform(async () => {await api(tenantPath + '/resources/' + r.id, 'DELETE'); await refreshResources();})}>取消申请</button>}</div>)}</div> : <p className="empty">项目已经准备好，可以添加第一个工作空间。</p>}</section>
-          <section className="panel"><h2>申请新资源</h2><form className="resource-form" onSubmit={e => {e.preventDefault(); void perform(async () => {const body = {kind, name: resourceName, ...(kind === 'deployment' ? {image} : {}), ...(kind === 'agent' ? {workspace_id: workspace} : {})}; await api(`${tenantPath}/projects/${projectId}/resources`, 'POST', body); setResourceName(''); await refreshResources();});}}><select aria-label="资源类型" value={kind} onChange={e => setKind(e.target.value)}>{Object.entries(labels).filter(([key]) => ['workspace', 'agent', 'database', 'bucket', 'deployment'].includes(key)).map(([key, value]) => <option key={key} value={key}>{value}</option>)}</select><input required aria-label="资源名称" pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={63} value={resourceName} onChange={e => setResourceName(e.target.value)} placeholder="资源名称"/>{kind === 'deployment' && <input required aria-label="已审核镜像" value={image} onChange={e => setImage(e.target.value)} placeholder="已审核的镜像地址（包含 sha256）"/>}{kind === 'agent' && <select required aria-label="关联工作空间" value={workspace} onChange={e => setWorkspace(e.target.value)}><option value="">选择工作空间</option>{resources.filter(r => r.kind === 'workspace' && r.status !== 'cancelled').map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>}<button disabled={busy}>提交申请</button></form></section>
-          {operations.length > 0 && <section className="panel"><h2>最近的申请</h2>{operations.slice(0, 5).map(o => <div className="operation" key={o.id}><span className="dot"/><span>{o.status === 'planned' ? '方案已生成，等待开通集成。' : o.status === 'cancelled' ? '申请已取消。' : '申请已接收，等待生成方案。'}</span></div>)}</section>}</>}
-        </>}
-      </>}
-    </main>
-  </div>;
+  });},[]);
+  function navigate(next:keyof typeof pages){if(next===page)return;if(dirty&&!window.confirm('有尚未保存的配置，确定放弃修改并切换页面吗？'))return;setDirty(false);setPage(next);}
+  return <div className="shell"><aside><div className="brand">◈ <strong>星桥</strong></div><div className="aside-caption">管理员控制台</div>
+    <nav aria-label="管理导航">{signedIn&&admin&&Object.entries(pages).map(([key,value])=><button key={key} className={`nav ${page===key?'active':''}`} aria-current={page===key?'page':undefined} onClick={()=>navigate(key as keyof typeof pages)}>{value.nav}</button>)}</nav><div className="aside-footer">统一管理 · 用户独立空间</div></aside>
+    <main><header><div><div className="eyebrow">平台管理</div><h1>{pages[page].title}</h1><p>{pages[page].description}</p></div>{signedIn&&<button className="subtle" onClick={()=>{if(!dirty||window.confirm('放弃未保存的修改并退出？'))void manager?.signoutRedirect();}}>退出登录</button>}</header>
+    {error&&<div className="error" role="alert">{error}</div>}
+    {!signedIn?<section className="panel welcome"><h2>登录管理平台</h2><p>{desktop?'请通过浏览器完成管理员登录。':'使用管理员账号管理用户、套餐与平台服务。'}</p><button disabled={!ready||!manager||busy} onClick={()=>void perform(async()=>manager?.signinRedirect())}>使用 Authentik 登录</button></section>:
+    !admin?<section className="panel"><h2>这里是管理员控制台</h2><p>请在 LibreChat 使用聊天、我的空间和应用管理。个人空间会在首次登录时自动准备，无需在此创建。</p></section>:
+    page==='users'?<AdminUsers/>:page==='reviews'?<ReleaseReviews/>:page==='mcp'?<MCPSettings/>:<AISettings key={page} view={page} onDirty={setDirty}/>}
+    </main></div>;
 }
-
 createRoot(document.getElementById('root')!).render(<App/>);

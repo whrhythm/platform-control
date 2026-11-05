@@ -302,6 +302,7 @@ def create_router(principal_dependency):
         allocated = application_allocations(db, env.id)
         database_rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id,
             ProjectDatabase.status != 'deleted')))
+        from .ai_policy import trial_plan
         result = {'plan': enriched_plan(account.plan), 'mode': 'test' if available else 'disabled',
             'quota_usage': {'application_cpu_millicores': allocated[CPU], 'application_memory_mib': allocated[MEMORY],
                 'database_count': len(database_rows), 'database_reserved_bytes': sum(row.reserved_bytes for row in database_rows),
@@ -312,11 +313,7 @@ def create_router(principal_dependency):
                 'database_enforcement': 'allocation_and_warning', 'storage_enforcement': 'provider_limits_and_metering',
                 'effective_at': account.updated_at},
             'code_execution': code_usage(db, env),
-            'trial': {'storage_gib': settings.default_environment_storage_gib,
-                      **plan_resources({}),
-                      **code_rights({}),
-                      **quota_rights({}),
-                      'application_limit': settings.default_application_limit,
+            'trial': {**trial_plan(db, settings),
                       **estimate_tokens(db, settings, 1000000)},
             'plans': [plan for plan in catalog(settings, db) if eligible(plan, account, env)] if available else [],
             'active_order': order_out(active) if active else None, 'orders': [order_out(order) for order in orders],

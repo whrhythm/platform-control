@@ -18,6 +18,7 @@ class AIPolicy(BaseModel):
     allowed_models: list[str] = Field(min_length=1, max_length=30)
     cny_per_usd: str = Field(pattern=r'^\d{1,4}(?:\.\d{1,6})?$')
     plans: list[dict] = Field(min_length=1, max_length=10)
+    trial_plan: dict | None = None
     mcp_servers: list[str] = Field(default_factory=lambda: ['deepwiki'], max_length=10)
 
     @model_validator(mode='after')
@@ -32,21 +33,43 @@ class AIPolicy(BaseModel):
             not Decimal('0.01') <= Decimal(self.cny_per_usd) <= Decimal('1000')):
             raise ValueError('Invalid model or settlement policy')
         self.plans = [CapacityPlan.model_validate(plan).model_dump() for plan in self.plans]
-        if len({plan['id'] for plan in self.plans}) != len(self.plans):
+        if self.trial_plan is not None:
+            self.trial_plan = validate_trial(self.trial_plan)
+        if len({plan['id'] for plan in self.plans}) != len(self.plans) or any(plan['id'] == 'trial' for plan in self.plans):
             raise ValueError('Duplicate plans')
         return self
+
+
+def validate_trial(value):
+    from .capacity import CapacityPlan
+    plan = CapacityPlan.model_validate(value).model_dump()
+    if plan['id'] != 'trial' or plan['amount_minor'] != 0 or plan['model_credit_cny_minor'] != 0 or plan['currency'] != 'CNY':
+        raise ValueError('Trial is a free resource allowance; the one-time USD gift is separate')
+    return plan
+
+
+def trial_plan(db, settings):
+    """Catalog for first provisioning only; never rewrite existing account snapshots."""
+    row = db.get(AIConfiguration, 'default')
+    return validate_trial(((row.config or {}).get('trial_plan') if row else None) or {
+        'id': 'trial', 'version': 'trial-v1', 'name': '体验版',
+        'storage_gib': settings.default_environment_storage_gib,
+        'application_limit': settings.default_application_limit,
+        'amount_minor': 0, 'currency': 'CNY',
+    })
 
 
 def effective_policy(db, settings):
     from .capacity import CapacityPlan
     row = db.get(AIConfiguration, 'default')
     if row:
-        return {**row.config, 'mcp_servers': row.config.get('mcp_servers', ['deepwiki']),
+        return {**row.config, 'trial_plan': trial_plan(db, settings), 'mcp_servers': row.config.get('mcp_servers', ['deepwiki']),
                 'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in row.config['plans']]}
     import json
     allowed = [value.strip() for value in settings.litellm_models.split(',') if value.strip()]
     first = allowed[0] if allowed else ''
     return {'chat_model': settings.capability_chat_model or first, 'coding_model': first,
+            'trial_plan': trial_plan(db, settings),
             'allowed_models': allowed, 'cny_per_usd': settings.model_settlement_cny_per_usd,
             'mcp_servers': ['deepwiki'],
             'plans': [CapacityPlan.model_validate(plan).model_dump() for plan in json.loads(settings.capacity_plans_json)]}
@@ -142,7 +165,10 @@ def admin_router(admin_dependency):
             row = AIConfiguration(id='default', revision=0)
             db.add(row)
         row.revision += 1
-        row.config = body.policy.model_dump()
+        config = body.policy.model_dump()
+        if config['trial_plan'] is None:
+            config['trial_plan'] = trial_plan(db, get_settings())
+        row.config = config
         db.add(AuditEvent(tenant_id='platform', issuer=principal.issuer, subject=principal.subject,
                           action='ai.policy.updated', target_id='default'))
         try:

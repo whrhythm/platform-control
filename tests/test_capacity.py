@@ -271,7 +271,8 @@ def test_application_creation_uses_activated_account_limit(capacity_harness, mon
     assert client.post(url, headers=auth).status_code == 409
     with client.session_factory.begin() as db:
         account = db.get(CapacityAccount, env_id)
-        account.plan = {**account.plan, 'application_limit': 5, 'build_concurrency': 4}
+        account.plan = {**account.plan, 'application_limit': 5, 'build_concurrency': 4,
+                        'applications_cpu_millicores': 1250, 'applications_memory_mib': 1280}
     assert client.post(url, headers=auth).status_code == 202
     assert client.post(url.replace('project-new', 'project-last'), headers=auth).status_code == 202
     assert client.post(url.replace('project-new', 'project-excess'), headers=auth).status_code == 409
