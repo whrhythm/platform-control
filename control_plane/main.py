@@ -38,12 +38,14 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0017_account_access":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0018_code_execution":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
 
 app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
+from .code_execution import router as code_execution_router
+app.include_router(code_execution_router)
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.responses import JSONResponse

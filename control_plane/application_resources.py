@@ -19,7 +19,8 @@ def plan_resources(plan):
 
 
 def enriched_plan(plan):
-    return {**plan, **plan_resources(plan)}
+    from .code_execution import code_rights
+    return {**plan, **plan_resources(plan), **code_rights(plan)}
 
 
 def active_resources(db, environment_id):

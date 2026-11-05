@@ -5,6 +5,122 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/internal/v1/codeapi/{path}": {
+      "delete": {
+        "tags": [
+          "code-execution"
+        ],
+        "summary": "Gateway",
+        "operationId": "codeapi_delete",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "code-execution"
+        ],
+        "summary": "Gateway",
+        "operationId": "codeapi_submit",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "code-execution"
+        ],
+        "summary": "Gateway",
+        "operationId": "codeapi_read",
+        "parameters": [
+          {
+            "name": "path",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Path"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/agent/v1/models": {
       "get": {
         "tags": [
@@ -5326,6 +5442,18 @@
               }
             ],
             "title": "Trial"
+          },
+          "code_execution": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code Execution"
           }
         },
         "type": "object",
@@ -5477,6 +5605,21 @@
           "application_memory_mib": {
             "type": "integer",
             "title": "Application Memory Mib"
+          },
+          "code_runs_monthly": {
+            "type": "integer",
+            "title": "Code Runs Monthly",
+            "default": 30
+          },
+          "code_timeout_seconds": {
+            "type": "integer",
+            "title": "Code Timeout Seconds",
+            "default": 10
+          },
+          "code_concurrency": {
+            "type": "integer",
+            "title": "Code Concurrency",
+            "default": 1
           },
           "amount_minor": {
             "type": "integer",

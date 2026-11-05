@@ -17,6 +17,7 @@ from .settings import get_settings
 from .model_wallet import WalletOut, wallet_out, estimate_tokens
 from .application_resources import CPU, MEMORY, enriched_plan, plan_resources
 from .workspace_gateway import own_environment, call_files
+from .code_execution import code_rights, usage as code_usage
 
 GIB = 1024 ** 3
 COMPONENTS = ('files', 'database', 'objects', 'images', 'app_volumes')
@@ -36,11 +37,16 @@ class CapacityPlan(BaseModel):
     features: list[str] = Field(default_factory=list, max_length=12)
     application_cpu_millicores: int | None = Field(default=None, ge=50, le=4000)
     application_memory_mib: int | None = Field(default=None, ge=128, le=8192)
+    code_runs_monthly: int | None = Field(default=None, ge=0, le=10000)
+    code_timeout_seconds: int | None = Field(default=None, ge=1, le=15)
+    code_concurrency: int | None = Field(default=None, ge=1, le=2)
 
     @model_validator(mode='after')
     def runtime_defaults(self):
         rights = plan_resources(self.model_dump())
         self.application_cpu_millicores, self.application_memory_mib = rights[CPU], rights[MEMORY]
+        for key, value in code_rights(self.model_dump()).items():
+            setattr(self, key, value)
         return self
 
 
@@ -59,6 +65,9 @@ class CapacityPlanOut(BaseModel):
     application_limit: int
     application_cpu_millicores: int
     application_memory_mib: int
+    code_runs_monthly: int = 30
+    code_timeout_seconds: int = 10
+    code_concurrency: int = 1
     amount_minor: int
     currency: str
     model_credit_cny_minor: int = 0
@@ -120,6 +129,7 @@ class CapacityAccountOut(BaseModel):
     object_storage: ObjectStorageOut | None = None
     wallet: WalletOut | None = None
     trial: dict | None = None
+    code_execution: dict | None = None
 
 
 def catalog(settings, db=None):
@@ -179,7 +189,8 @@ def eligible(plan, account, env):
             plan['application_limit'] >= account.plan['application_limit'] and
             (plan['storage_gib'] > env.storage_gib or plan['application_limit'] > account.plan['application_limit'] or
              plan.get('model_credit_usd_micros', 0) > 0 or
-             any(plan_resources(plan)[key] > plan_resources(account.plan)[key] for key in (CPU, MEMORY))))
+             any(plan_resources(plan)[key] > plan_resources(account.plan)[key] for key in (CPU, MEMORY)) or
+             any(code_rights(plan)[key] > code_rights(account.plan)[key] for key in code_rights(plan))))
 
 
 def order_out(order):
@@ -274,8 +285,10 @@ def create_router(principal_dependency):
                                                                      UserApplication.status != 'deleted'))
         available = settings.capacity_upgrades_enabled and settings.test_payments_enabled
         result = {'plan': enriched_plan(account.plan), 'mode': 'test' if available else 'disabled',
+            'code_execution': code_usage(db, env),
             'trial': {'storage_gib': settings.default_environment_storage_gib,
                       **plan_resources({}),
+                      **code_rights({}),
                       'application_limit': settings.default_application_limit,
                       **estimate_tokens(db, settings, 1000000)},
             'plans': [plan for plan in catalog(settings, db) if eligible(plan, account, env)] if available else [],

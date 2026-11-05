@@ -1,0 +1,13 @@
+dependency: ClickHouse/code-interpreter
+source: service/src/service/router.ts at 9a3f5dbd6fedf42462239d135c2c25ec8e737628
+contract:
+  - POST exec accepts code, lang and timeout in milliseconds.
+  - A lost or 503 execution response does not prove the code did not run.
+checks:
+  - Real HTTP client through platform gateway, with signed synthetic identity.
+  - Server forces plan timeout and records one charged reservation.
+  - Unknown result is charged, holds concurrency, and is never retried automatically.
+limits:
+  - Mock does not execute user code or model kernel isolation.
+  - UI artifact creation and import require live acceptance.
+owner_discovery: Local upstream checkout used; CLI 1.74 lacks status and no cloud owner lookup was performed.

@@ -17,6 +17,23 @@ class Base(DeclarativeBase):
     pass
 
 
+class CodeExecution(Base):
+    __tablename__ = 'code_executions'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_key', name='uq_code_execution_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_key: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    operation: Mapped[str] = mapped_column(String(12), default='exec')
+    transfer_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+    period: Mapped[str] = mapped_column(String(7))
+    state: Mapped[str] = mapped_column(String(20))
+    timeout_seconds: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    lease_until: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class AIConfiguration(Base):
     __tablename__ = 'ai_configuration'
     id: Mapped[str] = mapped_column(String(32), primary_key=True)

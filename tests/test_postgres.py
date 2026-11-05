@@ -64,6 +64,35 @@ def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):
     assert len(client.get(path + "/operations", headers=auth).json()) == 8
 
 
+def test_parallel_code_execution_reservations_are_bounded(postgres_harness, monkeypatch):
+    from fastapi import HTTPException
+    from sqlalchemy import delete
+    from control_plane.auth import Principal
+    from control_plane.code_execution import reserve, usage
+    from control_plane.models import CodeExecution, CapacityAccount, CapacityOrder, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, _auth, env_id, _observed, issuer = prepare_capacity(client, monkeypatch)
+    def submit(index):
+        with client.session_factory() as db:
+            try:
+                reserve(db, Principal(issuer, 'alice'), f'parallel-code-{index:04d}', '0'*64)
+                return 201
+            except HTTPException as error:
+                return error.status_code
+    try:
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results = list(pool.map(submit, range(16)))
+        assert results.count(201) == 1 and results.count(429) == 15
+        with client.session_factory() as db:
+            assert usage(db, db.get(UserEnvironment, env_id))['used_runs'] == 1
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (CodeExecution, StorageMeasurement, CapacityOrder, CapacityAccount, WorkspaceFileService, WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_parallel_agent_submissions_create_one_task(postgres_harness, monkeypatch):
     import httpx
     from cryptography.fernet import Fernet

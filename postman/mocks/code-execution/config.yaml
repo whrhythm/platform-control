@@ -1,0 +1,11 @@
+version: 1
+id: 449713eb-c048-43af-a1ac-25ea836a181f
+name: code-execution
+slug: code-execution
+protocol: http
+interceptRequests: true
+port: 4510
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

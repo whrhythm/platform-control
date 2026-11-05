@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api } from './api';
 import './AISettings.css';
 
-type Plan = {id:string;version:string;name:string;amount_minor:number;currency:string;storage_gib:number;application_limit:number;application_cpu_millicores:number;application_memory_mib:number;model_credit_cny_minor:number;description:string;features:string[]};
+type Plan = {id:string;version:string;name:string;amount_minor:number;currency:string;storage_gib:number;application_limit:number;application_cpu_millicores:number;application_memory_mib:number;code_runs_monthly:number;code_timeout_seconds:number;code_concurrency:number;model_credit_cny_minor:number;description:string;features:string[]};
 type Policy = {chat_model:string;coding_model:string;allowed_models:string[];cny_per_usd:string;plans:Plan[]};
 type State = {revision:number;policy:Policy;catalog:{name:string;input_cost_per_token:number|null;output_cost_per_token:number|null}[]};
 
@@ -35,6 +35,10 @@ export default function AISettings() {
         <label>发布应用数<input type="number" min="1" max="100" required value={value.application_limit} onChange={event=>plan(index,{application_limit:Number(event.target.value)})}/></label>
         <label>单应用 CPU 上限（核）<input type="number" min="0.05" max="4" step="0.001" required value={value.application_cpu_millicores/1000} onChange={event=>plan(index,{application_cpu_millicores:Math.round(Number(event.target.value)*1000)})}/></label>
         <label>单应用内存上限（MiB）<input type="number" min="128" max="8192" step="1" required value={value.application_memory_mib} onChange={event=>plan(index,{application_memory_mib:Number(event.target.value)})}/></label>
+        <label>每月代码运行次数<input type="number" min="0" max="10000" required value={value.code_runs_monthly} onChange={event=>plan(index,{code_runs_monthly:Number(event.target.value)})}/></label>
+        <label>单次代码最长时间（秒）<input type="number" min="1" max="15" required value={value.code_timeout_seconds} onChange={event=>plan(index,{code_timeout_seconds:Number(event.target.value)})}/></label>
+        <label>同时运行代码数<input type="number" min="1" max="2" required value={value.code_concurrency} onChange={event=>plan(index,{code_concurrency:Number(event.target.value)})}/></label>
+        <small>代码运行按北京时间自然月计次，单次程序内存上限 256 MiB。修改用于新订单；已开通权益保留。注册默认 30 次/月、10 秒/次、并发 1。</small>
         <small>每个发布应用的硬上限，编程与构建任务另计。修改影响新订单；已有用户保留已生效的权益，购买较低套餐充值不会降级。</small>
         <label>适用人群<input maxLength={300} value={value.description??''} onChange={event=>plan(index,{description:event.target.value})}/></label>
         <label>详细说明（每行一项）<textarea rows={4} value={(value.features??[]).join('\n')} onChange={event=>plan(index,{features:event.target.value.split('\n').filter(Boolean)})}/></label>

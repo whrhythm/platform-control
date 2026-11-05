@@ -1,0 +1,6 @@
+simulation: code-execution
+routing: path
+mocks:
+  - name: code-execution
+    routeKey: compute
+    path: ../mocks/code-execution/config.yaml

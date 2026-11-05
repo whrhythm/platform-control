@@ -12,6 +12,8 @@ def image(name):
     digest=value['repo_digests'][0].split('@')[1]
     return {'repository':'harbor.k3s.local/internal/platform-control','tag':tag+'-'+name+'@'+digest,'pullPolicy':'IfNotPresent'}
 env={'LOCAL_MODE':'false','CODEAPI_AUTH_PROVIDER':'librechat-jwt','CODEAPI_JWT_ISSUER':'librechat',
+     'EXECUTION_MANIFEST_MAX_UPLOAD_BYTES':'16777216','EXECUTION_MANIFEST_MAX_OUTPUT_FILES':'10',
+     'MAX_FILE_SIZE':'16777216','SANDBOX_RUN_MEMORY_LIMIT':'268435456',
      'CODEAPI_JWT_AUDIENCE':'codeapi','CODEAPI_JWT_ALLOWED_ALGS':'EdDSA','CODEAPI_JWT_KID':'starbridge-codeapi-20261105',
      'CODEAPI_JWT_MAX_TTL_SECONDS':'300','CODEAPI_JWT_SINGLE_TENANT_ID':'legacy','CODEAPI_JWT_PUBLIC_KEY':public['jwt']}
 values={'fullnameOverride':'codeapi','hardenedSandboxMode':True,'executionProfile':'default',

@@ -8,6 +8,12 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PLATFORM_", extra="ignore")
 
     database_url: str = "sqlite:///./control-plane.db"
+    code_execution_enabled: bool = False
+    code_execution_url: str = 'http://codeapi-api.codeapi.svc.cluster.local:3112/v1/'
+    code_execution_public_key: str = ''
+    code_execution_transfer_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024)
+    code_execution_timeout_seconds: int = Field(default=90, ge=30, le=120)
+    code_execution_lease_seconds: int = Field(default=180, ge=150, le=600)
     database_pool_size: int = Field(default=5, ge=1, le=50)
     database_pool_overflow: int = Field(default=10, ge=0, le=20)
     model_settlement_cny_per_usd: str = '7.000000'
