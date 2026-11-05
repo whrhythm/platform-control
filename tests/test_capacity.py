@@ -84,6 +84,32 @@ def test_snapshot_idempotency_confirmation_and_cancellation(capacity_harness, mo
     assert client.post(PREFIX + '/orders/' + order['id'] + '/confirm-test', headers=auth).status_code == 403
 
 
+def test_service_caps_do_not_add_to_the_activated_plan_budget(capacity_harness, monkeypatch):
+    from control_plane.models import ProjectDatabase, StorageMeasurement
+    client, auth, env_id, _, _ = capacity_harness
+    client.get(PREFIX, headers=auth)
+    with client.session_factory.begin() as db:
+        env = db.get(UserEnvironment, env_id)
+        env.storage_gib = 4
+        account = db.get(CapacityAccount, env_id)
+        account.plan = {**account.plan, 'storage_gib': 4}
+        db.add(ProjectDatabase(environment_id=env_id, project_path='demo', encrypted_password='synthetic',
+            reserved_bytes=256 * 1024 ** 2, used_bytes=8 * 1024 ** 2, status='ready', observed_at=now()))
+        for kind, used in [('objects', 1024 ** 2), ('images', 80 * 1024 ** 2)]:
+            sample = db.scalar(select(StorageMeasurement).where(
+                StorageMeasurement.environment_id == env_id, StorageMeasurement.component == kind))
+            sample.budget_bytes = None if kind == 'images' else 256 * 1024 ** 2
+            sample.used_bytes, sample.status, sample.observed_at = used, 'ok', now()
+    monkeypatch.setenv('PLATFORM_PROJECT_DATABASES_ENABLED', 'true')
+    monkeypatch.setenv('PLATFORM_PROJECT_DATABASE_BUDGET_MIB', '256')
+    get_settings.cache_clear()
+    result = client.get(PREFIX, headers=auth).json()
+    assert result['storage']['budget_bytes'] == 4 * GIB
+    assert result['storage']['budget_complete'] is True
+    assert result['storage']['known_used_bytes'] == 89 * 1024 ** 2 + 12
+    assert result['plan']['storage_gib'] == 4
+
+
 def test_unknown_measurement_stale_quote_and_cancelled_order(capacity_harness):
     client, auth, _, observed, _ = capacity_harness
     client.get(PREFIX, headers=auth)

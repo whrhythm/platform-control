@@ -296,10 +296,11 @@ def create_router(principal_dependency):
             'applications': {'used': apps, 'limit': account.plan['application_limit']},
             'object_storage': storage_out(db.get(UserObjectStorage, env.id), settings) if settings.object_storage_enabled else None,
             'wallet': wallet_out(db, env, settings),
-            'storage': {'budget_bytes': sum(value['budget_bytes'] or 0 for value in components),
+            # Service-specific caps are sub-limits, not additional purchased storage.
+            'storage': {'budget_bytes': account.plan['storage_gib'] * GIB,
                 'pending_capacity_bytes': max(0, (active.plan['storage_gib'] - env.storage_gib) * GIB) if active else 0,
                 'known_used_bytes': sum(row.used_bytes for row in fresh) if fresh else None,
-                'complete': complete, 'budget_complete': complete and all(value['budget_bytes'] is not None for value in components),
+                'complete': complete, 'budget_complete': True,
                 'components': components}}
         db.commit()
         return result

@@ -6,6 +6,13 @@ additional application volumes. It is a logical account, not node disk usage.
 Infrastructure replicas, backups, WAL, shared base images, temporary build layers
 and incomplete uploads are outside this scope. Existing file rights are retained.
 Category limits apply separately; they are not interchangeable storage credits.
+The displayed total allowance (`storage.budget_bytes`) is the activated plan's
+`storage_gib * 1024**3`, never the sum of category limits. `budget_complete` is
+true because this entitlement is known, even when a provider's category cap is
+unknown or unlimited. Measured usage still sums fresh samples from all five
+components; `complete` independently reports measurement completeness. Pending
+upgrades do not increase the total until the new plan is activated. This display
+rule does not implement a cross-provider hard write limit.
 
 Harbor uses the verified project's native quota counter, never the sum of image
 sizes. The project numeric ID and private owner binding must match. A provider

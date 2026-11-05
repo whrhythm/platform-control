@@ -59,7 +59,8 @@ def test_logical_totals_complete_unknown_and_stale_are_distinct(capacity_harness
             apply_sample(db, env_id, kind, {'used_bytes': used, 'budget_bytes': budget, 'basis': basis, 'scope_id': 'owned'})
     value = client.get('/internal/v1/workspace/capacity', headers=auth).json()['storage']
     assert value['known_used_bytes'] == 12 + 66 + 17 and value['complete'] is True
-    assert value['budget_complete'] is False and value['scope'] == 'managed_logical_storage'
+    assert value['budget_complete'] is True and value['scope'] == 'managed_logical_storage'
+    assert value['budget_bytes'] == 2 * 1024 ** 3
     with client.session_factory.begin() as db:
         row = db.scalar(select(StorageMeasurement).where(StorageMeasurement.environment_id == env_id, StorageMeasurement.component == 'images'))
         row.observed_at = now() - timedelta(minutes=10)
