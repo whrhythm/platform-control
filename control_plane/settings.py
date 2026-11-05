@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     agent_mcp_seconds: int = Field(default=60, ge=5, le=120)
     agent_mcp_calls: int = Field(default=8, ge=1, le=20)
     mcp_gateway_url: str = ''
+    identity_admin_url: str = ''
+    identity_admin_token: str = ''
     mcp_gateway_token: str = ''
     mcp_credential_encryption_key: str = ''
     agent_command_image: str = ''

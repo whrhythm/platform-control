@@ -18,6 +18,8 @@
 
 ## 文档
 
+- [文件预览编辑、独立代码运行与用户管理手册](docs/space-editor-and-accounts-guide.md)
+- [个人空间、用户管理与代码运行验收](docs/editor-accounts-codeapi-acceptance-20261105.md)
 - [编程设置使用手册](docs/agent-workbench-guide.md)
 - [聊天内任务进度、审批与恢复协议](docs/agent-chat-contract.md)
 - [聊天内任务实际验收](docs/agent-chat-acceptance-20261105.md)

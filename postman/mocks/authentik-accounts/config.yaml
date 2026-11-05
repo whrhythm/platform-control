@@ -1,0 +1,11 @@
+version: 1
+id: 430d8f0b-4a30-405f-a321-cec7d1f85523
+name: authentik-accounts
+slug: authentik-accounts
+protocol: http
+interceptRequests: true
+port: 4508
+scenarios:
+  - name: default
+    path: ./default.js
+    default: true

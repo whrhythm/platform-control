@@ -38,12 +38,21 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0016_mcp_catalog":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0017_account_access":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
 
 app = FastAPI(title="Tenant Control Plane", version="0.1.0", lifespan=lifespan)
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(RequestValidationError)
+async def safe_validation(request: Request, error: RequestValidationError):
+    if request.url.path.startswith('/v1/admin/accounts') or request.url.path.endswith('/credential'):
+        return JSONResponse(status_code=422, content={'detail':'invalid_account_or_credential_input'})
+    return await request_validation_exception_handler(request, error)
 app.include_router(programming_router)
 app.include_router(create_application_router(model_principal, prefix='/agent/v1'))
 app.include_router(create_database_router(model_principal, prefix='/agent/v1', agent=True))
@@ -690,6 +699,13 @@ app.include_router(create_mcp_admin_router(platform_admin))
 app.include_router(create_mcp_credential_router(workspace_service_principal))
 app.include_router(create_review_router(platform_admin))
 app.include_router(create_admin_users_router(platform_admin))
+from .accounts import router as create_account_router, allowed as account_allowed
+app.include_router(create_account_router(platform_admin))
+
+
+@app.get('/internal/v1/workspace/account-access', tags=['identity'])
+def account_access(principal: Principal = Depends(workspace_service_principal), db: Session = Depends(get_db)):
+    return {'allowed': account_allowed(db, principal.issuer, principal.subject)}
 
 
 @app.get('/internal/v1/workspace/models', tags=['models'])

@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
 
 from .settings import Settings, get_settings
+from .database import get_db
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ def jwks_client(url: str) -> PyJWKClient:
 def current_principal(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer),
     settings: Settings = Depends(get_settings),
+    db = Depends(get_db),
 ) -> Principal:
     if not settings.oidc_issuer or not settings.oidc_audience or not settings.oidc_jwks_url:
         raise HTTPException(status_code=503, detail="OIDC is not configured")
@@ -54,7 +56,10 @@ def current_principal(
         groups = claims.get("groups", [])
         if not isinstance(groups, list) or not all(isinstance(group, str) for group in groups):
             raise jwt.InvalidTokenError("Invalid groups")
-        return Principal(issuer=claims["iss"], subject=claims["sub"], groups=tuple(groups))
+        principal = Principal(issuer=claims["iss"], subject=claims["sub"], groups=tuple(groups))
+        from .accounts import require_access
+        require_access(db, principal)
+        return principal
     except (jwt.PyJWTError, ValueError, OSError):
         raise HTTPException(status_code=401, detail="Invalid or unverifiable access token", headers={"WWW-Authenticate": "Bearer"})
 

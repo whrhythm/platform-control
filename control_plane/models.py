@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, BigInteger, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -146,6 +146,13 @@ class UserEnvironment(Base):
     first_tenant_id: Mapped[str] = mapped_column(ForeignKey("tenants.id"), index=True)
     first_project_id: Mapped[str | None] = mapped_column(String(36), index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AccountAccess(Base):
+    __tablename__ = 'account_access'
+    issuer: Mapped[str] = mapped_column(String(512), primary_key=True)
+    subject: Mapped[str] = mapped_column(String(255), primary_key=True)
+    blocked: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class WorkspaceVolumeBinding(Base):

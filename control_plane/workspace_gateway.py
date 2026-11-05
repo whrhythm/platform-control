@@ -11,6 +11,8 @@ from .user_environments import identity_digest
 
 
 def own_environment(db, principal):
+    from .accounts import require_access
+    require_access(db, principal)
     env = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer,
                                                  UserEnvironment.subject == principal.subject))
     if env is None:

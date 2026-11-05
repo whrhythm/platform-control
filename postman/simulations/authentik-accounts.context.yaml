@@ -1,0 +1,12 @@
+purpose: Verify actual IdentityClient HTTP serialization and ambiguous account mutations without changing real users.
+evidence:
+  - Installed Authentik 2026.8.5 UserSerializer, UserViewSet.set_password, and IDToken._resolve_sub inspected on 2026-11-05.
+  - core/users POST creates a user; set_password POST returns 204; PATCH updates fields; list uses results and pagination.next.
+  - platform-console uses hashed_user_id, equal to User.uid.
+assumptions:
+  - This synthetic directory models only the calls used by account management; unmodelled operations return 501.
+  - A 503 after PATCH may follow an applied write; the platform must fence access and never replay automatically.
+limitations:
+  - Synthetic password endpoint does not model all real password-policy checks; live administrator UI verification is separate.
+  - Owner mock discovery skipped because the installed CLI does not support postman status and no authenticated workspace was established.
+routing: Path routing used because IdentityClient deliberately disables environment proxies; only the test URL changes.

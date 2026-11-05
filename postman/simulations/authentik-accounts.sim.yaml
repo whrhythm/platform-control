@@ -1,0 +1,6 @@
+simulation: authentik-accounts
+routing: path
+mocks:
+  - name: authentik-accounts
+    routeKey: directory
+    path: ../mocks/authentik-accounts/config.yaml

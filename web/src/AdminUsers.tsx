@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
 import './admin-users.css';
+import Modal from './Modal';
+import Accounts from './Accounts';
 
 type Sample = { component: string; used_bytes: number | null; budget_bytes: number | null;
   status: string; observed_at: string | null };
@@ -86,6 +88,7 @@ export default function AdminUsers() {
   }
 
   return <>
+    <Accounts />
     <section className="panel" aria-label="平台用户">
       <div className="panel-heading"><h2>平台用户</h2>
         <button className="subtle" onClick={() => setReload(v => v + 1)}>刷新数据</button>
@@ -129,8 +132,7 @@ export default function AdminUsers() {
       </div>}
     </section>
 
-    {selected && <section className="panel" id="inventory-user-detail" aria-label="用户资源详情">
-      <h2>用户资源详情</h2>
+    {selected && <Modal title="用户资源详情" onClose={()=>setSelected(undefined)}><section id="inventory-user-detail" aria-label="用户资源详情">
       {detailError ? <p className="error" role="alert">{detailError}</p> :
         !detail || detail.user.environment_id !== selected ? <p role="status">正在读取用户资源…</p> : <>
           <dl className="inventory-identity">
@@ -168,6 +170,6 @@ export default function AdminUsers() {
               onClick={() => { if (detail.next_application_offset !== null) setAppOffset(detail.next_application_offset); }}>下一页应用</button>
           </div>}
         </>}
-    </section>}
+    </section></Modal>}
   </>;
 }

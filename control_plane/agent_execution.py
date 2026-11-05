@@ -32,6 +32,9 @@ class TaskTools:
         query = select(AgentTask).where(AgentTask.id == self.task_id)
         task = db.scalar(query.with_for_update() if lock else query)
         env = db.get(UserEnvironment, task.environment_id)
+        from .accounts import allowed
+        if not allowed(db, env.issuer, env.subject):
+            raise TaskStopped('account_disabled')
         if self.stopped or task.status not in ('running', 'awaiting_approval') or env.status in ('suspended', 'deleted'):
             raise TaskStopped(self.stop_reason)
         return task, env
