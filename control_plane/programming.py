@@ -4,7 +4,6 @@ import hmac
 import json
 import re
 import ssl
-import asyncio
 
 import httpx
 from cryptography.fernet import Fernet, InvalidToken
@@ -82,8 +81,8 @@ async def resolve_identity(db, settings, key, client):
     return env
 
 
-async def resolve_space(db, settings, key, client, *, require_runtime=True):
-    env = await resolve_identity(db, settings, key, client)
+async def resolve_space(db, settings, key, client, *, require_runtime=True, environment=None):
+    env = environment if environment is not None else await resolve_identity(db, settings, key, client)
     cipher = Fernet(settings.model_credential_encryption_key.encode())
     service = db.get(WorkspaceFileService, env.id)
     binding = db.get(WorkspaceVolumeBinding, env.id)
@@ -205,21 +204,26 @@ async def completions(request: Request, authorization: str = Header(default=''),
     context = ssl.create_default_context(cafile=settings.workspace_service_ca)
     client = httpx.AsyncClient(verify=context, timeout=httpx.Timeout(600, connect=10), trust_env=False)
     try:
+        env = None
+        original_messages = body.get('messages')
+        if settings.agent_tasks_enabled:
+            from .agent_tasks import restore_task_messages
+            env = await resolve_identity(db, settings, authorization[7:], client)
+            body = {**body, 'messages': restore_task_messages(original_messages, db, env.id, settings)}
         if capability == 'coding' and settings.agent_tasks_enabled:
             if body.get('stream') is not True:
                 raise HTTPException(400, 'Programming requires streaming chat')
             from .agent_tasks import submit_task
-            env = await resolve_identity(db, settings, authorization[7:], client)
             task = submit_task(db, Principal(env.issuer, env.subject), settings, x_codechat_conversation,
                               agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image, workbench=True),
-                              actual_model)
+                              actual_model, request_prompt=agent_prompt(original_messages, python_base=settings.workspace_python_base_image, workbench=True))
             task_id = task.id
             db.rollback()
             await client.aclose()
             return StreamingResponse(task_stream(task_id, settings), media_type='text/event-stream',
                                      headers={'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no'})
         namespace, service_token = await resolve_space(db, settings, authorization[7:], client,
-                                                       require_runtime=capability == 'coding')
+                                                       require_runtime=capability == 'coding', environment=env)
         # Release the database transaction before waiting for a long-running agent.
         db.rollback()
         if capability == 'coding':
@@ -258,30 +262,9 @@ async def completions(request: Request, authorization: str = Header(default=''),
 
 
 async def task_stream(task_id, settings):
-    from .agent_tasks import unseal, ACTIVE
-    from .database import SessionLocal
-    from .models import AgentTask
     from .workspace_agent_service import chunk
-    previous = None
-    for _ in range(240):
-        with SessionLocal() as db:
-            task = db.get(AgentTask, task_id)
-            status = task.status
-            events = unseal(task.encrypted_events, settings)
-        if status == 'awaiting_approval':
-            yield chunk(task_id, '本次操作需要确认，请打开「编程设置 → 执行记录」审批。任务会在后台等待，刷新页面不会重复执行。')
-            break
-        if status not in ACTIVE:
-            final = next((e for e in reversed(events) if e['kind'] == 'finished'), {})
-            yield chunk(task_id, final.get('text') or '任务已结束，请查看执行记录。')
-            break
-        if status != previous:
-            yield chunk(task_id, '编程任务已排队。\n' if status == 'queued' else '正在执行，请在编程设置中查看文件操作和终端结果。\n', progress=True)
-            previous = status
-        else:
-            yield ': keep-alive\n\n'
-        await asyncio.sleep(1)
-    else:
-        yield chunk(task_id, '任务仍在后台执行，请在「编程设置 → 执行记录」查看结果。')
+    # LibreChat persists this reference in the original reply. Observation is read-only
+    # and independent of the model stream, so refresh/approval never replays execution.
+    yield chunk(task_id, f'[编程任务](#starbridge-task-{task_id})')
     yield chunk(task_id, finish=True)
     yield 'data: [DONE]\n\n'

@@ -130,6 +130,93 @@ def test_large_file_read_is_explicitly_rejected_not_silently_truncated(workspace
     assert json.loads(tools.file('read', 'large.txt'))['error'] == 'file_too_large_for_agent_read'
 
 
+def test_historical_task_read_is_owner_scoped_and_has_no_list_window(workspace):
+    client, headers, base = workspace
+    oldest = create(workspace)
+    for index in range(12):
+        with client.session_factory.begin() as db:
+            for task in db.scalars(select(AgentTask)):
+                task.status = 'completed'
+        create(workspace, f'new instruction {index}')
+    assert oldest.id not in [t['id'] for t in client.get(base + '/tasks', headers=headers).json()['tasks']]
+    assert client.get(base + '/tasks/' + oldest.id, headers=headers).json()['id'] == oldest.id
+    assert client.get(base + '/tasks/' + oldest.id, headers={**headers, 'X-CodeChat-Subject': 'bob'}).status_code == 404
+    with client.session_factory() as db:
+        assert len(list(db.scalars(select(AgentTask)))) == 13
+
+
+def test_task_references_restore_real_context_without_cross_owner_disclosure(workspace):
+    from control_plane.agent_tasks import append_event, restore_task_messages
+    client, _, _ = workspace
+    task = create(workspace)
+    reference = f'[编程任务](#starbridge-task-{task.id})'
+    messages = [{'role': 'assistant', 'content': reference}, {'role': 'user', 'content': reference}]
+    with client.session_factory.begin() as db:
+        item = db.get(AgentTask, task.id)
+        item.status = 'completed'
+        append_event(db, item, get_settings(), 'finished', text='Actual test output: apricot')
+    with client.session_factory() as db:
+        restored = restore_task_messages(messages, db, task.environment_id, get_settings())
+        assert 'apricot' in restored[0]['content']
+        assert restored[1] == messages[1]
+        assert messages[0]['content'] == reference
+        bob = db.scalar(select(UserEnvironment).where(UserEnvironment.subject == 'bob'))
+        assert 'apricot' not in restore_task_messages(messages, db, bob.id, get_settings())[0]['content']
+        first = submit_task(db, Principal(get_settings().oidc_issuer, 'alice'), get_settings(), 'next',
+                            'resolved output A', 'model-one', request_prompt='stable original request')
+        second = submit_task(db, Principal(get_settings().oidc_issuer, 'alice'), get_settings(), 'next',
+                             'resolved output B', 'model-one', request_prompt='stable original request')
+        assert first.id == second.id
+
+
+def test_chat_stream_persists_one_task_reference_without_waiting_or_resubmitting():
+    import asyncio
+    import json
+    from control_plane.programming import task_stream
+    task_id = str(uuid4())
+    async def collect():
+        return [chunk async for chunk in task_stream(task_id, Settings())]
+    chunks = asyncio.run(collect())
+    content = ''.join(json.loads(chunk[6:])['choices'][0]['delta'].get('content', '')
+                      for chunk in chunks if chunk.startswith('data: {'))
+    assert content == f'[编程任务](#starbridge-task-{task_id})'
+    assert chunks[-1] == 'data: [DONE]\n\n'
+
+
+def test_completed_task_context_reaches_ordinary_chat_provider(workspace, monkeypatch):
+    import certifi
+    import json
+    from control_plane import programming
+    from control_plane.agent_tasks import append_event
+    client, _, _ = workspace
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        item = db.get(AgentTask, task.id)
+        item.status = 'completed'
+        append_event(db, item, get_settings(), 'finished', text='Observed output: apricot-739')
+    for key, value in {'WORKSPACE_SERVICE_CA': certifi.where(), 'WORKSPACE_AGENT_IMAGE': 'synthetic',
+                       'LITELLM_URL': 'http://model', 'LITELLM_MASTER_KEY': 'synthetic',
+                       'LITELLM_MODELS': 'model-one'}.items():
+        monkeypatch.setenv('PLATFORM_' + key, value)
+    get_settings.cache_clear()
+    async def identity(db, settings, key, provider):
+        return db.get(UserEnvironment, task.environment_id)
+    observed = {}
+    def upstream(request):
+        observed.update(json.loads(request.content))
+        return httpx.Response(200, content=b'data: [DONE]\n\n', headers={'content-type': 'text/event-stream'})
+    original_client = httpx.AsyncClient
+    monkeypatch.setattr(programming, 'resolve_identity', identity)
+    monkeypatch.setattr(programming.httpx, 'AsyncClient', lambda **kwargs: original_client(transport=httpx.MockTransport(upstream)))
+    response = client.post('/agent/v1/chat/completions', headers={'Authorization': 'Bearer synthetic', 'X-CodeChat-Capability': 'chat'},
+        json={'model': 'model-one', 'stream': True, 'messages': [
+            {'role': 'assistant', 'content': f'[编程任务](#starbridge-task-{task.id})'},
+            {'role': 'user', 'content': 'What was the actual output?'}]})
+    assert response.status_code == 200
+    assert 'apricot-739' in observed['messages'][0]['content']
+    assert observed['messages'][1]['content'] == 'What was the actual output?'
+
+
 @pytest.mark.parametrize('path', ['../other', '/root', 'x/../y', 'x//y', 'x\\y'])
 def test_project_traversal_is_rejected(path):
     with pytest.raises(ValueError):

@@ -17,6 +17,7 @@ from .workspace_files import WorkspaceFiles
 from .workspace_gateway import call_files, own_environment
 
 ACTIVE = ('queued', 'running', 'awaiting_approval', 'cancelling')
+TASK_REFERENCE = re.compile(r'^\[编程任务\]\(#starbridge-task-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)$')
 DEFAULT = {'project_path': '', 'strategy': 'implement', 'approval': 'strict'}
 
 
@@ -85,7 +86,40 @@ def task_out(task, settings):
         'pending': task.pending, 'cleanup': task.resources.get('cleanup')}
 
 
-def submit_task(db, principal, settings, conversation_id, prompt, model, message_id=''):
+def restore_task_messages(messages, db, environment_id, settings):
+    """Resolve durable assistant references in one owner-scoped query, never trust a task id alone."""
+    if not isinstance(messages, list):
+        return messages
+    references = {}
+    for index, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get('role') != 'assistant':
+            continue
+        content = message.get('content')
+        if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
+            content = content[0].get('text') if content[0].get('type') == 'text' else None
+        match = TASK_REFERENCE.fullmatch(content.strip()) if isinstance(content, str) else None
+        if match:
+            references[index] = match.group(1)
+    if not references:
+        return messages
+    identifiers = list(references.values())[-16:]
+    rows = {task.id: task for task in db.scalars(select(AgentTask).where(
+        AgentTask.environment_id == environment_id, AgentTask.id.in_(identifiers)))}
+    restored = list(messages)
+    for index, identifier in references.items():
+        task = rows.get(identifier)
+        text = '编程任务记录当前不可用，请重新核验工程实际状态，不要推断执行成功。'
+        if task:
+            events = unseal(task.encrypted_events, settings)
+            final = next((e.get('text', '') for e in reversed(events) if e['kind'] == 'finished'), '')
+            text = f"工程 {task.config['project_path']} 的编程任务状态：{task.status}。\n" + final[:8192]
+            if task.status in ACTIVE:
+                text += '\n任务尚未结束，不代表执行成功。'
+        restored[index] = {**messages[index], 'content': text}
+    return restored
+
+
+def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *, request_prompt=None):
     env = own_environment(db, principal)
     if env.status == 'suspended':
         raise HTTPException(403, 'agent_account_suspended')
@@ -99,7 +133,7 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
     if config != preference(db, env.id, key):
         raise HTTPException(409, 'agent_settings_changed')
     config = {**config, 'model': model}
-    request_key = hashlib.sha256((key + '\n' + message_id + '\n' + prompt + '\n' + json.dumps(config, sort_keys=True)).encode()).hexdigest()
+    request_key = hashlib.sha256((key + '\n' + message_id + '\n' + (prompt if request_prompt is None else request_prompt) + '\n' + json.dumps(config, sort_keys=True)).encode()).hexdigest()
     previous = db.scalar(select(AgentTask).where(AgentTask.environment_id == env.id, AgentTask.request_key == request_key))
     if previous:
         return previous
@@ -155,6 +189,14 @@ def create_agent_router(principal_dependency):
         env = own_environment(db, principal)
         rows = db.scalars(select(AgentTask).where(AgentTask.environment_id == env.id).order_by(AgentTask.created_at.desc()).limit(10))
         return {'tasks': [task_out(task, get_settings()) for task in rows]}
+
+    @router.get('/tasks/{task_id}', dependencies=[Depends(enabled)])
+    def get_task(task_id: str, principal=Depends(principal_dependency), db=Depends(get_db)):
+        env = own_environment(db, principal)
+        task = db.scalar(select(AgentTask).where(AgentTask.id == task_id, AgentTask.environment_id == env.id))
+        if task is None:
+            raise HTTPException(404, 'agent_task_not_found')
+        return task_out(task, get_settings())
 
     def owned(db, principal, task_id):
         env = own_environment(db, principal)

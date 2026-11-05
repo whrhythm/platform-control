@@ -78,7 +78,7 @@ def test_http_capability_switch_forwards_same_history_and_issued_key(monkeypatch
     history = [{'role': 'user', 'content': 'Project alpha must print apricot'},
                {'role': 'assistant', 'content': 'Use alpha/main.py'},
                {'role': 'user', 'content': 'Implement the requirements above'}]
-    async def space(db, settings, supplied, client, *, require_runtime):
+    async def space(db, settings, supplied, client, *, require_runtime, environment=None):
         assert supplied == key
         captured['runtime'] = require_runtime
         return 'codechat-user-test', 'synthetic-space-token'
