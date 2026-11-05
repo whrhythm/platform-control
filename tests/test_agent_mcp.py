@@ -107,6 +107,38 @@ def test_unselected_and_invalid_tools_never_call_external_service(workspace):
         validate_arguments('deepwiki', 'read_wiki_structure', {'repoName': 'example/project', 'url': 'http://localhost'})
 
 
+def test_revocation_while_waiting_for_consent_prevents_dispatch(workspace, monkeypatch):
+    client, _, _ = workspace
+    task, tools = select_mcp(workspace)
+    def revoked_after_approval(*_args):
+        from control_plane.ai_policy import effective_policy
+        with client.session_factory.begin() as db:
+            db.add(AIConfiguration(id='default', config={**effective_policy(db, get_settings()), 'mcp_servers': []}))
+        return 'approved'
+    monkeypatch.setattr(tools, 'authorize', revoked_after_approval)
+    async def never(*_args):
+        pytest.fail('revoked connector dispatched')
+    monkeypatch.setattr('control_plane.agent_mcp.invoke', never)
+    assert 'mcp_connection_unavailable' in execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName':'example/project'})
+
+
+def test_query_failure_is_safe_and_not_automatically_replayed(workspace, monkeypatch):
+    client, _, _ = workspace
+    task, tools = select_mcp(workspace)
+    monkeypatch.setattr(tools, 'authorize', lambda *_: 'synthetic-approved')
+    calls = []
+    async def failed(*args):
+        calls.append(args)
+        raise RuntimeError('private provider diagnostic secret')
+    monkeypatch.setattr('control_plane.agent_mcp.invoke', failed)
+    result = execute(tools, 'deepwiki', 'read_wiki_structure', {'repoName':'example/project'})
+    assert len(calls) == 1 and json.loads(result)['error'] == 'mcp_unavailable'
+    assert 'secret' not in result
+    with client.session_factory() as db:
+        events = unseal(db.get(AgentTask, task.id).encrypted_events, get_settings())
+        assert events[-1]['kind'] == 'mcp_result' and 'secret' not in str(events)
+
+
 @pytest.mark.parametrize('address', ['127.0.0.1', '10.43.0.1', '169.254.169.254', '192.168.110.126', '172.16.11.6', '::1', 'fd00::1', '224.0.0.1'])
 def test_transport_rejects_private_dns_before_connect(address):
     async def run():

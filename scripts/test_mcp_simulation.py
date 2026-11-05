@@ -27,15 +27,17 @@ async def main():
             for mode in ['success', 'tool_error', 'unavailable', 'slow', 'large']:
                 response = await admin.post(base + '/__seed', json={'mode': mode})
                 response.raise_for_status()
+                failed = False
+                result = None
                 try:
                     result = await agent_mcp.invoke({**agent_mcp.CATALOG['deepwiki'], 'url': base + '/mcp'},
                         'read_wiki_structure', {'repoName':'example/project'}, SimpleNamespace(agent_mcp_seconds=3))
-                    assert mode in ('success', 'tool_error')
+                except Exception:
+                    failed = True
+                assert failed == (mode in ('unavailable', 'slow', 'large')), mode
+                if not failed:
                     assert ('error' in result) == (mode == 'tool_error')
                     assert 'private diagnostic' not in str(result)
-                except Exception:
-                    if mode not in ('unavailable', 'slow', 'large'):
-                        raise
                 assert (await admin.get(base + '/__calls')).json()['calls'] == 1
                 print(mode + ': verified; one call, no automatic replay', flush=True)
     finally:
