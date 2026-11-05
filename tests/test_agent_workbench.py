@@ -217,6 +217,24 @@ def test_completed_task_context_reaches_ordinary_chat_provider(workspace, monkey
     assert observed['messages'][1]['content'] == 'What was the actual output?'
 
 
+@pytest.mark.parametrize('terminal', ['cancelled', 'interrupted', 'completed'])
+def test_late_runner_result_cannot_overwrite_confirmed_terminal_state(workspace, terminal):
+    from control_plane.agent_worker import finish
+    from control_plane.agent_tasks import append_event
+    client, _, _ = workspace
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        item = db.get(AgentTask, task.id)
+        item.status = terminal
+        append_event(db, item, get_settings(), 'finished', text='confirmed result', status=terminal)
+    finish(client.session_factory, task.id, get_settings(), 'failed', 'late_result', 'wrong result')
+    with client.session_factory() as db:
+        item = db.get(AgentTask, task.id)
+        assert item.status == terminal
+        finals = [e for e in unseal(item.encrypted_events, get_settings()) if e['kind'] == 'finished']
+        assert len(finals) == 1 and finals[0]['text'] == 'confirmed result'
+
+
 @pytest.mark.parametrize('path', ['../other', '/root', 'x/../y', 'x//y', 'x\\y'])
 def test_project_traversal_is_rejected(path):
     with pytest.raises(ValueError):

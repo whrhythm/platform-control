@@ -20,6 +20,10 @@ from .settings import get_settings
 def finish(sessions, task_id, settings, status, code=None, text=''):
     with sessions.begin() as db:
         task = db.scalar(select(AgentTask).where(AgentTask.id == task_id).with_for_update())
+        # Another slot may have completed cancellation while this runner unwound.
+        # A late result must not turn an observed final state back into failure.
+        if task.status not in ACTIVE:
+            return
         if task.status == 'cancelling':
             status, code, text = 'cancelled', None, '任务已停止，源文件保留。'
         task.status, task.error_code, task.pending = status, code, None

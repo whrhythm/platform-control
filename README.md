@@ -20,6 +20,7 @@
 
 - [编程设置使用手册](docs/agent-workbench-guide.md)
 - [聊天内任务进度、审批与恢复协议](docs/agent-chat-contract.md)
+- [聊天内任务实际验收](docs/agent-chat-acceptance-20261105.md)
 - [共享 OpenHands 与 Kata 执行架构](docs/agent-workbench-design.md)
 - [编程工作台实际验收](docs/agent-workbench-acceptance-20261104.md)
 - [模型选择、模拟充值与中文套餐手册](docs/model-membership-guide.md)
