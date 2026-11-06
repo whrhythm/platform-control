@@ -1,4 +1,4 @@
-FROM harbor.k3s.local/codechat-base/support-runtime@sha256:bb6e9b96ff6fafce390000c390ad4987c9b4b3e17ec3ca9c8261848c7fbe8c29
+FROM harbor.k3s.local/codechat-base/support-runtime@sha256:3e98e2062b10423e32f99adc66fb8366c089fd7b10fd0b7bff5bcdeb1ec689ef
 WORKDIR /app/support
 COPY --chown=10001:10001 app.py index.html settings.json ./
 USER 10001:10001

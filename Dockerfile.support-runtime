@@ -1,0 +1,7 @@
+# Reuse the locked Python dependencies, without control-plane source or repeated
+# application COPY layers. Native BuildKit snapshots count every expanded layer.
+FROM harbor.k3s.local/internal/platform-control@sha256:bb6e9b96ff6fafce390000c390ad4987c9b4b3e17ec3ca9c8261848c7fbe8c29 AS dependencies
+FROM harbor.k3s.local/codechat-base/python@sha256:914752997e0f5fb7c78351fefefb378b7d1a2c3cad7d88ebe4b195dd5751f5ff
+COPY --from=dependencies /usr/local/lib/python3.12/site-packages/ /usr/local/lib/python3.12/site-packages/
+ENV PYTHONDONTWRITEBYTECODE=1
+USER 10001:10001
