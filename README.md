@@ -21,6 +21,8 @@
 - [产品纲领与阶段交付标准](docs/product-charter.md)：当前方向与交付门槛，优先于历史路线图。
 - [P1/P2 实施清单](docs/p1-delivery-plan.md)：创建、试用、修改、发布和维护 AI 应用的任务依赖。
 - [P1 契约与实施证据](docs/p1-application-contract.md)：本地实现、真实工具验收及尚未接线的能力。
+- [P1-01 私人 AI 项目](docs/p1-private-projects.md)：项目创建、助手绑定、恢复与部署验收。
+- [P1-02 RAG 部署决策](docs/p1-rag-decision.md)：组件选择、容量与权限边界、知识检索接线次序。
 - [星桥产品定位与体验设计](docs/product-design.md)：当前产品方向，以小团队业务应用为切入点；目标体验与已上线能力分别说明。
 - [星桥产品优化与验证路线图](docs/product-optimization-roadmap.md)：场景验证、原型、产品改造、持续使用与付费验证的阶段门槛。用户已恢复开发，第一批为现有发布体验改造。
 - [发布确认与交付说明](docs/delivery-experience.md)：第一批功能的使用方式、状态语义和验收边界。
