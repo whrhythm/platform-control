@@ -24,6 +24,7 @@ from .project_database_controller import reconcile_databases
 from .models import AuditEvent, UserApplication, UserEnvironment, UserRegistry, WorkspaceFileService, WorkspaceVolumeBinding
 from .registry import provision_registry, RegistryError
 from .settings import get_settings
+from .release_provenance import build_source
 
 logger = logging.getLogger(__name__)
 
@@ -289,12 +290,19 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
             raise DeliveryError(failed_build_code(cluster, app, actual))
         if not any(item['type'] == 'Complete' and item['status'] == 'True' for item in actual.get('status', {}).get('conditions', [])):
             return
+        if state.get('provenance'):
+            source = build_source(cluster, app, job)
+            if not source:
+                raise DeliveryError('build_source_verify_failed')
+            state['provenance']['source_sha256'] = source
         response = harbor.get(f'/api/v2.0/projects/{registry.project_name}/repositories/{app_name(app)}/artifacts/{app.revision.replace("-", "")}')
         digest = response.json().get('digest', '') if response.status_code == 200 else ''
         if not re.fullmatch(r'sha256:[0-9a-f]{64}', digest):
             raise DeliveryError('pushed_image_verify_failed')
         image = f'{urlsplit(settings.harbor_url).netloc}/{registry.project_name}/{app_name(app)}@{digest}'
-        update(image=image, status='deploying')
+        if state.get('provenance'):
+            state['provenance']['image_digest'] = digest
+        update(image=image, status='deploying', resources=state)
         return
     if app.status in ('deploying', 'running', 'stopped', 'failed', 'changing'):
         objects = application_objects(app, env, settings, database_secret=state.get('database_secret'),
@@ -397,7 +405,10 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
             observation = observe(cluster, namespace, app.id)
         except (httpx.HTTPError, ValueError, KeyError):
             observation = app.observation
+        if state.get('provenance'):
+            state['provenance'].setdefault('confirmed_at', review_now().isoformat())
         state['last_good'] = {'image': app.image, 'revision': app.revision, 'url': application_origin(app, settings) + '/',
+                              'provenance': deepcopy(state.get('provenance')),
                               'database_secret': state.get('database_secret'), 'object_storage_secret': state.get('object_storage_secret'),
                               'runtime_rights': runtime_rights}
         update(expected_revision=app.revision, expected_desired=app.desired_state,

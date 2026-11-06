@@ -181,6 +181,11 @@ def test_acceptance_concurrent_writers_preserve_one_revision(postgres_harness, m
         assert statuses.count(200) == 1 and statuses.count(409) == 5
         saved = client.get(url, headers=headers).json()
         assert saved['revision'] == 1
+        from control_plane.release_provenance import freeze
+        with client.session_factory() as db:
+            frozen = freeze(db, task.environment_id, 'demo')
+            assert frozen['candidate']['task_id'] == task.id
+            assert frozen['candidate']['revision'] == 1
         retry = {key: saved[key] for key in ('goal', 'criteria', 'note')}
         with ThreadPoolExecutor(max_workers=6) as pool:
             statuses = list(pool.map(lambda _: client.put(url, headers=headers,

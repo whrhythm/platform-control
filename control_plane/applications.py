@@ -16,11 +16,13 @@ from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
 from .capacity import application_limit
 from .application_resources import active_resources
 from .plan_quotas import active_quotas, admit_application
+from .release_provenance import freeze, application_provenance
 
 
 def application_out(app):
     result = {key: getattr(app, key) for key in ('id', 'project_path', 'status', 'desired_state', 'image', 'url', 'error_code', 'observation')}
     result['cleanup'] = app.resources.get('cleanup')
+    result.update(application_provenance(app, get_settings()))
     result['previous_url'] = app.resources.get('last_good', {}).get('url') if app.status == 'failed' and app.resources.get('cleanup', {}).get('runtime') == 'previous_release' else None
     return result
 
@@ -37,6 +39,16 @@ def release_database(app, database):
 def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
     router = APIRouter(prefix=prefix, tags=['applications'])
 
+    def output(app):
+        result = application_out(app)
+        if prefix != '/internal/v1/workspace':
+            for key in ('attempt', 'release'):
+                acceptance = (result.get(key) or {}).get('acceptance')
+                if acceptance:
+                    acceptance.pop('goal', None)
+                    acceptance.pop('criteria', None)
+        return result
+
     @router.get('/apps')
     def list_apps(principal=Depends(principal_dependency), db=Depends(get_db)):
         env = own_environment(db, principal)
@@ -44,7 +56,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                           .order_by(UserApplication.created_at)).all()
         databases = {row.project_path: row for row in db.scalars(select(ProjectDatabase).where(
             ProjectDatabase.environment_id == env.id, ProjectDatabase.status == 'ready'))} if apps else {}
-        return {'apps': [{**application_out(app), 'database': release_database(app, databases.get(app.project_path))}
+        return {'apps': [{**output(app), 'database': release_database(app, databases.get(app.project_path))}
                          for app in apps]}
 
     @router.post('/apps', status_code=202)
@@ -75,11 +87,11 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         app = db.scalar(select(UserApplication).where(UserApplication.environment_id == env.id,
                                                       UserApplication.project_path == path))
         if app and x_codechat_task_id and app.resources.get('request_id') == x_codechat_task_id:
-            return application_out(app)
+            return output(app)
         if app and app.status == 'changing':
             raise HTTPException(409, 'Wait for the lifecycle operation')
         if app and app.status in ('queued', 'preparing', 'building', 'deploying'):
-            return application_out(app)
+            return output(app)
         if app and app.error_code == WRITE_REVIEW_CODE:
             raise HTTPException(409, 'Previous operation requires administrator review')
         if app and app.status == 'failed' and app.resources.get('cleanup', {}).get('status') != 'complete':
@@ -109,7 +121,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             app.status, app.desired_state, app.error_code = 'queued', 'running', None
         db.flush()
         app.resources = {**app.resources, 'database_secret': database_secret, 'object_storage_secret': object_secret,
-                         'runtime_rights': rights, 'build_quotas': quotas}
+                         'runtime_rights': rights, 'build_quotas': quotas,
+                         'provenance': {**freeze(db, env.id, path), 'revision': app.revision}}
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action='application.publish', target_id=app.id))
         try:
@@ -117,7 +130,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         except IntegrityError:
             db.rollback()
             raise HTTPException(409, 'Application intent changed; refresh and retry') from None
-        return application_out(app)
+        return output(app)
 
     @router.post('/apps/{application_id}/{action}', status_code=202)
     def lifecycle(application_id: str, action: str, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -133,7 +146,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(409, 'Previous operation requires administrator review')
         target = {'start': 'running', 'stop': 'stopped', 'delete': 'deleted'}[action]
         if app.status == 'changing' and app.desired_state == target:
-            return application_out(app)
+            return output(app)
         if app.status in ('queued', 'preparing', 'building', 'deploying', 'changing'):
             raise HTTPException(409, 'Wait for the current delivery task')
         if app.status == 'deleted' or not app.image and action != 'delete':
@@ -148,6 +161,6 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                           action='application.' + action, target_id=app.id))
         db.commit()
-        return application_out(app)
+        return output(app)
 
     return router

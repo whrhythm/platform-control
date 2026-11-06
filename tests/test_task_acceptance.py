@@ -1,4 +1,6 @@
 from uuid import uuid4
+import httpx
+import pytest
 
 from sqlalchemy import select
 
@@ -9,6 +11,11 @@ from control_plane.models import AgentTask, AuditEvent
 from control_plane.settings import get_settings
 from control_plane.task_acceptance import original_request
 from test_agent_workbench import workspace, create
+
+
+@pytest.fixture(autouse=True)
+def source_boundary(monkeypatch):
+    monkeypatch.setattr('control_plane.task_acceptance.call_files', lambda *a, **k: httpx.Response(200, content=b'synthetic build context'))
 
 
 def setup_record(workspace, status='completed'):

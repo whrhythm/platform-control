@@ -1,10 +1,12 @@
 """Owner-authored acceptance, separate from agent execution and release readiness."""
 from typing import Literal
+import hashlib
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .models import AuditEvent, now
+from .workspace_gateway import call_files
 
 
 class Criterion(BaseModel):
@@ -51,6 +53,7 @@ def acceptance_out(task, settings):
         'goal': request['text'] if request else '', 'criteria': [], 'note': ''}
     return {'task_id': task.id, 'project_path': task.config['project_path'], 'task_status': task.status,
             'request': request, 'revision': record.get('revision', 0),
+            'source_sha256': record.get('source_sha256'),
             'updated_at': record.get('updated_at'), **content}
 
 
@@ -80,10 +83,25 @@ def save_acceptance(db, env, task, body, settings, principal):
         if changed and item.result != 'pending':
             raise HTTPException(409, 'acceptance_reset_required')
     revision = current['revision'] + 1
+    source = (task.resources or {}).get('acceptance', {}).get('source_sha256')
+    checked = any(item.result != 'pending' for item in body.criteria)
+    changed_results = any(item.result != 'pending' and (
+        item.id not in old or old[item.id]['result'] != item.result) for item in body.criteria)
+    if not checked:
+        source = None
+    elif changed_results:
+        try:
+            context = call_files(db, principal, settings, 'GET', '/v1/context', task.config['project_path']).content
+        except HTTPException:
+            raise HTTPException(503, 'acceptance_source_unavailable') from None
+        digest = hashlib.sha256(context).hexdigest()
+        if any(item['result'] != 'pending' for item in current['criteria']) and source != digest:
+            raise HTTPException(409, 'acceptance_source_changed')
+        source = digest
     counts = {'total': len(body.criteria), **{status: sum(item.result == status for item in body.criteria)
               for status in ('pending', 'passed', 'changes_requested')}}
     task.resources = {**(task.resources or {}), 'acceptance': {
-        'version': 1, 'revision': revision, 'counts': counts, 'updated_at': now().isoformat(),
+        'version': 1, 'revision': revision, 'counts': counts, 'updated_at': now().isoformat(), 'source_sha256': source,
         'encrypted': seal(content, settings)}}
     task.updated_at = now()
     db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,

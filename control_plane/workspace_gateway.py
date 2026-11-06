@@ -45,7 +45,7 @@ def call_files(db, principal, settings, method: str, endpoint: str, path: str, *
     if response.status_code not in (200, 201):
         code = response.status_code if response.status_code in (400, 403, 404, 409, 413, 507) else 503
         raise HTTPException(code, 'File operation could not be completed')
-    if len(response.content) > (32 if endpoint == '/v1/archive' else 16) * 1024 * 1024:
+    if len(response.content) > (64 if endpoint == '/v1/context' else 32 if endpoint == '/v1/archive' else 16) * 1024 * 1024:
         raise HTTPException(413, 'File exceeds the transfer limit')
     action = {('GET', '/v1/archive'): 'workspace.directory.download', ('PUT', '/v1/file'): 'workspace.file.upload', ('GET', '/v1/file'): 'workspace.file.download',
               ('POST', '/v1/directories'): 'workspace.directory.create',
