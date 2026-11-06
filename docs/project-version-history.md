@@ -78,3 +78,16 @@ LibreChat 桥接测试验证身份来自已登录用户、只转发固定接口�
 本地恢复演练使用迁移 `0019_project_versions`，4 个合成文件哈希匹配，用户身份与权益恢复成功，独立备份的密钥能解密凭据及源码恢复点，恢复到新目录成功；耗时约 7.17 秒，不能作为生产 RTO。
 
 Windows 本机的 `npm run lighthouse` 在准备步骤被缺少 `rimraf` 命令阻断，未取得性能预算结果。Linux 镜像内的构建、类型检查和功能测试已通过，但不替代 Lighthouse 性能检查。
+
+## 线上验收（2026-11-06）
+
+使用用户指定的普通账号在 LibreChat 页面完成：创建验收文件夹、上传 Python 文件、创建恢复点、编辑保存、查看差异、恢复到新目录、逐字验证新目录为旧内容且原工程保留新内容、亮暗主题、套餐用量中的版本字节、删除恢复点及保持当前聊天。新界面在后台刷新文件/容量时不阻止关闭成功弹窗。
+
+最终镜像：
+
+- Platform API / 文件服务：`harbor.k3s.local/internal/platform-control@sha256:03879682c7944359e5438327e867a0662813d709e966b88fc19df09497d9cecd`。
+- LibreChat：`harbor.k3s.local/internal/codechat-librechat@sha256:a51700d24d7f39f283cd221efcef632a86c7f259e55825796c7ff183cfbbe099`，源码本地提交 `58b6f160b`。
+- ops 提交 `fa589f5` 已推送，两项 Argo CD Application 均为 Synced / Healthy。
+- 仅使用独立的 `qa-version-*` 和 `qa-recovered-*` 合成目录；恢复点通过页面删除，测试文件清理前核对完整内容和目录边界，不触及用户原工程。
+
+下一项是发布溯源：把构建实际使用的源码摘要、镜像摘要和线上应用版本关联起来。当前恢复源码不会自动回滚线上应用。Langflow 试点仍排在可靠性功能收口之后。
