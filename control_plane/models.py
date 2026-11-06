@@ -413,6 +413,21 @@ class WorkspaceProject(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AIProjectBinding(Base):
+    """Durable private Agent creation intent; a ready binding is not a release."""
+    __tablename__ = 'ai_project_bindings'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_id', name='uq_ai_project_request'),)
+    project_id: Mapped[str] = mapped_column(ForeignKey('workspace_projects.id'), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    native_owner_id: Mapped[str] = mapped_column(String(24))
+    agent_id: Mapped[str] = mapped_column(String(80), unique=True)
+    state: Mapped[str] = mapped_column(String(24), default='preparing')
+    encrypted_initial: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class BusinessTemplate(Base):
     __tablename__ = 'business_templates'
     project_id: Mapped[str] = mapped_column(ForeignKey('workspace_projects.id'), primary_key=True)

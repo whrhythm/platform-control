@@ -2143,6 +2143,258 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects": {
+      "get": {
+        "tags": [
+          "ai-projects"
+        ],
+        "summary": "Listing",
+        "operationId": "listing_internal_v1_workspace_ai_projects_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ai-projects"
+        ],
+        "summary": "Create",
+        "operationId": "create_internal_v1_workspace_ai_projects_post",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/control_plane__ai_projects__Create"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/prepare": {
+      "post": {
+        "tags": [
+          "ai-projects"
+        ],
+        "summary": "Prepare",
+        "operationId": "prepare_internal_v1_workspace_ai_projects__project_id__prepare_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Owner"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/confirm": {
+      "post": {
+        "tags": [
+          "ai-projects"
+        ],
+        "summary": "Confirm",
+        "operationId": "confirm_internal_v1_workspace_ai_projects__project_id__confirm_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Confirmation"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/business-templates": {
       "get": {
         "tags": [
@@ -2226,7 +2478,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Create"
+                "$ref": "#/components/schemas/control_plane__business_templates__Create"
               }
             }
           }
@@ -7246,27 +7498,26 @@
         ],
         "title": "CapacityPlanOut"
       },
-      "Create": {
+      "Confirmation": {
         "properties": {
-          "request_id": {
+          "native_owner_id": {
             "type": "string",
-            "format": "uuid",
-            "title": "Request Id"
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
           },
-          "name": {
+          "agent_id": {
             "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Name"
+            "pattern": "^agent_[0-9a-f]{32}$",
+            "title": "Agent Id"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "request_id",
-          "name"
+          "native_owner_id",
+          "agent_id"
         ],
-        "title": "Create"
+        "title": "Confirmation"
       },
       "CreateCapacityOrder": {
         "properties": {
@@ -7899,6 +8150,21 @@
           "created_at"
         ],
         "title": "OperationOut"
+      },
+      "Owner": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id"
+        ],
+        "title": "Owner"
       },
       "PreferenceInput": {
         "properties": {
@@ -9136,6 +9402,63 @@
           "name"
         ],
         "title": "WorkspaceSpec"
+      },
+      "control_plane__ai_projects__Create": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "purpose": {
+            "type": "string",
+            "maxLength": 1000,
+            "minLength": 1,
+            "title": "Purpose"
+          },
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name",
+          "purpose",
+          "native_owner_id"
+        ],
+        "title": "Create"
+      },
+      "control_plane__business_templates__Create": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name"
+        ],
+        "title": "Create"
       }
     },
     "securitySchemes": {

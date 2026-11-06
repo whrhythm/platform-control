@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0022_business_templates":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0023_ai_project_bindings":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -52,6 +52,8 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation(request: Request, error: RequestValidationError):
+    if request.url.path.startswith('/internal/v1/workspace/ai-projects'):
+        return JSONResponse(status_code=422, content={'detail': 'ai_projects_invalid_request'})
     if request.url.path.endswith('/acceptance'):
         return JSONResponse(status_code=422, content={'detail': 'invalid_acceptance_input'})
     if request.url.path.startswith('/v1/admin/accounts') or request.url.path.endswith('/credential'):
@@ -319,6 +321,8 @@ from .project_versions import create_router as create_versions_router
 app.include_router(create_versions_router(workspace_service_principal))
 from .workspace_projects import create_router as create_workspace_projects_router
 app.include_router(create_workspace_projects_router(workspace_service_principal))
+from .ai_projects import create_router as create_ai_projects_router
+app.include_router(create_ai_projects_router(workspace_service_principal))
 from .business_templates import create_router as create_business_templates_router
 app.include_router(create_business_templates_router(workspace_service_principal))
 app.include_router(create_database_router(workspace_service_principal))

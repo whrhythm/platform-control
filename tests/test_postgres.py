@@ -68,6 +68,40 @@ def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):
     assert len(client.get(path + "/operations", headers=auth).json()) == 8
 
 
+def test_ai_project_concurrent_retry_and_project_limit(postgres_harness, monkeypatch):
+    from uuid import uuid4
+    from cryptography.fernet import Fernet
+    from control_plane.models import AIProjectBinding, WorkspaceProject, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
+    monkeypatch.setenv('PLATFORM_AI_PROJECTS_ENABLED', 'true')
+    monkeypatch.setenv('PLATFORM_WORKSPACE_PROJECTS_LIMIT', '3')
+    monkeypatch.setenv('PLATFORM_LITELLM_MODELS', 'test-model')
+    monkeypatch.setenv('PLATFORM_CAPABILITY_CHAT_MODEL', 'test-model')
+    monkeypatch.setenv('PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY', Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    payload = {'request_id': str(uuid4()), 'name': 'Concurrent', 'purpose': 'Test', 'native_owner_id': 'a'*24}
+    url = '/internal/v1/workspace/ai-projects'
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            replies = list(pool.map(lambda _: client.post(url, headers=auth, json=payload), range(8)))
+        assert all(reply.status_code == 201 for reply in replies)
+        assert len({reply.json()['agent_id'] for reply in replies}) == 1
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            replies = list(pool.map(lambda _: client.post(url, headers=auth,
+                json={**payload, 'request_id': str(uuid4())}), range(8)))
+        assert [reply.status_code for reply in replies].count(201) == 2
+        assert [reply.status_code for reply in replies].count(409) == 6
+        assert len(client.get(url, headers=auth).json()['projects']) == 3
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (AIProjectBinding, WorkspaceProject, StorageMeasurement, CapacityAccount,
+                          WorkspaceFileService, WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_parallel_source_recovery_points_respect_user_limit(postgres_harness, monkeypatch):
     import httpx
     from cryptography.fernet import Fernet
