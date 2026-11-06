@@ -243,6 +243,17 @@ class CapacityOrder(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class PaymentReceipt(Base):
+    """One payment intent per capacity order, with globally unique provider transaction."""
+    __tablename__ = 'payment_receipts'
+    order_id: Mapped[str] = mapped_column(ForeignKey('capacity_orders.id'), primary_key=True)
+    state: Mapped[str] = mapped_column(String(24), default='creating')
+    transaction_id: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
+    checkout_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class StorageMeasurement(Base):
     __tablename__ = 'storage_measurements'
     __table_args__ = (UniqueConstraint('environment_id', 'component'),)

@@ -41,6 +41,11 @@ class Settings(BaseSettings):
     runtime_class: str = "kata-qemu-runtime-rs"
     storage_class: str = "longhorn"
     test_payments_enabled: bool = False
+    xunhupay_simulator_enabled: bool = False
+    xunhupay_simulator_url: str = 'http://127.0.0.1:9066'
+    xunhupay_notify_url: str = 'http://127.0.0.1:8088/payments/xunhupay/notify'
+    xunhupay_appid: str = 'sim-starbridge'
+    xunhupay_secret: str = ''
     capacity_upgrades_enabled: bool = False
     capacity_resize_timeout_seconds: int = 900
     capacity_filesystem_overhead_percent: int = 10

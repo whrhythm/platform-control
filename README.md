@@ -23,6 +23,8 @@
 - [发布确认与交付说明](docs/delivery-experience.md)：第一批功能的使用方式、状态语义和验收边界。
 - [本轮需求与验收](docs/task-acceptance-guide.md)：在编程任务中保存目标、检查条件和用户验收结论，说明刷新、冲突及发布边界。
 - [发布版本与验收关联](docs/release-provenance.md)：查看实际构建代码、镜像和人工验收的对应关系，说明代码变化与旧版恢复。
+- [项目入口与上下文](docs/project-context.md)：关联旧目录、继续原对话、查看发布状态及完整浏览器验收。
+- [套餐重设计与本地支付演练](docs/packages-and-payments.md)：新套餐草案、人民币与模型预算、虎皮椒 V3 本地模拟闭环和正式收费边界。
 - [文件预览编辑、独立代码运行与用户管理手册](docs/space-editor-and-accounts-guide.md)
 - [代码运行套餐与生成文件保存规则](docs/code-execution-contract.md)
 - [代码运行额度与文件保存验收](docs/code-execution-acceptance-20261105.md)

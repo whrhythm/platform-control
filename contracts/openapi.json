@@ -1231,6 +1231,149 @@
         }
       }
     },
+    "/internal/v1/workspace/capacity/orders/{order_id}/checkout": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Checkout",
+        "operationId": "checkout_internal_v1_workspace_capacity_orders__order_id__checkout_post",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/capacity/orders/{order_id}/payment": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Status",
+        "operationId": "status_internal_v1_workspace_capacity_orders__order_id__payment_get",
+        "parameters": [
+          {
+            "name": "order_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Order Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/payments/xunhupay/notify": {
+      "post": {
+        "tags": [
+          "payments"
+        ],
+        "summary": "Notify",
+        "operationId": "notify_payments_xunhupay_notify_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/capacity": {
       "get": {
         "tags": [
@@ -6126,6 +6269,15 @@
               "disabled"
             ],
             "title": "Mode"
+          },
+          "payment_provider": {
+            "type": "string",
+            "enum": [
+              "manual_test",
+              "xunhupay_local"
+            ],
+            "title": "Payment Provider",
+            "default": "manual_test"
           },
           "plans": {
             "items": {

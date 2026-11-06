@@ -1,0 +1,37 @@
+{
+  "trial_plan": {
+    "id": "trial", "version": "pilot-20261106", "name": "体验版",
+    "amount_minor": 0, "currency": "CNY", "model_credit_cny_minor": 0,
+    "storage_gib": 2, "application_limit": 1,
+    "application_cpu_millicores": 250, "application_memory_mib": 256,
+    "applications_cpu_millicores": 250, "applications_memory_mib": 256,
+    "database_budget_mib": 128, "database_per_instance_mib": 128, "database_limit": 1,
+    "code_runs_monthly": 30, "code_timeout_seconds": 10, "code_concurrency": 1,
+    "description": "先把一个想法变成能打开的应用。注册赠送 1 美元模型额度，仅一次。",
+    "features": ["AI 编程与手动编辑", "项目与对话关联", "发布版本核对与工程导出", "模拟环境，不承诺商业托管期限"]
+  },
+  "plans": [
+    {
+      "id": "basic", "version": "pilot-20261106", "name": "创作版（模拟）",
+      "amount_minor": 2900, "currency": "CNY", "model_credit_cny_minor": 1000,
+      "storage_gib": 4, "application_limit": 5,
+      "application_cpu_millicores": 500, "application_memory_mib": 512,
+      "applications_cpu_millicores": 1000, "applications_memory_mib": 1024,
+      "database_budget_mib": 512, "database_per_instance_mib": 256, "database_limit": 2,
+      "code_runs_monthly": 300, "code_timeout_seconds": 15, "code_concurrency": 1,
+      "description": "持续迭代自己的轻量工具。模拟售价 29 元，其中 10 元折算为模型预算。",
+      "features": ["5 个应用名额，运行总上限 1 CPU / 1 GiB", "数据库占用计入 4 GiB 总空间", "可继续原对话并核对发布版本", "本地单次测试购买，不自动续费"]
+    },
+    {
+      "id": "pro", "version": "pilot-20261106", "name": "专业版（模拟）",
+      "amount_minor": 9900, "currency": "CNY", "model_credit_cny_minor": 4000,
+      "storage_gib": 8, "application_limit": 10,
+      "application_cpu_millicores": 1000, "application_memory_mib": 1024,
+      "applications_cpu_millicores": 2000, "applications_memory_mib": 2048,
+      "database_budget_mib": 2048, "database_per_instance_mib": 512, "database_limit": 4,
+      "code_runs_monthly": 1000, "code_timeout_seconds": 15, "code_concurrency": 2,
+      "description": "为多个工具保留更大的运行和数据额度。模拟售价 99 元，其中 40 元折算为模型预算。",
+      "features": ["10 个应用名额，运行总上限 2 CPU / 2 GiB", "数据库占用计入 8 GiB 总空间", "同样保留源码导出与发布追溯", "本地单次测试购买，不自动续费"]
+    }
+  ]
+}

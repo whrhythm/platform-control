@@ -510,3 +510,34 @@ def test_projectless_migration_preserves_existing_workspace_binding(postgres_har
                 record = db.get(model, env_id)
                 if record is not None:
                     db.delete(record)
+
+
+def test_concurrent_signed_payment_notifications_confirm_once(postgres_harness, monkeypatch):
+    from test_capacity import prepare_capacity, create_order, PREFIX
+    from test_payments import local_payment, notification
+    from control_plane.models import PaymentReceipt, CapacityOrder, AuditEvent, StorageMeasurement, WorkspaceFileService
+    from sqlalchemy import func
+    client, _ = postgres_harness
+    _, auth, env_id, *_ = prepare_capacity(client, monkeypatch)
+    try:
+        with local_payment(monkeypatch):
+            order = create_order(client, auth).json()
+            assert client.post(PREFIX + '/orders/' + order['id'] + '/checkout', headers=auth).status_code == 200
+            body = notification(order)
+            with ThreadPoolExecutor(max_workers=6) as pool:
+                results = list(pool.map(lambda _: client.post('/payments/xunhupay/notify', data=body), range(8)))
+            assert all(row.status_code == 200 and row.text == 'success' for row in results)
+            with client.session_factory() as db:
+                assert db.get(CapacityOrder, order['id']).attempt == 1
+                assert db.get(PaymentReceipt, order['id']).state == 'confirmed'
+                assert db.scalar(select(func.count()).select_from(AuditEvent).where(
+                    AuditEvent.action == 'payment.confirmed', AuditEvent.target_id == order['id'])) == 1
+    finally:
+        with client.session_factory.begin() as db:
+            ids = select(CapacityOrder.id).where(CapacityOrder.environment_id == env_id)
+            db.execute(delete(PaymentReceipt).where(PaymentReceipt.order_id.in_(ids)))
+            db.execute(delete(CapacityAccount).where(CapacityAccount.environment_id == env_id))
+            db.execute(delete(CapacityOrder).where(CapacityOrder.environment_id == env_id))
+            for model in (StorageMeasurement, WorkspaceFileService, WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))

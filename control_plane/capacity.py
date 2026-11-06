@@ -132,6 +132,7 @@ class ApplicationAllowanceOut(BaseModel):
 class CapacityAccountOut(BaseModel):
     plan: CapacityPlanOut
     mode: Literal['test', 'disabled']
+    payment_provider: Literal['manual_test', 'xunhupay_local'] = 'manual_test'
     plans: list[CapacityPlanOut]
     active_order: CapacityOrderOut | None
     orders: list[CapacityOrderOut]
@@ -310,6 +311,7 @@ def create_router(principal_dependency):
             ProjectDatabase.status != 'deleted')))
         from .ai_policy import trial_plan
         result = {'plan': enriched_plan(account.plan), 'mode': 'test' if available else 'disabled',
+            'payment_provider': 'xunhupay_local' if settings.xunhupay_simulator_enabled else 'manual_test',
             'quota_usage': {'application_cpu_millicores': allocated[CPU], 'application_memory_mib': allocated[MEMORY],
                 'database_count': len(database_rows), 'database_reserved_bytes': sum(row.reserved_bytes for row in database_rows),
                 'agent_active': db.scalar(select(func.count(AgentTask.id)).where(AgentTask.environment_id == env.id,
@@ -386,6 +388,8 @@ def create_router(principal_dependency):
             raise HTTPException(404, 'capacity_order_not_found')
         if action not in ('confirm-test', 'retry', 'cancel'):
             raise HTTPException(404, 'capacity_action_not_found')
+        if action == 'confirm-test' and settings.xunhupay_simulator_enabled:
+            raise HTTPException(409, 'payment_checkout_required')
         if action == 'confirm-test' and order.payment_status == 'confirmed':
             return order_out(order)
         if action == 'cancel' and order.status == 'cancelled':
