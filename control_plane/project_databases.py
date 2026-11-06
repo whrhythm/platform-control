@@ -69,6 +69,40 @@ def connection_profile(row, settings, *, rootcert='/etc/codechat-database/ca.crt
             'PGUSER': database, 'PGPASSWORD': password, 'PGSSLMODE': 'verify-full', 'PGSSLROOTCERT': rootcert}
 
 
+def ensure_database(db, principal, project_path):
+    """Shared admission for user requests and an explicitly chosen business template."""
+    settings = get_settings()
+    if not settings.project_databases_enabled: raise HTTPException(503, 'project_databases_disabled')
+    WorkspaceFiles._parts(project_path)
+    env = own_environment(db, principal)
+    call_files(db, principal, settings, 'GET', '/v1/directories', project_path)
+    db.refresh(env, with_for_update=True)
+    if env.status == 'suspended': raise HTTPException(403, 'environment_suspended')
+    rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id)))
+    row = next((value for value in rows if value.project_path == project_path), None)
+    if row and row.status != 'deleted': return public_database(row)
+    active = [value for value in rows if value.status != 'deleted']
+    quotas = active_quotas(db, env.id, settings)
+    reservation = quotas['database_per_instance_mib'] * MIB
+    if (reservation <= 0 or len(active) >= quotas['database_limit'] or
+            sum(max(value.reserved_bytes, value.used_bytes or 0) for value in active) + reservation > quotas['database_budget_mib'] * MIB):
+        raise HTTPException(409, 'database_allowance_exceeded')
+    encrypted = Fernet(settings.model_credential_encryption_key.encode()).encrypt(secrets.token_urlsafe(36).encode()).decode()
+    if row is None:
+        row = ProjectDatabase(environment_id=env.id, project_path=project_path,
+            encrypted_password=encrypted, reserved_bytes=reservation)
+        db.add(row)
+    else:
+        row.generation, row.encrypted_password = str(uuid4()), encrypted
+        row.status, row.error_code, row.resources = 'requested', None, {}
+        row.used_bytes, row.observed_at, row.reserved_bytes = None, None, reservation
+    db.flush()
+    db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
+        action='database.request', target_id=row.id))
+    db.commit()
+    return public_database(row)
+
+
 def create_router(principal_dependency, *, prefix='/internal/v1/workspace', agent=False):
     router = APIRouter(prefix=prefix + '/databases', tags=['project-databases'])
 
@@ -99,41 +133,10 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace', agen
 
     @router.post('', status_code=202, response_model=DatabaseOut)
     def request_database(body: DatabaseRequest, principal=Depends(principal_dependency), db=Depends(get_db)):
-        settings = get_settings()
-        if not settings.project_databases_enabled:
-            raise HTTPException(503, 'project_databases_disabled')
         try:
-            WorkspaceFiles._parts(body.project_path)
+            return ensure_database(db, principal, body.project_path)
         except InvalidWorkspacePath:
             raise HTTPException(400, 'invalid_project_directory') from None
-        env = own_environment(db, principal)
-        call_files(db, principal, settings, 'GET', '/v1/directories', body.project_path)
-        db.refresh(env, with_for_update=True)
-        if env.status == 'suspended':
-            raise HTTPException(403, 'environment_suspended')
-        rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id)))
-        row = next((value for value in rows if value.project_path == body.project_path), None)
-        if row and row.status != 'deleted':
-            return public_database(row)
-        active = [value for value in rows if value.status != 'deleted']
-        quotas = active_quotas(db, env.id, settings)
-        reservation = quotas['database_per_instance_mib'] * MIB
-        if (reservation <= 0 or len(active) >= quotas['database_limit'] or
-                sum(max(value.reserved_bytes, value.used_bytes or 0) for value in active) + reservation > quotas['database_budget_mib'] * MIB):
-            raise HTTPException(409, 'database_allowance_exceeded')
-        encrypted = Fernet(settings.model_credential_encryption_key.encode()).encrypt(secrets.token_urlsafe(36).encode()).decode()
-        if row is None:
-            row = ProjectDatabase(environment_id=env.id, project_path=body.project_path,
-                                  encrypted_password=encrypted, reserved_bytes=reservation)
-            db.add(row)
-        else:
-            row.generation, row.encrypted_password = str(uuid4()), encrypted
-            row.status, row.error_code, row.resources = 'requested', None, {}
-            row.used_bytes, row.observed_at, row.reserved_bytes = None, None, reservation
-        db.flush()
-        audit(db, principal, env, row, 'request')
-        db.commit()
-        return public_database(row)
 
     @router.post('/{identifier}/retry', status_code=202, response_model=DatabaseOut)
     def retry(identifier: str, principal=Depends(principal_dependency), db=Depends(get_db)):

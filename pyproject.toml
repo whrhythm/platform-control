@@ -30,6 +30,9 @@ platform-sidecar = "control_plane.sidecar:main"
 [tool.setuptools.packages.find]
 include = ["control_plane*"]
 
+[tool.setuptools.package-data]
+"control_plane.templates.support" = ["*.html", "*.md", "Dockerfile"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

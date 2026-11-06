@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>售后工单</title>
+<style>
+:root{color-scheme:light dark;--bg:#f4f6f8;--panel:#fff;--text:#192b3c;--muted:#637282;--line:#dae1e7;--accent:#285b79;--soft:#e9f2f6}
+@media(prefers-color-scheme:dark){:root{--bg:#11171c;--panel:#1b242c;--text:#edf1f4;--muted:#aab9c5;--line:#364652;--accent:#91c6e2;--soft:#273e4b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}header{border-bottom:1px solid var(--line);background:var(--panel);padding:20px max(24px,calc((100vw - 1100px)/2))}h1{font-size:24px;margin:0}h2{font-size:18px;margin:0 0 14px}p{margin:6px 0}main{max-width:1150px;padding:24px;margin:auto}.muted{color:var(--muted)}.badge{font-size:12px;border-radius:6px;padding:3px 8px;background:var(--soft);color:var(--text)}.row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.between{justify-content:space-between}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:18px}.auth{max-width:430px;margin:32px auto}label{display:grid;gap:6px;margin:10px 0}input,select,textarea,button{font:inherit}input,select,textarea{border:1px solid var(--line);border-radius:7px;padding:9px 11px;background:var(--panel);color:var(--text);max-width:100%}textarea{min-height:90px;resize:vertical}button{padding:9px 14px;border:1px solid var(--line);border-radius:7px;background:var(--panel);color:var(--text);cursor:pointer}button.primary{background:var(--accent);color:var(--bg);border-color:transparent}button:disabled{opacity:.5;cursor:wait}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.stat{font-size:26px;font-weight:600}.table{overflow:auto}table{border-collapse:collapse;width:100%;text-align:left}th,td{padding:12px 10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted);font-size:12px}td.title{min-width:180px}dialog{background:var(--panel);color:var(--text);border:1px solid var(--line);border-radius:12px;max-width:570px;width:calc(100% - 32px);max-height:90vh;overflow:auto;padding:24px}dialog::backdrop{background:#0007}.message{padding:12px;border-radius:8px;background:var(--soft);margin-bottom:16px;white-space:pre-wrap}.empty{padding:32px;text-align:center}.small{font-size:12px}a{color:var(--accent)}[hidden]{display:none!important}@media(max-width:650px){main{padding:14px}header{padding:16px}.grid{gap:7px}.panel{padding:14px}th,td{padding:9px 6px}}
+</style></head><body>
+<header><div class="row between"><div><h1 id="app-title">售后工单</h1><p class="muted">登记问题，明确负责人，持续跟进处理结果。</p></div><div class="row"><span id="preview-badge" class="badge" hidden>示例预览 · 不保存业务数据</span><span id="identity" class="muted"></span><button id="logout" hidden>退出</button></div></div></header>
+<main><div id="message" class="message" role="status" hidden></div>
+<section id="auth" class="panel auth" hidden><h2 id="auth-title">登录工单应用</h2><p class="muted">使用此应用的账号，与编程平台账号分开。</p><form id="login-form"><label>用户名<input name="name" required maxlength="80" autocomplete="username"></label><label>口令<input name="password" type="password" required minlength="10" maxlength="128" autocomplete="current-password"></label><button class="primary" type="submit" id="login-button">登录</button></form></section>
+<section id="workspace" hidden>
+<div class="grid" id="stats"></div>
+<section class="panel"><div class="row between"><div><h2>全部工单</h2><p id="count" class="muted small"></p></div><div class="row"><button id="invite" hidden>邀请同事</button><button id="export" hidden>导出筛选结果</button><button id="new-ticket" class="primary">登记工单</button></div></div>
+<div class="row"><label>状态筛选<select id="filter-status"><option value="">全部状态</option><option value="open">待处理</option><option value="working">处理中</option><option value="resolved">已解决</option></select></label><label>负责人筛选<select id="filter-person"><option value="">全部负责人</option></select></label><button id="refresh">刷新</button></div>
+<div class="table"><table><thead><tr><th>编号 / 标题</th><th>客户</th><th>负责人</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody id="ticket-list"></tbody></table></div><p id="empty" class="empty muted" hidden>暂无工单。登记第一条问题，或调整筛选条件。</p></section>
+</section></main>
+<dialog id="ticket-dialog"><form id="ticket-form"><div class="row between"><h2 id="ticket-heading">登记工单</h2><button type="button" data-close="ticket-dialog" aria-label="关闭工单">×</button></div><label>标题<input name="title" required maxlength="160"></label><label>客户代称<input name="customer" required maxlength="80" placeholder="建议使用代称，避免输入不必要的个人信息"></label><label>问题描述<textarea name="description" maxlength="4000"></textarea></label><label>负责人<select name="assignee" id="ticket-assignee"></select></label><label>状态<select name="status"><option value="open">待处理</option><option value="working">处理中</option><option value="resolved">已解决</option></select></label><div class="row"><button class="primary" type="submit">保存工单</button><button type="button" data-close="ticket-dialog">取消</button></div><p id="ticket-error" role="alert"></p></form></dialog>
+<dialog id="invite-dialog"><div class="row between"><h2>邀请同事使用应用</h2><button data-close="invite-dialog" aria-label="关闭邀请">×</button></div><p class="muted">同事只能使用这个工单应用，不能访问平台源码、模型额度或发布管理。邀请 7 天有效，只能使用一次。</p><form id="invite-form"><label>同事权限<select name="role"><option value="agent">处理人：登记、分配、更新工单</option><option value="viewer">只读：查看和筛选工单</option></select></label><button type="submit" class="primary">生成邀请链接</button></form><label id="invite-result" hidden>复制此链接给同事<input id="invite-link" readonly></label><p id="invite-error" role="alert"></p></dialog>
+<script>
+const preview = window.__SUPPORT_PREVIEW__ === true || location.hash === '#preview';
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const labels = {open:'待处理',working:'处理中',resolved:'已解决'};
+let me, people=[], rows=[], editing=null;
+const samplePeople=[{id:'owner',name:'负责人（示例）',role:'owner'},{id:'sample-agent',name:'小林（示例）',role:'agent'}];
+let sampleRows=[{id:'sample-001',title:'设备安装后无法启动（示例）',customer:'客户 A',description:'请确认电源连接并安排回访。',assignee:'sample-agent',status:'open',created_at:Math.floor(Date.now()/1000),updated_at:Math.floor(Date.now()/1000),revision:1}];
+function message(text){$('message').textContent=text;$('message').hidden=!text;}
+async function api(path,method='GET',body){
+ if(preview){
+  if(path==='/api/info')return {title:(window.__SUPPORT_TITLE__||'售后工单')+' · 示例预览'};
+  if(path==='/api/me')return samplePeople[0];
+  if(path==='/api/members')return samplePeople;
+  if(path.startsWith('/api/tickets')&&method==='GET'){const q=new URLSearchParams(path.split('?')[1]);return {tickets:sampleRows.filter(r=>(!q.get('status')||r.status===q.get('status'))&&(!q.get('assignee')||r.assignee===q.get('assignee'))),truncated:false};}
+  if(path==='/api/tickets'&&method==='POST'){sampleRows.push({...body,id:'sample-'+Date.now(),created_at:Date.now()/1000,updated_at:Date.now()/1000,revision:1});return {ok:true};}
+  if(path.startsWith('/api/tickets/')&&method==='PUT'){sampleRows=sampleRows.map(r=>r.id===path.split('/').pop()?{...r,...body,revision:r.revision+1,updated_at:Date.now()/1000}:r);return {ok:true};}
+  throw Error('示例预览不发送邀请、不导出真实数据。请发布后验证访问权限与持久保存。');
+ }
+ const response=await fetch(path,{method,headers:body?{'Content-Type':'application/json'}:{},body:body?JSON.stringify(body):undefined,credentials:'same-origin'});
+ if(!response.ok){const data=await response.json().catch(()=>({}));throw Error(typeof data.detail==='string'?data.detail:'暂时无法完成操作，请重试');}
+ return response.json();
+}
+function filters(){return new URLSearchParams({status:$('filter-status').value,assignee:$('filter-person').value});}
+async function refresh(){
+ const data=await api('/api/tickets?'+filters());rows=data.tickets;
+ $('count').textContent='当前筛选 '+rows.length+' 条'+(data.truncated?' · 仅显示前 500 条':'');
+ $('stats').innerHTML=Object.entries(labels).map(([key,title])=>'<article class="panel"><div class="muted small">'+title+' · 当前筛选</div><div class="stat">'+rows.filter(r=>r.status===key).length+'</div></article>').join('');
+ $('ticket-list').innerHTML=rows.map(r=>'<tr><td class="title"><div>'+esc(r.title)+'</div><div class="muted small">'+esc(r.id.slice(0,8))+'</div></td><td>'+esc(r.customer)+'</td><td>'+esc(people.find(p=>p.id===r.assignee)?.name||'未分配')+'</td><td><span class="badge">'+esc(labels[r.status])+'</span></td><td class="small">'+esc(new Date(r.updated_at*1000).toLocaleString())+'</td><td><button data-ticket="'+esc(r.id)+'">'+(me.role==='viewer'?'查看':'处理')+'</button></td></tr>').join('');
+ $('empty').hidden=rows.length>0;
+}
+async function workspace(){
+ me=await api('/api/me');people=await api('/api/members');$('identity').textContent=me.name+' · '+({owner:'管理员',agent:'处理人',viewer:'只读'}[me.role]);
+ $('auth').hidden=true;$('workspace').hidden=false;$('logout').hidden=preview;$('new-ticket').hidden=me.role==='viewer';$('invite').hidden=$('export').hidden=me.role!=='owner';
+ const choices=people.filter(p=>p.role!=='viewer').map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ $('filter-person').innerHTML='<option value="">全部负责人</option>'+choices;$('ticket-assignee').innerHTML='<option value="">未分配</option>'+choices;
+ await refresh();
+}
+function openTicket(row){
+ editing=row;$('ticket-heading').textContent=row?'工单详情':'登记工单';const form=$('ticket-form');
+ for(const field of ['title','customer','description','assignee','status']){form.elements[field].value=row?.[field]|| (field==='status'?'open':'');form.elements[field].disabled=me.role==='viewer';}
+ form.querySelector('[type=submit]').hidden=me.role==='viewer';$('ticket-error').textContent='';$('ticket-dialog').showModal();
+}
+function action(id,fn){$(id).addEventListener('click',()=>Promise.resolve().then(fn).catch(e=>message(e.message)));}
+action('refresh',refresh);action('new-ticket',()=>openTicket(null));action('invite',()=>{$('invite-result').hidden=true;$('invite-dialog').showModal();});
+action('logout',async()=>{await api('/api/logout','POST');location.reload();});
+action('export',async()=>{
+ if(preview)throw Error('预览只使用示例数据。发布后以管理员和只读角色分别验收导出权限。');
+ const response=await fetch('/api/export?'+filters());if(!response.ok)throw Error('导出失败，请检查权限或缩小筛选范围');
+ const url=URL.createObjectURL(await response.blob());const a=document.createElement('a');a.href=url;a.download='售后工单.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+});
+document.addEventListener('click',e=>{const close=e.target.closest('[data-close]');if(close)$(close.dataset.close).close();const button=e.target.closest('[data-ticket]');if(button)openTicket(rows.find(r=>r.id===button.dataset.ticket));});
+for(const id of ['filter-status','filter-person'])$(id).addEventListener('change',()=>refresh().catch(e=>message(e.message)));
+$('ticket-form').onsubmit=async(e)=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const body=Object.fromEntries(new FormData(e.target));body.assignee=body.assignee||null;if(editing)body.revision=editing.revision;await api('/api/tickets'+(editing?'/'+editing.id:''),editing?'PUT':'POST',body);$('ticket-dialog').close();await refresh();message(preview?'示例工单已更新。关闭预览后会重置，不会写入业务数据库。':'工单已保存。');}catch(error){$('ticket-error').textContent=error.message;}finally{button.disabled=false;}};
+$('invite-form').onsubmit=async(e)=>{e.preventDefault();e.submitter.disabled=true;try{const data=await api('/api/invitations','POST',Object.fromEntries(new FormData(e.target)));$('invite-link').value=location.origin+location.pathname+'#invite='+data.invitation;$('invite-result').hidden=false;$('invite-link').select();$('invite-error').textContent='';}catch(error){$('invite-error').textContent=error.message;}finally{e.submitter.disabled=false;}};
+const invitation=location.hash.startsWith('#invite=')?location.hash.slice(8):'';
+if(invitation){$('auth-title').textContent='接受邀请并创建应用账号';$('login-button').textContent='加入并登录';}
+$('login-form').onsubmit=async(e)=>{e.preventDefault();e.submitter.disabled=true;try{const body=Object.fromEntries(new FormData(e.target));if(invitation)body.invitation=invitation;await api(invitation?'/api/join':'/api/login','POST',body);history.replaceState(null,'',location.pathname);message('');await workspace();}catch(error){message(error.message);}finally{e.submitter.disabled=false;}};
+(async()=>{const info=await api('/api/info');$('app-title').textContent=info.title;document.title=info.title;$('preview-badge').hidden=!preview;try{if(invitation)throw Error();await workspace();}catch{if(preview)throw Error('示例预览无法加载');$('auth').hidden=false;}})().catch(e=>message(e.message));
+</script></body></html>

@@ -413,6 +413,17 @@ class WorkspaceProject(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class BusinessTemplate(Base):
+    __tablename__ = 'business_templates'
+    project_id: Mapped[str] = mapped_column(ForeignKey('workspace_projects.id'), primary_key=True)
+    template_id: Mapped[str] = mapped_column(String(40))
+    version: Mapped[str] = mapped_column(String(40))
+    state: Mapped[str] = mapped_column(String(40), default='preparing')
+    encrypted_access: Mapped[str] = mapped_column(Text)
+    manifest: Mapped[dict] = mapped_column(JSON, default=dict)
+    acceptance: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
 class ProjectVersion(Base):
     __tablename__ = 'project_versions'
     __table_args__ = (UniqueConstraint('environment_id', 'request_key', name='uq_project_version_request'),)

@@ -15,6 +15,8 @@ def main():
     archive = root / "release" / "platform-build-context.tar.gz"
     files = [root / name for name in ["Dockerfile.prebuilt-web", "Dockerfile.agent", "Dockerfile.orchestrator", "requirements.runtime.txt", "pyproject.toml", "uv.lock", "alembic.ini", "scripts/push_on_host.py"]]
     files += [path for folder in ["control_plane", "migrations"] for path in (root / folder).rglob("*.py")]
+    files += [path for path in (root / 'control_plane/templates').rglob('*')
+              if path.is_file() and (path.suffix in ('.html', '.md') or path.name == 'Dockerfile')]
     files += [path for path in (root / "web/dist").rglob("*") if path.is_file()]
     with tarfile.open(archive, "w:gz", compresslevel=6) as tar:
         for path in sorted(files):

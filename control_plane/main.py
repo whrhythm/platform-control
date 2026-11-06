@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0021_payment_receipts":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0022_business_templates":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -319,6 +319,8 @@ from .project_versions import create_router as create_versions_router
 app.include_router(create_versions_router(workspace_service_principal))
 from .workspace_projects import create_router as create_workspace_projects_router
 app.include_router(create_workspace_projects_router(workspace_service_principal))
+from .business_templates import create_router as create_business_templates_router
+app.include_router(create_business_templates_router(workspace_service_principal))
 app.include_router(create_database_router(workspace_service_principal))
 app.include_router(create_object_router(workspace_service_principal))
 from .agent_tasks import create_agent_router

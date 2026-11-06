@@ -32,7 +32,7 @@ def main():
         else:
             raise RuntimeError("Disposable PostgreSQL did not become ready")
         environment = {**os.environ, "PLATFORM_TEST_DATABASE_URL": dsn.replace("postgresql://", "postgresql+psycopg://", 1)}
-        return subprocess.run([sys.executable, "-m", "pytest", "tests/test_postgres.py", "tests/test_project_database_postgres.py", "-q"], env=environment).returncode
+        return subprocess.run([sys.executable, "-m", "pytest", "tests/test_postgres.py", "tests/test_project_database_postgres.py", "tests/test_support_app.py", "-q"], env=environment).returncode
     finally:
         if created:
             subprocess.run(["docker", "rm", "-f", name], stdout=subprocess.DEVNULL, check=True)

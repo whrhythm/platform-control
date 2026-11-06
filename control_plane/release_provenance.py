@@ -5,7 +5,7 @@ import re
 
 from sqlalchemy import select
 
-from .models import AgentTask, now
+from .models import AgentTask, WorkspaceProject, BusinessTemplate, now
 
 
 def freeze(db, environment_id, path):
@@ -15,7 +15,11 @@ def freeze(db, environment_id, path):
         AgentTask.resources['acceptance']['revision'].as_integer() > 0
     ).order_by(AgentTask.updated_at.desc(), AgentTask.id).limit(1))
     record = (task.resources or {}).get('acceptance') if task else None
-    return {'version': 1, 'requested_at': now().isoformat(), 'candidate': {
+    project = db.scalar(select(WorkspaceProject).where(WorkspaceProject.environment_id == environment_id,
+        WorkspaceProject.project_path == path))
+    template = db.get(BusinessTemplate, project.id) if project else None
+    return {'version': 1, 'requested_at': now().isoformat(),
+        'template_acceptance': deepcopy(template.acceptance) if template else None, 'candidate': {
         'task_id': task.id, 'conversation_id': task.conversation_id, **deepcopy(record)
     } if record else None}
 
@@ -53,6 +57,7 @@ def public(record, settings):
         'matched' if candidate['source_sha256'] == source else 'changed')
     result = {key: record.get(key) for key in ('revision', 'source_sha256', 'image_digest', 'requested_at', 'confirmed_at')}
     result['acceptance_state'] = match
+    result['template_acceptance'] = record.get('template_acceptance')
     result['acceptance'] = None
     if candidate:
         result['acceptance'] = {key: candidate.get(key) for key in ('task_id', 'conversation_id', 'revision', 'updated_at', 'counts')}
