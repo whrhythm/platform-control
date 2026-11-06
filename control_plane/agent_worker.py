@@ -90,7 +90,13 @@ def iteration(sessions, cluster, settings, run_agent):
             append_event(db, task, settings, 'finished', status='failed', error_code=task.error_code,
                          text='编程任务尚未执行：所选模型已停止开放。请选择可用模型后重新提交，文件未修改。')
             return
-        prompt = '当前工作方式：' + config['strategy'] + '。当前工程：' + config['project_path'] + '。\n' + prompt
+        prompt = ('交互要求：先用一句简短中文说明本轮准备交付什么，再开始工具操作；'
+                  '在耗时操作前用简短公开说明告知用户，说明结果与下一步，不输出内部思考链。'
+                  '对于小游戏、单页等小型需求，优先交付能直接打开的最小完整版本，默认使用原生 HTML/CSS/JavaScript；'
+                  '不要自行扩展为大型工程，不要为这类任务安装浏览器或下载测试框架。'
+                  '合并必要的静态检查，无法实际运行浏览器时如实说明，禁止声称已完成视觉或交互验收。'
+                  '交付首版后停止，后续增强由用户下一轮决定；已有项目则遵循现有技术栈。\n'
+                  '当前工作方式：' + config['strategy'] + '。当前工程：' + config['project_path'] + '。\n' + prompt)
         task.status = 'running'
         append_event(db, task, settings, 'started', text='已启动编程任务。命令在独立 Kata 环境中执行。')
     try:

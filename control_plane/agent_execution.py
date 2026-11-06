@@ -46,7 +46,7 @@ class TaskTools:
 
     def progress(self, kind, identifier, **data):
         """Replace a bounded encrypted snapshot, not a new event for every token/log poll."""
-        if kind not in ('assistant', 'command_progress'):
+        if kind not in ('assistant', 'command_progress', 'model_progress'):
             raise ValueError('agent_progress_invalid')
         with self.sessions.begin() as db:
             task, _ = self.current(db, lock=True)
