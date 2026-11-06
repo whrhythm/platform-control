@@ -68,6 +68,8 @@ def iteration(sessions, cluster, settings, run_agent):
             ModelCredential.subject == env.subject, ModelCredential.status == 'ready'))
         if credential is None or env.status in ('suspended', 'deleted'):
             task.status, task.error_code = 'failed', 'agent_account_unavailable'
+            append_event(db, task, settings, 'finished', status='failed', error_code=task.error_code,
+                         text='编程任务尚未执行：账号或模型访问凭据暂不可用。请重新登录；若仍失败，请联系管理员。文件未修改。')
             return
         key = Fernet(settings.model_credential_encryption_key.encode()).decrypt(credential.encrypted_key.encode()).decode()
         prompt, config = unseal(task.encrypted_prompt, settings), task.config
@@ -85,6 +87,8 @@ def iteration(sessions, cluster, settings, run_agent):
             return
         if config['model'] not in policy['allowed_models']:
             task.status, task.error_code = 'failed', 'agent_model_not_available'
+            append_event(db, task, settings, 'finished', status='failed', error_code=task.error_code,
+                         text='编程任务尚未执行：所选模型已停止开放。请选择可用模型后重新提交，文件未修改。')
             return
         prompt = '当前工作方式：' + config['strategy'] + '。当前工程：' + config['project_path'] + '。\n' + prompt
         task.status = 'running'

@@ -331,3 +331,51 @@ def test_committed_job_timeout_observes_without_replaying(workspace):
         assert item.resources['cleanup']['status'] == 'complete'
         assert item.resources['job'] is None
         assert len([e for e in unseal(item.encrypted_events, settings) if e['kind'] == 'terminal']) == 1
+
+@pytest.mark.parametrize('reason', ['missing_credential', 'suspended', 'withdrawn_model'])
+def test_claim_rejection_has_one_chat_result_and_never_executes(workspace, reason):
+    from control_plane.agent_worker import iteration
+    from control_plane.models import ModelCredential
+    client, headers, base = workspace
+    settings = get_settings()
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        env = db.get(UserEnvironment, task.environment_id)
+        if reason != 'missing_credential':
+            db.add(ModelCredential(issuer=env.issuer, subject=env.subject, status='ready',
+                encrypted_key=Fernet(settings.model_credential_encryption_key.encode()).encrypt(b'synthetic-key').decode()))
+        if reason == 'suspended':
+            env.status = 'suspended'
+        if reason == 'withdrawn_model':
+            item = db.get(AgentTask, task.id)
+            item.config = {**item.config, 'model': 'withdrawn-model'}
+    def forbidden(*args, **kwargs):
+        pytest.fail('Rejected queued work must never call the model or tools')
+    iteration(client.session_factory, None, settings, forbidden)
+    result = client.get(base + '/tasks/' + task.id, headers=headers).json()
+    assert result['status'] == 'failed'
+    assert result['events'][-1]['kind'] == 'finished'
+    assert '尚未执行' in result['events'][-1]['text']
+    assert '文件未修改' in result['events'][-1]['text']
+    assert 'synthetic-key' not in str(result)
+    iteration(client.session_factory, None, settings, forbidden)
+    assert client.get(base + '/tasks/' + task.id, headers=headers).json() == result
+
+
+@pytest.mark.parametrize('status', ['running', 'awaiting_approval', 'cancelling'])
+def test_restart_recovery_is_idempotent_and_late_results_cannot_override(workspace, status):
+    from control_plane.agent_worker import finish
+    client, headers, base = workspace
+    task = create(workspace)
+    with client.session_factory.begin() as db:
+        item = db.get(AgentTask, task.id)
+        item.status = status
+        item.pending = {'id': 'old-approval', 'decision': 'approve'}
+    recover(client.session_factory, get_settings())
+    result = client.get(base + '/tasks/' + task.id, headers=headers).json()
+    assert result['status'] == 'interrupted'
+    assert result['pending'] is None
+    assert result['events'][-1]['kind'] == 'finished'
+    recover(client.session_factory, get_settings())
+    finish(client.session_factory, task.id, get_settings(), 'completed', text='late response')
+    assert client.get(base + '/tasks/' + task.id, headers=headers).json() == result
