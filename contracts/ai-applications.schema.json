@@ -1,0 +1,327 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:starbridge:ai-application-contracts:v1",
+  "$comment": "P1 internal contracts. Not a declaration of deployed API endpoints.",
+  "$defs": {
+    "KnowledgeRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "collection_id": {
+          "format": "uuid",
+          "title": "Collection Id",
+          "type": "string"
+        },
+        "file_id": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "File Id",
+          "type": "string"
+        },
+        "file_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "File Digest",
+          "type": "string"
+        },
+        "index_revision": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Index Revision",
+          "type": "string"
+        },
+        "index_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Index Digest",
+          "type": "string"
+        },
+        "grant_id": {
+          "format": "uuid",
+          "title": "Grant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "collection_id",
+        "file_id",
+        "file_digest",
+        "index_revision",
+        "index_digest",
+        "grant_id"
+      ],
+      "title": "KnowledgeRevision",
+      "type": "object"
+    },
+    "ModelRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        },
+        "route_revision": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Route Revision",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0,
+          "maximum": 2,
+          "minimum": 0,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "max_output_tokens": {
+          "exclusiveMinimum": 0,
+          "title": "Max Output Tokens",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "provider",
+        "model",
+        "route_revision",
+        "max_output_tokens"
+      ],
+      "title": "ModelRevision",
+      "type": "object"
+    },
+    "SkillRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "skill_id": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Skill Id",
+          "type": "string"
+        },
+        "revision": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Revision",
+          "type": "string"
+        },
+        "content": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "title": "Content",
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill_id",
+        "revision",
+        "content"
+      ],
+      "title": "SkillRevision",
+      "type": "object"
+    },
+    "ToolRevision": {
+      "additionalProperties": false,
+      "properties": {
+        "tool_id": {
+          "maxLength": 255,
+          "minLength": 1,
+          "title": "Tool Id",
+          "type": "string"
+        },
+        "definition_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Definition Digest",
+          "type": "string"
+        },
+        "grant_id": {
+          "format": "uuid",
+          "title": "Grant Id",
+          "type": "string"
+        },
+        "credential_ref": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Credential Ref"
+        }
+      },
+      "required": [
+        "tool_id",
+        "definition_digest",
+        "grant_id"
+      ],
+      "title": "ToolRevision",
+      "type": "object"
+    },
+    "AgentSnapshot": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": 1,
+          "default": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "instructions": {
+          "maxLength": 64000,
+          "minLength": 1,
+          "title": "Instructions",
+          "type": "string"
+        },
+        "model": {
+          "$ref": "#/$defs/ModelRevision"
+        },
+        "knowledge": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/KnowledgeRevision"
+          },
+          "title": "Knowledge",
+          "type": "array"
+        },
+        "skills": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/SkillRevision"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ToolRevision"
+          },
+          "title": "Tools",
+          "type": "array"
+        }
+      },
+      "required": [
+        "instructions",
+        "model"
+      ],
+      "title": "AgentSnapshot",
+      "type": "object"
+    },
+    "CreateAssistantInput": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "project_id": {
+          "format": "uuid",
+          "title": "Project Id",
+          "type": "string"
+        },
+        "template": {
+          "const": "knowledge-assistant-v1",
+          "default": "knowledge-assistant-v1",
+          "title": "Template",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "project_id"
+      ],
+      "title": "CreateAssistantInput",
+      "type": "object"
+    },
+    "UpdateDraftInput": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "snapshot": {
+          "$ref": "#/$defs/AgentSnapshot"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "snapshot"
+      ],
+      "title": "UpdateDraftInput",
+      "type": "object"
+    },
+    "RunInput": {
+      "additionalProperties": false,
+      "description": "Browser input: no owner, sponsor, prompt, tools, model override or history.",
+      "properties": {
+        "session_id": {
+          "format": "uuid",
+          "title": "Session Id",
+          "type": "string"
+        },
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "message": {
+          "maxLength": 32000,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "session_id",
+        "request_id",
+        "message"
+      ],
+      "title": "RunInput",
+      "type": "object"
+    },
+    "PublishInput": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "format": "uuid",
+          "title": "Request Id",
+          "type": "string"
+        },
+        "expected_draft_revision": {
+          "minimum": 1,
+          "title": "Expected Draft Revision",
+          "type": "integer"
+        },
+        "expected_snapshot_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Expected Snapshot Digest",
+          "type": "string"
+        },
+        "accepted_preview_id": {
+          "format": "uuid",
+          "title": "Accepted Preview Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "request_id",
+        "expected_draft_revision",
+        "expected_snapshot_digest",
+        "accepted_preview_id"
+      ],
+      "title": "PublishInput",
+      "type": "object"
+    }
+  }
+}

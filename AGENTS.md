@@ -1,5 +1,7 @@
 # Platform control plane
 
+Read `docs/product-charter.md`, `docs/p1-delivery-plan.md` and the latest `docs/p1-application-contract.md` evidence before P1 work. Contract tests do not imply deployed product features. This worktree isolates P1 from the unfinished HTML preview changes in the original directory.
+
 Python business backend and React UI. Keep Tauri Rust limited to GUI and child-process supervision. Never embed a Python interpreter or add tenant/Kubernetes/DB business logic to Rust.
 
 - `control_plane/main.py`: authenticated metadata API; never accept client tenant claims as authority.
