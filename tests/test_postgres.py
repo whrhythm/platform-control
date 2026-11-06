@@ -450,6 +450,37 @@ def test_parallel_publications_cannot_overbook_compute(postgres_harness, monkeyp
             db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
 
 
+def test_parallel_project_association_and_revision(postgres_harness, monkeypatch):
+    import httpx
+    from cryptography.fernet import Fernet
+    from control_plane.models import WorkspaceProject, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
+    monkeypatch.setenv('PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY', Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    monkeypatch.setattr('control_plane.workspace_projects.call_files', lambda *a, **k: httpx.Response(200, json={'entries': []}))
+    url = '/internal/v1/workspace/projects'
+    body = {'path': 'existing', 'name': 'Team tool', 'goal': '', 'revision': 0}
+    try:
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            replies = list(pool.map(lambda _: client.put(url, headers=auth, json=body), range(12)))
+        assert all(reply.status_code == 200 for reply in replies)
+        assert len({reply.json()['id'] for reply in replies}) == 1
+        identifier = replies[0].json()['id']
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            replies = list(pool.map(lambda n: client.put(url, headers=auth, json={**body, 'goal': str(n), 'revision': 1}), range(6)))
+        assert sum(reply.status_code == 200 for reply in replies) == 1
+        assert sum(reply.status_code == 409 for reply in replies) == 5
+        assert client.get(url+'/'+identifier, headers=auth).json()['revision'] == 2
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (WorkspaceProject, StorageMeasurement, CapacityAccount, WorkspaceFileService,
+                          WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_projectless_migration_preserves_existing_workspace_binding(postgres_harness):
     client, _token = postgres_harness
     sessions = client.session_factory

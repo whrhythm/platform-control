@@ -388,6 +388,20 @@ class AgentTask(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class WorkspaceProject(Base):
+    """A durable owner-scoped label for an existing directory; never provisions or moves files."""
+    __tablename__ = 'workspace_projects'
+    __table_args__ = (UniqueConstraint('environment_id', 'project_path', name='uq_workspace_project_path'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    project_path: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(80))
+    encrypted_goal: Mapped[str] = mapped_column(Text)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ProjectVersion(Base):
     __tablename__ = 'project_versions'
     __table_args__ = (UniqueConstraint('environment_id', 'request_key', name='uq_project_version_request'),)

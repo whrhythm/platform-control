@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./control-plane.db"
     project_versions_enabled: bool = False
+    workspace_projects_limit: int = Field(default=100, ge=1, le=500)
     project_versions_limit: int = Field(default=20, ge=1, le=100)
     code_execution_enabled: bool = False
     code_execution_url: str = 'http://codeapi-api.codeapi.svc.cluster.local:3112/v1/'
