@@ -108,6 +108,45 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
         except (OSError, ValueError) as error:
             raise sanitized_error(error) from None
 
+    @app.get('/v1/checkpoint', dependencies=[Depends(authenticate)])
+    async def checkpoint(path: str = Query(min_length=1, max_length=255)):
+        from .workspace_checkpoints import capture
+        try:
+            async with snapshots:
+                return await run_in_threadpool(capture, files, path)
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
+    @app.post('/v1/checkpoint-restore', dependencies=[Depends(authenticate)])
+    async def checkpoint_restore(request: Request, path: str = Query(min_length=1, max_length=255)):
+        from .workspace_checkpoints import restore
+        from uuid import UUID
+        import json
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+            if len(content) > 8 * 1024 * 1024:
+                raise HTTPException(413, 'Recovery point exceeds size limit')
+        try:
+            body = json.loads(content)
+            request_id = str(UUID(body['request_id']))
+            async with snapshots:
+                result = await run_in_threadpool(restore, files, path, body['payload'], request_id, service_token)
+            invalidate_usage()
+            return result
+        except (TypeError, KeyError):
+            raise HTTPException(400, 'Invalid recovery request') from None
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
+    @app.get('/v1/checkpoint-status', dependencies=[Depends(authenticate)])
+    async def checkpoint_status(path: str, request_id: str, digest: str):
+        from .workspace_checkpoints import restored
+        try:
+            return {'restored': await run_in_threadpool(restored, files, path, request_id, digest, service_token)}
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
     @app.get('/v1/archive', dependencies=[Depends(authenticate)], response_class=Response)
     async def download_archive(path: str = Query(min_length=1, max_length=4096)):
         await snapshots.acquire()

@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Integer, LargeBinary, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -387,3 +387,31 @@ class AgentTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
+
+class ProjectVersion(Base):
+    __tablename__ = 'project_versions'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_key', name='uq_project_version_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_key: Mapped[str] = mapped_column(String(128))
+    project_path: Mapped[str] = mapped_column(String(255))
+    name: Mapped[str] = mapped_column(String(80))
+    digest: Mapped[str] = mapped_column(String(64))
+    manifest: Mapped[dict] = mapped_column(JSON)
+    encrypted_content: Mapped[bytes] = mapped_column(LargeBinary)
+    stored_bytes: Mapped[int] = mapped_column(BigInteger)
+    source_bytes: Mapped[int] = mapped_column(BigInteger)
+    deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProjectRestore(Base):
+    __tablename__ = 'project_restores'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_key', name='uq_project_restore_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    version_id: Mapped[str] = mapped_column(ForeignKey('project_versions.id'))
+    request_key: Mapped[str] = mapped_column(String(128))
+    target: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(16), default='pending')
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)

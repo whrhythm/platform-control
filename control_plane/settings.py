@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PLATFORM_", extra="ignore")
 
     database_url: str = "sqlite:///./control-plane.db"
+    project_versions_enabled: bool = False
+    project_versions_limit: int = Field(default=20, ge=1, le=100)
     code_execution_enabled: bool = False
     code_execution_url: str = 'http://codeapi-api.codeapi.svc.cluster.local:3112/v1/'
     code_execution_public_key: str = ''

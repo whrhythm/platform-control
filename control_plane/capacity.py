@@ -105,7 +105,7 @@ class CapacityOrderOut(BaseModel):
 
 
 class StorageComponentOut(BaseModel):
-    component: Literal['files', 'database', 'objects', 'images', 'app_volumes']
+    component: Literal['files', 'database', 'objects', 'images', 'app_volumes', 'versions']
     budget_bytes: int | None
     used_bytes: int | None
     observed_at: datetime | None
@@ -294,6 +294,12 @@ def create_router(principal_dependency):
             'status': samples[kind].status, 'basis': samples[kind].basis, 'scope_id': samples[kind].scope_id} for kind in COMPONENTS]
         fresh = [row for row in samples.values() if row.status == 'ok' and row.used_bytes is not None]
         complete = len(fresh) == len(COMPONENTS)
+        version_bytes = 0
+        if settings.project_versions_enabled:
+            from .project_versions import version_usage
+            version_bytes = version_usage(db, env.id)
+            components.append({'component': 'versions', 'budget_bytes': None, 'used_bytes': version_bytes,
+                'observed_at': now(), 'status': 'ok', 'basis': 'encrypted_source_bytes', 'scope_id': env.id})
         apps = db.scalar(select(func.count(UserApplication.id)).where(UserApplication.environment_id == env.id,
                                                                      UserApplication.status != 'deleted'))
         available = settings.capacity_upgrades_enabled and settings.test_payments_enabled
@@ -323,7 +329,7 @@ def create_router(principal_dependency):
             # Service-specific caps are sub-limits, not additional purchased storage.
             'storage': {'budget_bytes': account.plan['storage_gib'] * GIB,
                 'pending_capacity_bytes': max(0, (active.plan['storage_gib'] - env.storage_gib) * GIB) if active else 0,
-                'known_used_bytes': sum(row.used_bytes for row in fresh) if fresh else None,
+                'known_used_bytes': sum(row.used_bytes for row in fresh) + version_bytes if fresh or settings.project_versions_enabled else None,
                 'complete': complete, 'budget_complete': True,
                 'components': components}}
         db.commit()

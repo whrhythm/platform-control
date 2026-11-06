@@ -68,6 +68,33 @@ def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):
     assert len(client.get(path + "/operations", headers=auth).json()) == 8
 
 
+def test_parallel_source_recovery_points_respect_user_limit(postgres_harness, monkeypatch):
+    import httpx
+    from cryptography.fernet import Fernet
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, observed, _ = prepare_capacity(client, monkeypatch)
+    monkeypatch.setenv('PLATFORM_PROJECT_VERSIONS_ENABLED','true')
+    monkeypatch.setenv('PLATFORM_PROJECT_VERSIONS_LIMIT','1')
+    monkeypatch.setenv('PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY',Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    monkeypatch.setattr('control_plane.project_versions.call_files',lambda *args,**kwargs:httpx.Response(200,
+        json=observed if args[4]=='/v1/usage' else {'entries':{},'bytes':0,'excluded':[]}))
+    def capture(index):
+        return client.post('/internal/v1/workspace/versions',headers={**auth,'Idempotency-Key':f'parallel-source-{index:04d}'},
+            json={'path':'project','name':'source'}).status_code
+    try:
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            statuses=list(pool.map(capture,range(6)))
+        assert statuses.count(201)==1 and statuses.count(409)==5
+    finally:
+        from control_plane.models import ProjectVersion, ProjectRestore, StorageMeasurement, WorkspaceFileService
+        with client.session_factory.begin() as db:
+            for model in (ProjectRestore,ProjectVersion,StorageMeasurement,CapacityAccount,WorkspaceFileService,WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id==env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
+
+
 def test_parallel_code_execution_reservations_are_bounded(postgres_harness, monkeypatch):
     from fastapi import HTTPException
     from sqlalchemy import delete

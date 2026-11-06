@@ -22,8 +22,10 @@ def own_environment(db, principal):
     return env
 
 
-def call_files(db, principal, settings, method: str, endpoint: str, path: str, *, body=None, overwrite=False, if_match=''):
+def call_files(db, principal, settings, method: str, endpoint: str, path: str, *, body=None, overwrite=False, if_match='', params=None):
     env = own_environment(db, principal)
+    if method != 'GET':
+        db.refresh(env, with_for_update=True)
     binding = db.get(WorkspaceVolumeBinding, env.id)
     service = db.get(WorkspaceFileService, env.id)
     if not binding or not service or service.status != 'ready':
@@ -36,7 +38,7 @@ def call_files(db, principal, settings, method: str, endpoint: str, path: str, *
         context = ssl.create_default_context(cafile=settings.workspace_service_ca)
         with httpx.Client(base_url=f'https://workspace-files.{namespace}.svc:8090', verify=context,
                           timeout=30, trust_env=False, follow_redirects=False) as client:
-            response = client.request(method, endpoint, params={'path': path, 'overwrite': str(overwrite).lower()},
+            response = client.request(method, endpoint, params={'path': path, 'overwrite': str(overwrite).lower(), **(params or {})},
                                       headers={'Authorization': 'Bearer ' + token, **({'If-Match': if_match} if if_match else {})}, content=body)
     except (httpx.HTTPError, InvalidToken, ValueError, OSError):
         raise HTTPException(503, 'Personal files are temporarily unavailable') from None

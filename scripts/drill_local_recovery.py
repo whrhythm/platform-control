@@ -13,6 +13,8 @@ import tempfile
 import time
 from uuid import uuid4
 import zipfile
+import zlib
+from types import SimpleNamespace
 
 import psycopg
 from cryptography.fernet import Fernet
@@ -21,7 +23,10 @@ from sqlalchemy.orm import Session
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from control_plane.models import Tenant, UserEnvironment, CapacityAccount, ModelCredential
+from control_plane.models import Tenant, UserEnvironment, CapacityAccount, ModelCredential, ProjectVersion
+from control_plane.workspace_checkpoints import capture, encode, restore
+from control_plane.workspace_files import WorkspaceFiles
+from control_plane.project_versions import unpack
 
 
 def run(*args, **kwargs):
@@ -83,6 +88,14 @@ def main():
                 db.add(CapacityAccount(environment_id=env_id, plan={'id':'basic', 'storage_gib':4, 'application_limit':5}))
                 db.add(ModelCredential(issuer='drill', subject=suffix, status='ready',
                     encrypted_key=Fernet(recovery_key).encrypt(b'synthetic-model-key').decode()))
+                source_point = capture(WorkspaceFiles(str(original)), 'src')
+                packed = encode(source_point)
+                encrypted_point = Fernet(recovery_key).encrypt(zlib.compress(packed))
+                point_id = str(uuid4())
+                db.add(ProjectVersion(id=point_id, environment_id=env_id, request_key='local-drill-'+suffix,
+                    project_path='src', name='synthetic point', digest=hashlib.sha256(packed).hexdigest(),
+                    manifest={'entries':{},'excluded':[]}, encrypted_content=encrypted_point,
+                    stored_bytes=len(encrypted_point),source_bytes=source_point['bytes']))
             backup = folder / 'platform.dump'
             with backup.open('wb') as output:
                 run('docker', 'exec', name, 'pg_dump', '-U', 'postgres', '-Fc', source_db, stdout=output)
@@ -113,6 +126,9 @@ def main():
                 assert db.get(CapacityAccount, env_id).plan == {'id':'basic', 'storage_gib':4, 'application_limit':5}
                 encrypted = db.query(ModelCredential).filter_by(issuer='drill', subject=suffix).one().encrypted_key
                 assert Fernet(key_backup.read_bytes()).decrypt(encrypted.encode()) == b'synthetic-model-key'
+                point = unpack(db.get(ProjectVersion,point_id),SimpleNamespace(model_credential_encryption_key=key_backup.read_bytes().decode()))
+                restore(WorkspaceFiles(str(restored)),'source-history',point,str(uuid4()),'local-drill-token-' + suffix * 3)
+                assert (restored/'source-history'/'main.py').read_bytes() == fixture['src/main.py']
                 restored_revision = db.execute(text('select version_num from alembic_version')).scalar_one()
             with engine.connect() as db:
                 assert restored_revision == db.execute(text('select version_num from alembic_version')).scalar_one()
@@ -121,6 +137,7 @@ def main():
             result = {'status':'passed', 'scope':'synthetic_local_only', 'files_verified':len(fixture),
                 'schema_revision':restored_revision, 'identity_and_entitlements_restored':True,
                 'separate_key_decryption_verified':True, 'original_not_overwritten':True,
+                'version_history_restored':True,
                 'database_backup_bytes':backup.stat().st_size, 'elapsed_seconds':round(time.monotonic()-started,2),
                 'limitations':['Not a live PV restore', 'Not an off-host backup', 'No production RPO/RTO established']}
             print(json.dumps(result, ensure_ascii=False))
