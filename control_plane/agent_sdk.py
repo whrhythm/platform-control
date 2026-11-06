@@ -58,6 +58,8 @@ class ProjectTool(ToolDefinition):
             'write replaces a complete UTF-8 file; supply its ETag to avoid overwriting concurrent edits. '
             'mkdir creates one directory. command runs in a NEW isolated Kata job with /project as cwd; '
             'shell variables and processes do not persist between calls, files do. Do not launch background servers. '
+            'The root filesystem including /tmp is read-only. Temporary files must use $TMPDIR '
+            '(/project/.cache/tmp, already created) or a project-relative .cache path. '
             'database requests the current project database (requires confirmation), databases checks its status; '
             'objects checks owner object storage. Wait until ready before command with connect_database/connect_objects. '
             'Never print or copy connection credentials to files or chat. '
