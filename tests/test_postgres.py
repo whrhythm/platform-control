@@ -163,6 +163,42 @@ def test_parallel_agent_submissions_create_one_task(postgres_harness, monkeypatc
             db.execute(delete(UserEnvironment).where(UserEnvironment.subject == 'agent-owner'))
 
 
+def test_acceptance_concurrent_writers_preserve_one_revision(postgres_harness, monkeypatch):
+    from test_agent_workbench import workspace, create
+    from control_plane.models import AgentTask, AgentPreference, AuditEvent
+    prepared = workspace.__wrapped__(postgres_harness, monkeypatch)
+    client, headers, base = prepared
+    task = create(prepared)
+    with client.session_factory.begin() as db:
+        db.get(AgentTask, task.id).status = 'completed'
+    url = base + '/tasks/' + task.id + '/acceptance'
+    value = {'revision': 0, 'goal': 'Synthetic concurrency test', 'criteria': [], 'note': ''}
+    def write(index):
+        return client.put(url, headers=headers, json={**value, 'note': str(index)}).status_code
+    try:
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            statuses = list(pool.map(write, range(6)))
+        assert statuses.count(200) == 1 and statuses.count(409) == 5
+        saved = client.get(url, headers=headers).json()
+        assert saved['revision'] == 1
+        retry = {key: saved[key] for key in ('goal', 'criteria', 'note')}
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            statuses = list(pool.map(lambda _: client.put(url, headers=headers,
+                json={**retry, 'revision': 0}).status_code, range(6)))
+        assert statuses == [200] * 6
+        with client.session_factory() as db:
+            audit = list(db.scalars(select(AuditEvent).where(AuditEvent.action == 'agent.acceptance.saved')))
+            assert len(audit) == 1
+    finally:
+        with client.session_factory.begin() as db:
+            db.execute(delete(AgentTask))
+            db.execute(delete(AgentPreference))
+            identifiers = select(UserEnvironment.id).where(UserEnvironment.subject.in_(('alice', 'bob')))
+            for model in (CapacityAccount, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id.in_(identifiers)))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.subject.in_(('alice', 'bob'))))
+
+
 def test_parallel_idempotency_creates_one_resource(postgres_harness):
     client, token = postgres_harness
     auth, path, project = setup_tenant(client, token)

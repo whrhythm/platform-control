@@ -2405,6 +2405,134 @@
         }
       }
     },
+    "/internal/v1/workspace/agent/tasks/{task_id}/acceptance": {
+      "get": {
+        "tags": [
+          "programming-workbench"
+        ],
+        "summary": "Get Acceptance",
+        "operationId": "get_acceptance_internal_v1_workspace_agent_tasks__task_id__acceptance_get",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "programming-workbench"
+        ],
+        "summary": "Put Acceptance",
+        "operationId": "put_acceptance_internal_v1_workspace_agent_tasks__task_id__acceptance_put",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptanceInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/agent/tasks/{task_id}/decision": {
       "post": {
         "tags": [
@@ -5325,6 +5453,42 @@
         ],
         "title": "AIPolicy"
       },
+      "AcceptanceInput": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          },
+          "goal": {
+            "type": "string",
+            "maxLength": 4000,
+            "title": "Goal"
+          },
+          "criteria": {
+            "items": {
+              "$ref": "#/components/schemas/Criterion"
+            },
+            "type": "array",
+            "maxItems": 12,
+            "title": "Criteria"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "goal",
+          "criteria",
+          "note"
+        ],
+        "title": "AcceptanceInput"
+      },
       "AccountInput": {
         "properties": {
           "username": {
@@ -6316,6 +6480,38 @@
           "revision"
         ],
         "title": "CredentialInput"
+      },
+      "Criterion": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+            "title": "Id"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Text"
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "passed",
+              "changes_requested"
+            ],
+            "title": "Result",
+            "default": "pending"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "text"
+        ],
+        "title": "Criterion"
       },
       "DatabaseDelete": {
         "properties": {

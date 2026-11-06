@@ -15,6 +15,7 @@ from .models import AgentPreference, AgentTask, AuditEvent, UserEnvironment, now
 from .settings import get_settings
 from .workspace_files import WorkspaceFiles
 from .workspace_gateway import call_files, own_environment
+from .task_acceptance import AcceptanceInput, acceptance_out, acceptance_summary, save_acceptance
 
 ACTIVE = ('queued', 'running', 'awaiting_approval', 'cancelling')
 TASK_REFERENCE = re.compile(r'^\[编程任务\]\(#starbridge-task-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\)$')
@@ -85,7 +86,7 @@ def task_out(task, settings):
     return {'id': task.id, 'conversation_id': task.conversation_id, 'config': task.config,
         'status': task.status, 'error_code': task.error_code, 'created_at': task.created_at,
         'updated_at': task.updated_at, 'events': events,
-        'pending': task.pending, 'cleanup': task.resources.get('cleanup')}
+        'pending': task.pending, 'cleanup': task.resources.get('cleanup'), 'acceptance': acceptance_summary(task)}
 
 
 def restore_task_messages(messages, db, environment_id, settings):
@@ -121,7 +122,7 @@ def restore_task_messages(messages, db, environment_id, settings):
     return restored
 
 
-def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *, request_prompt=None):
+def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *, request_prompt=None, user_request=None):
     env = own_environment(db, principal)
     if env.status == 'suspended':
         raise HTTPException(403, 'agent_account_suspended')
@@ -151,7 +152,8 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
         raise HTTPException(409, 'agent_task_active')
     config['quota'] = quotas
     task = AgentTask(environment_id=env.id, conversation_id=key, request_key=request_key, config=config,
-                     encrypted_prompt=seal(prompt, settings), encrypted_events=seal([], settings))
+                     encrypted_prompt=seal(prompt, settings), encrypted_events=seal([], settings),
+                     resources={'user_request': seal(user_request, settings)} if user_request else {})
     db.add(task)
     db.flush()
     append_event(db, task, settings, 'queued', text='任务已创建，等待编程执行器。')
@@ -223,6 +225,19 @@ def create_agent_router(principal_dependency):
         if task is None:
             raise HTTPException(404, 'agent_task_not_found')
         return env, task
+
+    @router.get('/tasks/{task_id}/acceptance', dependencies=[Depends(enabled)])
+    def get_acceptance(task_id: str, principal=Depends(principal_dependency), db=Depends(get_db)):
+        env = own_environment(db, principal)
+        task = db.scalar(select(AgentTask).where(AgentTask.id == task_id, AgentTask.environment_id == env.id))
+        if task is None:
+            raise HTTPException(404, 'agent_task_not_found')
+        return acceptance_out(task, get_settings())
+
+    @router.put('/tasks/{task_id}/acceptance', dependencies=[Depends(enabled)])
+    def put_acceptance(task_id: str, body: AcceptanceInput, principal=Depends(principal_dependency), db=Depends(get_db)):
+        env, task = owned(db, principal, task_id)
+        return save_acceptance(db, env, task, body, get_settings(), principal)
 
     @router.post('/tasks/{task_id}/decision', dependencies=[Depends(enabled)])
     def decide(task_id: str, body: DecisionInput, principal=Depends(principal_dependency), db=Depends(get_db)):

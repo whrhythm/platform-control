@@ -214,9 +214,11 @@ async def completions(request: Request, authorization: str = Header(default=''),
             if body.get('stream') is not True:
                 raise HTTPException(400, 'Programming requires streaming chat')
             from .agent_tasks import submit_task
+            from .task_acceptance import original_request
             task = submit_task(db, Principal(env.issuer, env.subject), settings, x_codechat_conversation,
                               agent_prompt(body.get('messages'), python_base=settings.workspace_python_base_image, workbench=True),
-                              actual_model, request_prompt=agent_prompt(original_messages, python_base=settings.workspace_python_base_image, workbench=True))
+                              actual_model, request_prompt=agent_prompt(original_messages, python_base=settings.workspace_python_base_image, workbench=True),
+                              user_request=original_request(original_messages))
             task_id = task.id
             db.rollback()
             await client.aclose()

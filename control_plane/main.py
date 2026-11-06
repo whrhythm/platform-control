@@ -52,6 +52,8 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation(request: Request, error: RequestValidationError):
+    if request.url.path.endswith('/acceptance'):
+        return JSONResponse(status_code=422, content={'detail': 'invalid_acceptance_input'})
     if request.url.path.startswith('/v1/admin/accounts') or request.url.path.endswith('/credential'):
         return JSONResponse(status_code=422, content={'detail':'invalid_account_or_credential_input'})
     return await request_validation_exception_handler(request, error)
