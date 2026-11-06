@@ -41,17 +41,19 @@ async function api(path,method='GET',body){
 }
 function filters(){return new URLSearchParams({status:$('filter-status').value,assignee:$('filter-person').value});}
 async function refresh(){
- const data=await api('/api/tickets?'+filters());rows=data.tickets;
+ const [data,latestPeople]=await Promise.all([api('/api/tickets?'+filters()),api('/api/members')]);rows=data.tickets;people=latestPeople;
+ const selected=$('filter-person').value;
+ const choices=people.filter(p=>p.role!=='viewer').map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+ $('filter-person').innerHTML='<option value="">全部负责人</option>'+choices;$('filter-person').value=selected;
+ $('ticket-assignee').innerHTML='<option value="">未分配</option>'+choices;
  $('count').textContent='当前筛选 '+rows.length+' 条'+(data.truncated?' · 仅显示前 500 条':'');
  $('stats').innerHTML=Object.entries(labels).map(([key,title])=>'<article class="panel"><div class="muted small">'+title+' · 当前筛选</div><div class="stat">'+rows.filter(r=>r.status===key).length+'</div></article>').join('');
  $('ticket-list').innerHTML=rows.map(r=>'<tr><td class="title"><div>'+esc(r.title)+'</div><div class="muted small">'+esc(r.id.slice(0,8))+'</div></td><td>'+esc(r.customer)+'</td><td>'+esc(people.find(p=>p.id===r.assignee)?.name||'未分配')+'</td><td><span class="badge">'+esc(labels[r.status])+'</span></td><td class="small">'+esc(new Date(r.updated_at*1000).toLocaleString())+'</td><td><button data-ticket="'+esc(r.id)+'">'+(me.role==='viewer'?'查看':'处理')+'</button></td></tr>').join('');
  $('empty').hidden=rows.length>0;
 }
 async function workspace(){
- me=await api('/api/me');people=await api('/api/members');$('identity').textContent=me.name+' · '+({owner:'管理员',agent:'处理人',viewer:'只读'}[me.role]);
+ me=await api('/api/me');$('identity').textContent=me.name+' · '+({owner:'管理员',agent:'处理人',viewer:'只读'}[me.role]);
  $('auth').hidden=true;$('workspace').hidden=false;$('logout').hidden=preview;$('new-ticket').hidden=me.role==='viewer';$('invite').hidden=$('export').hidden=me.role!=='owner';
- const choices=people.filter(p=>p.role!=='viewer').map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
- $('filter-person').innerHTML='<option value="">全部负责人</option>'+choices;$('ticket-assignee').innerHTML='<option value="">未分配</option>'+choices;
  await refresh();
 }
 function openTicket(row){
