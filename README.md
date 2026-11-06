@@ -18,6 +18,9 @@
 
 ## 文档
 
+- [星桥产品定位与体验设计](docs/product-design.md)：当前产品方向，以小团队业务应用为切入点；目标体验与已上线能力分别说明。
+- [星桥产品优化与验证路线图](docs/product-optimization-roadmap.md)：场景验证、原型、产品改造、持续使用与付费验证的阶段门槛。用户已恢复开发，第一批为现有发布体验改造。
+- [发布确认与交付说明](docs/delivery-experience.md)：第一批功能的使用方式、状态语义和验收边界。
 - [文件预览编辑、独立代码运行与用户管理手册](docs/space-editor-and-accounts-guide.md)
 - [代码运行套餐与生成文件保存规则](docs/code-execution-contract.md)
 - [代码运行额度与文件保存验收](docs/code-execution-acceptance-20261105.md)

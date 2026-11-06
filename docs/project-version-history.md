@@ -90,4 +90,4 @@ Windows 本机的 `npm run lighthouse` 在准备步骤被缺少 `rimraf` 命令�
 - ops 提交 `fa589f5` 已推送，两项 Argo CD Application 均为 Synced / Healthy。
 - 仅使用独立的 `qa-version-*` 和 `qa-recovered-*` 合成目录；恢复点通过页面删除，测试文件清理前核对完整内容和目录边界，不触及用户原工程。
 
-下一项是发布溯源：把构建实际使用的源码摘要、镜像摘要和线上应用版本关联起来。当前恢复源码不会自动回滚线上应用。Langflow 试点仍排在可靠性功能收口之后。
+后续发布溯源将把构建实际使用的源码摘要、镜像摘要和线上应用版本关联起来，纳入[产品优化路线图](product-optimization-roadmap.md)的 C3 阶段。当前恢复源码不会自动回滚线上应用。用户已恢复开发，先行完善[发布确认与交付说明](delivery-experience.md)；Langflow 需有持续使用及自动化需求证据后再评估，不自动进入下一阶段。
