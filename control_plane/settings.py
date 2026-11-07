@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     workspace_projects_limit: int = Field(default=100, ge=1, le=500)
     business_templates_enabled: bool = False
     ai_projects_enabled: bool = False
+    ai_trials_enabled: bool = False
+    ai_trials_limit: int = Field(default=50, ge=1, le=200)
+    ai_trials_output_limit: int = Field(default=4096, ge=256, le=16384)
     knowledge_enabled: bool = False
     knowledge_url: str = 'http://knowledge-api.knowledge.svc.cluster.local:8000'
     knowledge_service_token: str = ''

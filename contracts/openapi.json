@@ -2820,6 +2820,673 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects/{project_id}/trials": {
+      "get": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Listing",
+        "operationId": "listing_internal_v1_workspace_ai_projects__project_id__trials_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Create",
+        "operationId": "create_internal_v1_workspace_ai_projects__project_id__trials_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/control_plane__ai_trials__Create"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/draft/initialize": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Initialize",
+        "operationId": "initialize_internal_v1_workspace_ai_projects__project_id__draft_initialize_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Initialize"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/draft": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Update",
+        "operationId": "update_internal_v1_workspace_ai_projects__project_id__draft_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Update"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/trials/{trial_id}/prepare": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Prepare",
+        "operationId": "prepare_internal_v1_workspace_ai_projects__project_id__trials__trial_id__prepare_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Owner"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/trials/{trial_id}/confirm": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Confirm",
+        "operationId": "confirm_internal_v1_workspace_ai_projects__project_id__trials__trial_id__confirm_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Owner"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/trials/{trial_id}/resolve": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Resolve",
+        "operationId": "resolve_internal_v1_workspace_ai_projects__project_id__trials__trial_id__resolve_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/trials/{trial_id}/resolve": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Resolve By Id",
+        "operationId": "resolve_by_id_internal_v1_workspace_ai_projects_trials__trial_id__resolve_post",
+        "parameters": [
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/trials/{trial_id}/acceptance": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Accept",
+        "operationId": "accept_internal_v1_workspace_ai_projects__project_id__trials__trial_id__acceptance_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/control_plane__ai_trials__Acceptance"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/business-templates": {
       "get": {
         "tags": [
@@ -3218,7 +3885,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Acceptance"
+                "$ref": "#/components/schemas/control_plane__business_templates__Acceptance"
               }
             }
           }
@@ -6930,36 +7597,6 @@
         ],
         "title": "AIPolicy"
       },
-      "Acceptance": {
-        "properties": {
-          "source_sha256": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{64}$",
-            "title": "Source Sha256"
-          },
-          "checks": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 4,
-            "title": "Checks"
-          },
-          "revision": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Revision"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "source_sha256",
-          "checks",
-          "revision"
-        ],
-        "title": "Acceptance"
-      },
       "AcceptanceInput": {
         "properties": {
           "revision": {
@@ -7923,6 +8560,52 @@
         ],
         "title": "CapacityPlanOut"
       },
+      "Config": {
+        "properties": {
+          "instructions": {
+            "type": "string",
+            "maxLength": 32000,
+            "minLength": 1,
+            "title": "Instructions"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "temperature": {
+            "type": "number",
+            "maximum": 2.0,
+            "minimum": 0.0,
+            "title": "Temperature",
+            "default": 0
+          },
+          "max_output_tokens": {
+            "type": "integer",
+            "maximum": 16384.0,
+            "minimum": 256.0,
+            "title": "Max Output Tokens",
+            "default": 2048
+          },
+          "response_style": {
+            "type": "string",
+            "enum": [
+              "grounded",
+              "support"
+            ],
+            "title": "Response Style",
+            "default": "grounded"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "instructions",
+          "model"
+        ],
+        "title": "Config"
+      },
       "Confirmation": {
         "properties": {
           "native_owner_id": {
@@ -8383,6 +9066,25 @@
         ],
         "title": "Import"
       },
+      "Initialize": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "config": {
+            "$ref": "#/components/schemas/Config"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "config"
+        ],
+        "title": "Initialize"
+      },
       "MemberInput": {
         "properties": {
           "subject": {
@@ -8833,6 +9535,34 @@
           "resource_limit"
         ],
         "title": "QuotaInput"
+      },
+      "Resolve": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Message Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "conversation_id",
+          "message_id"
+        ],
+        "title": "Resolve"
       },
       "ResourceOut": {
         "properties": {
@@ -9580,6 +10310,31 @@
         ],
         "title": "TestOrderOut"
       },
+      "Update": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "config": {
+            "$ref": "#/components/schemas/Config"
+          },
+          "expected_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "config",
+          "expected_digest"
+        ],
+        "title": "Update"
+      },
       "UserEnvironmentOut": {
         "properties": {
           "id": {
@@ -9949,6 +10704,123 @@
           "native_owner_id"
         ],
         "title": "Create"
+      },
+      "control_plane__ai_trials__Acceptance": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Message Id"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed"
+            ],
+            "title": "Outcome"
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Note"
+          },
+          "transcript_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Transcript Digest"
+          },
+          "answer_checked": {
+            "type": "boolean",
+            "title": "Answer Checked"
+          },
+          "sources_checked": {
+            "type": "boolean",
+            "title": "Sources Checked"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "conversation_id",
+          "message_id",
+          "outcome",
+          "note",
+          "transcript_digest",
+          "answer_checked",
+          "sources_checked"
+        ],
+        "title": "Acceptance"
+      },
+      "control_plane__ai_trials__Create": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "expected_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Digest"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "request_id",
+          "expected_digest"
+        ],
+        "title": "Create"
+      },
+      "control_plane__business_templates__Acceptance": {
+        "properties": {
+          "source_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Source Sha256"
+          },
+          "checks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 4,
+            "title": "Checks"
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Revision"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "source_sha256",
+          "checks",
+          "revision"
+        ],
+        "title": "Acceptance"
       },
       "control_plane__business_templates__Create": {
         "properties": {

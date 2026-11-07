@@ -102,6 +102,52 @@ def test_ai_project_concurrent_retry_and_project_limit(postgres_harness, monkeyp
             db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
 
 
+def test_trials_concurrent_retry_and_draft_compare_and_swap(postgres_harness, monkeypatch):
+    from uuid import uuid4
+    from cryptography.fernet import Fernet
+    from control_plane.models import AIProjectBinding, AIProjectDraft, AIProjectTrial, AITrialSession, AITrialRun, WorkspaceProject, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
+    for key, value in {'PLATFORM_AI_PROJECTS_ENABLED':'true', 'PLATFORM_AI_TRIALS_ENABLED':'true',
+        'PLATFORM_AI_TRIALS_LIMIT':'2', 'PLATFORM_LITELLM_MODELS':'test-model', 'PLATFORM_CAPABILITY_CHAT_MODEL':'test-model',
+        'PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY':Fernet.generate_key().decode()}.items():
+        monkeypatch.setenv(key, value)
+    get_settings.cache_clear()
+    owner = {'native_owner_id':'a'*24}
+    base = '/internal/v1/workspace/ai-projects'
+    created = client.post(base, headers=auth, json={**owner, 'request_id':str(uuid4()), 'name':'Concurrent trial', 'purpose':'Test'}).json()
+    identifier = created['project']['id']
+    path = base+'/'+identifier
+    try:
+        client.post(path+'/confirm', headers=auth, json={**owner, 'agent_id':created['agent_id']})
+        config = {'instructions':'original', 'model':'test-model', 'temperature':0, 'max_output_tokens':512, 'response_style':'grounded'}
+        initial = client.post(path+'/draft/initialize', headers=auth, json={**owner, 'config':config}).json()
+        body = {**owner, 'request_id':str(uuid4()), 'expected_digest':initial['digest']}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            responses = list(pool.map(lambda _:client.post(path+'/trials', headers=auth, json=body), range(8)))
+        assert all(r.status_code == 200 for r in responses)
+        assert len({r.json()['id'] for r in responses}) == 1
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            responses = list(pool.map(lambda _:client.post(path+'/trials', headers=auth, json={**body, 'request_id':str(uuid4())}), range(8)))
+        assert [r.status_code for r in responses].count(200) == 1
+        assert [r.status_code for r in responses].count(409) == 7
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(pool.map(lambda n:client.post(path+'/draft', headers=auth, json={**owner,
+                'expected_digest':initial['digest'], 'config':{**config, 'instructions':'changed '+str(n)}}), range(2)))
+        assert sorted(r.status_code for r in responses) == [200, 409]
+    finally:
+        with client.session_factory.begin() as db:
+            db.execute(delete(AITrialRun).where(AITrialRun.trial_id.in_(select(AIProjectTrial.id).where(AIProjectTrial.project_id == identifier))))
+            db.execute(delete(AITrialSession).where(AITrialSession.environment_id == env_id))
+            db.execute(delete(AIProjectTrial).where(AIProjectTrial.environment_id == env_id))
+            db.execute(delete(AIProjectDraft).where(AIProjectDraft.project_id == identifier))
+            for model in (AIProjectBinding, WorkspaceProject, StorageMeasurement, CapacityAccount,
+                          WorkspaceFileService, WorkspaceVolumeBinding, WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id == env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id == env_id))
+
+
 def test_parallel_source_recovery_points_respect_user_limit(postgres_harness, monkeypatch):
     import httpx
     from cryptography.fernet import Fernet

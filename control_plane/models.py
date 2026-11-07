@@ -429,6 +429,46 @@ class AIProjectBinding(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AIProjectDraft(Base):
+    __tablename__ = 'ai_project_drafts'
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    encrypted_config: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AIProjectTrial(Base):
+    __tablename__ = 'ai_project_trials'
+    __table_args__ = (UniqueConstraint('project_id', 'request_id'), UniqueConstraint('project_id', 'number'))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), index=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    number: Mapped[int] = mapped_column(Integer)
+    digest: Mapped[str] = mapped_column(String(64))
+    encrypted_snapshot: Mapped[str] = mapped_column(Text)
+    knowledge_revision_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    state: Mapped[str] = mapped_column(String(24), default='preparing')
+    encrypted_acceptance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AITrialSession(Base):
+    __tablename__ = 'ai_trial_sessions'
+    conversation_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    trial_id: Mapped[str] = mapped_column(ForeignKey('ai_project_trials.id'), index=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AITrialRun(Base):
+    __tablename__ = 'ai_trial_runs'
+    message_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    conversation_id: Mapped[str] = mapped_column(ForeignKey('ai_trial_sessions.conversation_id'), index=True)
+    trial_id: Mapped[str] = mapped_column(ForeignKey('ai_project_trials.id'), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ProjectKnowledge(Base):
     __tablename__ = 'project_knowledge'
     __table_args__ = (UniqueConstraint('project_id', 'request_id', name='uq_knowledge_request'),)
