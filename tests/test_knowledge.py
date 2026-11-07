@@ -135,3 +135,54 @@ def test_source_limits_and_deterministic_logical_bytes():
     assert source == len(files[0]['content'].encode()) and index > 512*4*len(chunks)
     with pytest.raises(ValueError):
         prepare(files, max_chunks=1)
+
+
+def test_search_rechecks_removal_and_never_queries_foreign_identity(versions, monkeypatch):
+    client, auth, project = initialized(versions, monkeypatch)
+    url = PREFIX+'/'+project+'/knowledge'
+    row = client.post(url, headers=auth, json={'request_id': str(uuid4()), 'native_owner_id': OWNER,
+        'files': [{'name': 'policy.md', 'content': 'Synthetic seven day policy'}]}).json()
+    run_once(client.session_factory, get_settings(), Store())
+    calls = []
+
+    class SearchStore:
+        def __init__(self, settings):
+            pass
+
+        def call(self, method, scope, revision, payload, **kwargs):
+            calls.append((scope, revision))
+            with client.session_factory() as db:
+                saved = db.get(ProjectKnowledge, revision)
+                saved.state = 'deleting'
+                db.commit()
+            return {'sources': [{'content': 'must not escape after removal'}]}
+
+    monkeypatch.setattr('control_plane.knowledge.KnowledgeClient', SearchStore)
+    body = {'native_owner_id': OWNER, 'query': 'policy'}
+    assert client.post(url+'/search', headers={**auth, 'X-CodeChat-Subject': 'foreign'}, json=body).status_code == 404
+    assert client.post(url+'/search', headers=auth, json={**body, 'native_owner_id': 'b'*24}).status_code == 403
+    assert calls == []
+    result = client.post(url+'/search', headers=auth, json=body)
+    assert result.status_code == 409
+    assert 'must not escape' not in result.text
+    assert calls == [(project, row['id'])]
+
+
+def test_late_retry_cannot_rewind_newer_active_knowledge(versions, monkeypatch):
+    client, auth, project = initialized(versions, monkeypatch)
+    url = PREFIX+'/'+project+'/knowledge'
+    store = Store()
+    def create(content):
+        return client.post(url, headers=auth, json={'request_id': str(uuid4()), 'native_owner_id': OWNER,
+            'files': [{'name': 'policy.md', 'content': content}]}).json()['id']
+    old = create('old policy')
+    store.fail = True
+    run_once(client.session_factory, get_settings(), store)
+    new = create('new policy')
+    store.fail = False
+    run_once(client.session_factory, get_settings(), store)
+    assert client.post(url+'/'+old+'/retry', headers=auth).status_code == 200
+    run_once(client.session_factory, get_settings(), store)
+    listing = client.get(url, headers=auth).json()
+    assert listing['active_revision_id'] == new
+    assert all(r['state'] == 'ready' for r in listing['revisions'])
