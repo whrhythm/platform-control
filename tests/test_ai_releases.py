@@ -159,3 +159,18 @@ def test_upstream_failure_retains_unknown_cost_without_replay(versions,monkeypat
     with client.session_factory() as db:
         row=db.scalar(select(AIAppCall))
         assert row.state==state and bool(row.held_micros)==held
+
+
+def test_application_budget_is_terminal_before_any_provider_request(versions,monkeypatch):
+    client,_,payload,runtime=sponsored(versions,monkeypatch)
+    from control_plane.models import AIApplication
+    with client.session_factory.begin() as db:
+        db.scalar(select(AIApplication)).budget_micros=1000
+    def forbidden(**kwargs):
+        pytest.fail('Insufficient application budget must never contact the provider')
+    monkeypatch.setattr('control_plane.ai_sponsor.httpx.AsyncClient',forbidden)
+    response=client.post('/agent/app/v1/chat/completions',headers={'Authorization':'Bearer '+runtime['credential']},json=payload)
+    assert response.status_code==402
+    assert response.headers['x-should-retry']=='false'
+    assert response.json()['error']['code']=='ai_releases_budget_exhausted'
+    with client.session_factory() as db:assert list(db.scalars(select(AIAppCall)))==[]

@@ -8,7 +8,7 @@ import httpx
 import jwt
 from cryptography.fernet import Fernet
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from .ai_releases import entry_access, enabled
@@ -134,7 +134,15 @@ async def completion(request: Request, authorization: str = Header(default=''), 
             raise ValueError()
     except ValueError:
         raise HTTPException(400, 'ai_releases_invalid_request') from None
-    identifier, engine, key, payload = admission(db, claims, body, settings)
+    try:
+        identifier, engine, key, payload = admission(db, claims, body, settings)
+    except HTTPException as exc:
+        if exc.detail == 'ai_releases_budget_exhausted':
+            # A hard application budget is not transient provider rate limiting.
+            return JSONResponse(status_code=402, headers={'x-should-retry':'false'}, content={
+                'error':{'code':exc.detail, 'type':'insufficient_quota',
+                    'message':'应用预算不足。请联系创建者调整预算或补充模型额度后再试；本次未发起模型调用。'}})
+        raise
     remaining = max(0.1, claims['exp']-now().timestamp())
     client = httpx.AsyncClient(timeout=httpx.Timeout(remaining, connect=min(10,remaining)), trust_env=False)
     try:
