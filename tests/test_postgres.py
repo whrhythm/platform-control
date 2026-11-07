@@ -129,6 +129,44 @@ def test_parallel_source_recovery_points_respect_user_limit(postgres_harness, mo
             db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
 
 
+def test_knowledge_parallel_imports_reserve_once_and_enforce_capacity(postgres_harness, monkeypatch):
+    import httpx
+    from uuid import uuid4
+    from cryptography.fernet import Fernet
+    from control_plane.models import AIProjectBinding, WorkspaceProject, ProjectKnowledge, StorageMeasurement, WorkspaceFileService
+    from control_plane.knowledge_format import prepare
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, observed, _ = prepare_capacity(client, monkeypatch)
+    for name, value in [('AI_PROJECTS_ENABLED','true'), ('KNOWLEDGE_ENABLED','true'),
+        ('LITELLM_MODELS','test-model'), ('CAPABILITY_CHAT_MODEL','test-model'),
+        ('MODEL_CREDENTIAL_ENCRYPTION_KEY',Fernet.generate_key().decode())]:
+        monkeypatch.setenv('PLATFORM_'+name,value)
+    get_settings.cache_clear()
+    source=[{'name':'policy.md','content':'合成七天政策'}]
+    _, size, index, _ = prepare(source)
+    observed['used_bytes']=2*1024**3-size-index
+    monkeypatch.setattr('control_plane.knowledge.call_files',lambda *a,**kw:httpx.Response(200,json=observed))
+    url='/internal/v1/workspace/ai-projects'
+    try:
+        created=client.post(url,headers=auth,json={'request_id':str(uuid4()),'name':'知识并发','purpose':'测试','native_owner_id':'a'*24}).json()
+        project=created['project']['id']
+        client.post(url+'/'+project+'/confirm',headers=auth,json={'agent_id':created['agent_id'],'native_owner_id':'a'*24})
+        path=url+'/'+project+'/knowledge'
+        payload={'request_id':str(uuid4()),'files':source,'native_owner_id':'a'*24}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results=list(pool.map(lambda _:client.post(path,headers=auth,json=payload),range(8)))
+        assert all(r.status_code==202 for r in results), [r.text for r in results]
+        assert len({r.json()['id'] for r in results})==1
+        assert client.post(path,headers=auth,json={**payload,'request_id':str(uuid4())}).status_code==507
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (ProjectKnowledge,AIProjectBinding,WorkspaceProject,StorageMeasurement,CapacityAccount,
+                          WorkspaceFileService,WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id==env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
+
+
 def test_parallel_code_execution_reservations_are_bounded(postgres_harness, monkeypatch):
     from fastapi import HTTPException
     from sqlalchemy import delete

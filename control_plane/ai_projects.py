@@ -53,7 +53,7 @@ def create_router(principal_dependency):
 
     def output(settings, project, binding, *, initial=False):
         value = {'project': project_out(project, settings), 'agent_id': binding.agent_id,
-                 'state': binding.state, 'knowledge_state': 'not_configured'}
+                 'state': binding.state, 'knowledge_state': 'ready' if binding.knowledge_revision_id else 'not_configured'}
         if initial:
             value['initial_agent'] = unseal(binding.encrypted_initial, settings)
         return value

@@ -422,8 +422,31 @@ class AIProjectBinding(Base):
     request_id: Mapped[str] = mapped_column(String(36))
     native_owner_id: Mapped[str] = mapped_column(String(24))
     agent_id: Mapped[str] = mapped_column(String(80), unique=True)
+    knowledge_revision_id: Mapped[str | None] = mapped_column(String(36))
     state: Mapped[str] = mapped_column(String(24), default='preparing')
     encrypted_initial: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class ProjectKnowledge(Base):
+    __tablename__ = 'project_knowledge'
+    __table_args__ = (UniqueConstraint('project_id', 'request_id', name='uq_knowledge_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), index=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    digest: Mapped[str] = mapped_column(String(64))
+    encrypted_source: Mapped[str] = mapped_column(Text)
+    manifest: Mapped[list] = mapped_column(JSON)
+    source_bytes: Mapped[int] = mapped_column(BigInteger)
+    index_bytes: Mapped[int] = mapped_column(BigInteger)
+    chunks: Mapped[int] = mapped_column(Integer)
+    state: Mapped[str] = mapped_column(String(24), default='queued', index=True)
+    error_code: Mapped[str | None] = mapped_column(String(60))
+    lease_token: Mapped[str | None] = mapped_column(String(36))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 

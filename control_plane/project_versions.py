@@ -82,6 +82,9 @@ def create_router(principal_dependency):
         samples=sample_storage(db,env,observed)
         if samples['files'].status!='ok':raise HTTPException(503,'versions_usage_unavailable')
         used=sum(max(0,item.used_bytes or 0) for item in samples.values())+version_usage(db,env.id)
+        if settings.knowledge_enabled:
+            from .knowledge import knowledge_usage
+            used += knowledge_usage(db, env.id)
         account=db.get(CapacityAccount,env.id)
         budget=(account.plan['storage_gib'] if account else env.storage_gib)*1024**3
         if used+additional>budget:raise HTTPException(507,'versions_storage_full')

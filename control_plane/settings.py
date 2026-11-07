@@ -12,6 +12,16 @@ class Settings(BaseSettings):
     workspace_projects_limit: int = Field(default=100, ge=1, le=500)
     business_templates_enabled: bool = False
     ai_projects_enabled: bool = False
+    knowledge_enabled: bool = False
+    knowledge_url: str = 'http://knowledge-api.knowledge.svc.cluster.local:8000'
+    knowledge_service_token: str = ''
+    knowledge_file_limit: int = Field(default=10, ge=1, le=10)
+    knowledge_file_bytes: int = Field(default=1048576, ge=1024, le=1048576)
+    knowledge_chunk_limit: int = Field(default=4000, ge=1, le=4000)
+    knowledge_revision_limit: int = Field(default=20, ge=1, le=100)
+    knowledge_request_seconds: int = Field(default=180, ge=10, le=300)
+    knowledge_query_seconds: int = Field(default=20, ge=1, le=60)
+    knowledge_poll_seconds: int = Field(default=3, ge=1, le=30)
     project_versions_limit: int = Field(default=20, ge=1, le=100)
     code_execution_enabled: bool = False
     code_execution_url: str = 'http://codeapi-api.codeapi.svc.cluster.local:3112/v1/'

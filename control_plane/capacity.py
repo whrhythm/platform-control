@@ -105,7 +105,7 @@ class CapacityOrderOut(BaseModel):
 
 
 class StorageComponentOut(BaseModel):
-    component: Literal['files', 'database', 'objects', 'images', 'app_volumes', 'versions']
+    component: Literal['files', 'database', 'objects', 'images', 'app_volumes', 'versions', 'knowledge']
     budget_bytes: int | None
     used_bytes: int | None
     observed_at: datetime | None
@@ -296,6 +296,11 @@ def create_router(principal_dependency):
         fresh = [row for row in samples.values() if row.status == 'ok' and row.used_bytes is not None]
         complete = len(fresh) == len(COMPONENTS)
         version_bytes = 0
+        from .knowledge import knowledge_usage
+        knowledge_bytes = knowledge_usage(db, env.id) if settings.knowledge_enabled else 0
+        if settings.knowledge_enabled:
+            components.append({'component': 'knowledge', 'budget_bytes': None, 'used_bytes': knowledge_bytes,
+                'observed_at': now(), 'status': 'ok', 'basis': 'source_index_and_pending_reservations', 'scope_id': env.id})
         if settings.project_versions_enabled:
             from .project_versions import version_usage
             version_bytes = version_usage(db, env.id)
@@ -331,7 +336,7 @@ def create_router(principal_dependency):
             # Service-specific caps are sub-limits, not additional purchased storage.
             'storage': {'budget_bytes': account.plan['storage_gib'] * GIB,
                 'pending_capacity_bytes': max(0, (active.plan['storage_gib'] - env.storage_gib) * GIB) if active else 0,
-                'known_used_bytes': sum(row.used_bytes for row in fresh) + version_bytes if fresh or settings.project_versions_enabled else None,
+                'known_used_bytes': sum(row.used_bytes for row in fresh) + version_bytes + knowledge_bytes if fresh or settings.project_versions_enabled or settings.knowledge_enabled else None,
                 'complete': complete, 'budget_complete': True,
                 'components': components}}
         db.commit()
