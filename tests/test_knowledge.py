@@ -78,11 +78,17 @@ def test_intents_recovery_scopes_deletion_and_metering(versions, monkeypatch):
     listing = client.get(url, headers=auth).json()
     assert listing['active_revision_id'] == row['id']
     assert store.puts == 1  # Verified committed result; no duplicate embedding after lost reply.
+    source_url = url+'/'+row['id']+'/source'
+    source = client.get(source_url, headers=auth, params={'name':'政策.md'})
+    assert source.status_code == 200 and source.json()['content'] == payload['files'][0]['content']
+    assert client.get(source_url, headers={**auth,'X-CodeChat-Subject':'foreign'}, params={'name':'政策.md'}).status_code == 404
+    assert client.get(source_url, headers=auth, params={'name':'../policy.md'}).status_code == 404
     capacity = client.get('/internal/v1/workspace/capacity', headers=auth).json()
     assert next(c for c in capacity['storage']['components'] if c['component']=='knowledge')['used_bytes'] == used
     # Removal hides the active revision immediately but retains capacity until confirmed cleanup.
     client.post(url+'/'+row['id']+'/remove', headers=auth)
     assert client.get(url, headers=auth).json()['active_revision_id'] is None
+    assert client.get(source_url, headers=auth, params={'name':'政策.md'}).status_code == 404
     store.fail = True
     run_once(client.session_factory, get_settings(), store)
     with client.session_factory() as db:

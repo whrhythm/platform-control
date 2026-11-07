@@ -2,7 +2,7 @@
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 
@@ -188,5 +188,17 @@ def create_router(principal_dependency):
         if row.state != 'ready':
             raise HTTPException(409, 'knowledge_revision_changed')
         return {'revision_id': identifier, 'digest': digest, 'sources': result['sources']}
+
+    @router.get('/{project_id}/knowledge/{revision_id}/source')
+    def source(project_id: UUID, revision_id: UUID, name: str = Query(min_length=1, max_length=124),
+               principal=Depends(principal_dependency), db=Depends(get_db)):
+        _, _, settings = owned(db, principal, project_id)
+        row = db.get(ProjectKnowledge, str(revision_id))
+        if not row or row.project_id != str(project_id) or row.state != 'ready':
+            raise HTTPException(404, 'knowledge_not_found')
+        for file in unseal(row.encrypted_source, settings):
+            if file['name'] == name:
+                return {'name': name, 'content': file['content'], 'revision_id': row.id, 'digest': row.digest}
+        raise HTTPException(404, 'knowledge_not_found')
 
     return router
