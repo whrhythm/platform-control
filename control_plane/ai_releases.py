@@ -43,6 +43,10 @@ class Search(Owner):
     query: str = Field(min_length=1, max_length=2000)
 
 
+class Revoke(Owner):
+    native_id: str = Field(pattern=r'^[0-9a-f]{24}$')
+
+
 def enabled():
     settings = get_settings()
     if not settings.ai_releases_enabled:
@@ -219,6 +223,19 @@ def create_router(principal_dependency):
             raise HTTPException(409, 'ai_releases_member_unavailable')
         row.enabled = body.enabled
         audit(db, env, principal, 'member_enabled' if body.enabled else 'member_revoked', body.native_id)
+        db.commit()
+        return detail(db, project_id, settings)
+
+    @router.post('/{project_id}/members/revoke')
+    def revoke(project_id: UUID, body: Revoke, principal=Depends(principal_dependency), db=Depends(get_db)):
+        settings = enabled()
+        env, _ = owner(db, principal, project_id, body.native_owner_id)
+        row = db.scalar(select(AIAppMember).where(AIAppMember.project_id == str(project_id),
+            AIAppMember.native_id == body.native_id))
+        if not row:
+            raise HTTPException(404, 'ai_releases_member_unavailable')
+        row.enabled = False
+        audit(db, env, principal, 'member_revoked', body.native_id)
         db.commit()
         return detail(db, project_id, settings)
 
