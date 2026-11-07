@@ -69,6 +69,54 @@ def trial_agent_id(identifier):
     return 'agent_trial_' + UUID(identifier).hex
 
 
+def snapshot(db, binding, config, settings):
+    revision = db.get(ProjectKnowledge, binding.knowledge_revision_id) if binding.knowledge_revision_id else None
+    if binding.knowledge_revision_id and (not settings.knowledge_enabled or not revision or revision.state != 'ready'):
+        raise HTTPException(409, 'ai_trials_knowledge_unavailable')
+    return AgentSnapshot(instructions=config.instructions,
+        model=ModelRevision(provider='LiteLLM', model=config.model,
+            # This identifies the configured gateway route, not an immutable provider model build.
+            route_revision=sha256(settings.litellm_url.encode()).hexdigest(),
+            temperature=config.temperature, max_output_tokens=config.max_output_tokens),
+        skills=(SkillRevision(skill_id=config.response_style, revision='1', content=STYLES[config.response_style]),),
+        knowledge=(KnowledgeRevision(collection_id=binding.project_id,
+            file_id='collection:'+revision.id, file_digest=revision.digest,
+            index_revision=revision.id, index_digest=revision.digest, grant_id=binding.project_id),) if revision else (),
+        tools=(ToolRevision(tool_id='file_search', definition_digest=sha256(b'project-file-search-v1').hexdigest(),
+            grant_id=binding.project_id),) if revision else ())
+
+
+def config_allowed(db, config, settings):
+    if config.model not in effective_policy(db, settings)['allowed_models']:
+        raise HTTPException(409, 'ai_trials_model_unavailable')
+    if config.max_output_tokens > settings.ai_trials_output_limit:
+        raise HTTPException(409, 'ai_trials_output_limit')
+
+
+def draft_snapshot(db, binding, settings):
+    draft = db.get(AIProjectDraft, binding.project_id)
+    if not draft:
+        raise HTTPException(409, 'ai_trials_draft_required')
+    config = Config.model_validate(unseal(draft.encrypted_config, settings))
+    return draft, config, snapshot(db, binding, config, settings)
+
+
+def usable(db, row, settings):
+    snap = AgentSnapshot.model_validate(unseal(row.encrypted_snapshot, settings))
+    if (snap.model.model not in effective_policy(db, settings)['allowed_models'] or
+            snap.model.route_revision != sha256(settings.litellm_url.encode()).hexdigest()):
+        raise HTTPException(409, 'ai_trials_model_unavailable')
+    if snap.model.max_output_tokens > settings.ai_trials_output_limit:
+        raise HTTPException(409, 'ai_trials_output_limit')
+    if row.knowledge_revision_id:
+        revision = db.get(ProjectKnowledge, row.knowledge_revision_id)
+        if (not settings.knowledge_enabled or not revision or revision.project_id != row.project_id or
+                revision.environment_id != row.environment_id or revision.state != 'ready' or
+                revision.digest != snap.knowledge[0].index_digest):
+            raise HTTPException(409, 'ai_trials_knowledge_unavailable')
+    return snap
+
+
 def create_router(principal_dependency):
     router = APIRouter(prefix='/internal/v1/workspace/ai-projects', tags=['ai-trials'])
 
@@ -90,35 +138,6 @@ def create_router(principal_dependency):
     def audit(db, env, principal, action, identifier):
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer,
             subject=principal.subject, action='ai_trial.'+action, target_id=identifier))
-
-    def snapshot(db, binding, config, settings):
-        revision = db.get(ProjectKnowledge, binding.knowledge_revision_id) if binding.knowledge_revision_id else None
-        if binding.knowledge_revision_id and (not settings.knowledge_enabled or not revision or revision.state != 'ready'):
-            raise HTTPException(409, 'ai_trials_knowledge_unavailable')
-        return AgentSnapshot(instructions=config.instructions,
-            model=ModelRevision(provider='LiteLLM', model=config.model,
-                # This identifies the configured gateway route, not an immutable provider model build.
-                route_revision=sha256(settings.litellm_url.encode()).hexdigest(),
-                temperature=config.temperature, max_output_tokens=config.max_output_tokens),
-            skills=(SkillRevision(skill_id=config.response_style, revision='1', content=STYLES[config.response_style]),),
-            knowledge=(KnowledgeRevision(collection_id=binding.project_id,
-                file_id='collection:'+revision.id, file_digest=revision.digest,
-                index_revision=revision.id, index_digest=revision.digest, grant_id=binding.project_id),) if revision else (),
-            tools=(ToolRevision(tool_id='file_search', definition_digest=sha256(b'project-file-search-v1').hexdigest(),
-                grant_id=binding.project_id),) if revision else ())
-
-    def config_allowed(db, config, settings):
-        if config.model not in effective_policy(db, settings)['allowed_models']:
-            raise HTTPException(409, 'ai_trials_model_unavailable')
-        if config.max_output_tokens > settings.ai_trials_output_limit:
-            raise HTTPException(409, 'ai_trials_output_limit')
-
-    def draft_snapshot(db, binding, settings):
-        draft = db.get(AIProjectDraft, binding.project_id)
-        if not draft:
-            raise HTTPException(409, 'ai_trials_draft_required')
-        config = Config.model_validate(unseal(draft.encrypted_config, settings))
-        return draft, config, snapshot(db, binding, config, settings)
 
     def trial_out(row, settings, current_digest=None):
         accepted = unseal(row.encrypted_acceptance, settings) if row.encrypted_acceptance else None
@@ -212,21 +231,6 @@ def create_router(principal_dependency):
         if not row or row.project_id != binding.project_id or row.environment_id != env.id:
             raise HTTPException(404, 'ai_trials_not_found')
         return env, binding, settings, row
-
-    def usable(db, row, settings):
-        snap = AgentSnapshot.model_validate(unseal(row.encrypted_snapshot, settings))
-        if (snap.model.model not in effective_policy(db, settings)['allowed_models'] or
-                snap.model.route_revision != sha256(settings.litellm_url.encode()).hexdigest()):
-            raise HTTPException(409, 'ai_trials_model_unavailable')
-        if snap.model.max_output_tokens > settings.ai_trials_output_limit:
-            raise HTTPException(409, 'ai_trials_output_limit')
-        if row.knowledge_revision_id:
-            revision = db.get(ProjectKnowledge, row.knowledge_revision_id)
-            if (not settings.knowledge_enabled or not revision or revision.project_id != row.project_id or
-                    revision.environment_id != row.environment_id or revision.state != 'ready' or
-                    revision.digest != snap.knowledge[0].index_digest):
-                raise HTTPException(409, 'ai_trials_knowledge_unavailable')
-        return snap
 
     @router.post('/{project_id}/trials/{trial_id}/prepare')
     def prepare(project_id: UUID, trial_id: UUID, body: Owner, principal=Depends(principal_dependency), db=Depends(get_db)):

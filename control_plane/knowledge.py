@@ -161,6 +161,12 @@ def create_router(principal_dependency):
         if not row or row.project_id != str(project_id):
             raise HTTPException(404, 'knowledge_not_found')
         if row.state not in ('deleted', 'deleting'):
+            from .models import AIApplication, AIRelease, AIProjectTrial
+            referenced = db.scalar(select(AIRelease.id).join(AIApplication, AIRelease.project_id == AIApplication.project_id)
+                .join(AIProjectTrial, AIRelease.trial_id == AIProjectTrial.id)
+                .where(AIApplication.enabled.is_(True), AIProjectTrial.knowledge_revision_id == row.id))
+            if referenced:
+                raise HTTPException(409, 'knowledge_release_in_use')
             if binding.knowledge_revision_id == row.id:
                 binding.knowledge_revision_id = None
             row.state, row.updated_at, row.lease_token, row.lease_until = 'deleting', now(), None, None

@@ -50,6 +50,51 @@ def postgres_harness(harness, monkeypatch):
     get_settings.cache_clear()
 
 
+def test_application_budget_concurrent_admission(postgres_harness, monkeypatch):
+    from cryptography.fernet import Fernet
+    from fastapi import HTTPException
+    from control_plane.models import (AIApplication, AIRelease, AIAppMember, AIAppEntry, AIAppRun, AIAppCall,
+        AIProjectTrial, AITrialSession, AITrialRun, AIProjectDraft, AIProjectBinding, WorkspaceProject,
+        ModelCredential, AIConfiguration, StorageMeasurement, WorkspaceFileService)
+    from control_plane.ai_sponsor import admission
+    from test_capacity import prepare_capacity
+    from test_ai_releases import sponsored
+    client, _ = postgres_harness
+    _, auth, env_id, *_ = prepare_capacity(client, monkeypatch)
+    monkeypatch.setenv('PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY', Fernet.generate_key().decode())
+    get_settings.cache_clear()
+    try:
+        client, claims, payload, _ = sponsored((client,auth,env_id,None,None),monkeypatch)
+        with client.session_factory() as db:
+            identifier, _, _, _ = admission(db,claims,payload,get_settings())
+            call=db.get(AIAppCall,identifier)
+            db.get(AIApplication,call.project_id).budget_micros=call.reserved_micros+100
+            db.delete(call)
+            db.commit()
+        def attempt(i):
+            with client.session_factory() as db:
+                try:
+                    admission(db,claims,{**payload,'messages':[{'role':'user','content':'q'+str(i)}]},get_settings())
+                    return 200
+                except HTTPException as error:
+                    return error.status_code
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            results=list(pool.map(attempt,range(8)))
+        assert results.count(200)==1 and results.count(429)==7
+        with client.session_factory() as db:
+            calls=list(db.scalars(select(AIAppCall)))
+            assert len(calls)==1
+            assert calls[0].held_micros<=db.get(AIApplication,calls[0].project_id).budget_micros
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (AIAppCall,AIAppRun,AIAppEntry,AIAppMember,AIRelease,AIApplication,AITrialRun,
+                          AITrialSession,AIProjectTrial,AIProjectDraft,AIProjectBinding,WorkspaceProject,
+                          ModelCredential,AIConfiguration,StorageMeasurement,CapacityAccount,WorkspaceFileService,
+                          WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
+                db.execute(delete(model))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
+
+
 def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):
     client, token = postgres_harness
     auth, path, project = setup_tenant(client, token)

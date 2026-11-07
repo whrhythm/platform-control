@@ -429,6 +429,70 @@ class AIProjectBinding(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class AIApplication(Base):
+    __tablename__ = 'ai_applications'
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), primary_key=True)
+    active_release_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    budget_micros: Mapped[int] = mapped_column(BigInteger)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class AIRelease(Base):
+    __tablename__ = 'ai_releases'
+    __table_args__ = (UniqueConstraint('project_id', 'request_id'), UniqueConstraint('project_id', 'number'))
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_applications.project_id'), index=True)
+    trial_id: Mapped[str] = mapped_column(ForeignKey('ai_project_trials.id'))
+    request_id: Mapped[str] = mapped_column(String(36))
+    number: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AIAppMember(Base):
+    __tablename__ = 'ai_app_members'
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_applications.project_id'), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), primary_key=True)
+    native_id: Mapped[str] = mapped_column(String(24))
+    encrypted_label: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class AIAppEntry(Base):
+    __tablename__ = 'ai_app_entries'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    release_id: Mapped[str] = mapped_column(ForeignKey('ai_releases.id'), index=True)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'))
+    native_id: Mapped[str] = mapped_column(String(24))
+    ready: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class AIAppRun(Base):
+    __tablename__ = 'ai_app_runs'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    entry_id: Mapped[str] = mapped_column(ForeignKey('ai_app_entries.id'))
+    conversation_id: Mapped[str] = mapped_column(String(36), index=True)
+    message_id: Mapped[str] = mapped_column(String(100), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class AIAppCall(Base):
+    __tablename__ = 'ai_app_calls'
+    __table_args__ = (UniqueConstraint('run_id', 'request_hash'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_applications.project_id'), index=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey('ai_app_runs.id'), index=True)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    state: Mapped[str] = mapped_column(String(24), default='reserved')
+    reserved_micros: Mapped[int] = mapped_column(BigInteger)
+    held_micros: Mapped[int] = mapped_column(BigInteger)
+    input_rate: Mapped[str] = mapped_column(String(40))
+    output_rate: Mapped[str] = mapped_column(String(40))
+    prompt_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    completion_tokens: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class AIProjectDraft(Base):
     __tablename__ = 'ai_project_drafts'
     project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), primary_key=True)

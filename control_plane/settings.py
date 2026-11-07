@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     business_templates_enabled: bool = False
     ai_projects_enabled: bool = False
     ai_trials_enabled: bool = False
+    ai_releases_enabled: bool = False
+    ai_releases_limit: int = Field(default=50, ge=1, le=200)
+    ai_releases_member_limit: int = Field(default=20, ge=1, le=100)
+    ai_releases_run_seconds: int = Field(default=120, ge=30, le=300)
+    ai_releases_steps: int = Field(default=4, ge=1, le=8)
+    ai_releases_input_bytes: int = Field(default=64000, ge=4096, le=128000)
     ai_trials_limit: int = Field(default=50, ge=1, le=200)
     ai_trials_output_limit: int = Field(default=4096, ge=256, le=16384)
     knowledge_enabled: bool = False

@@ -2711,7 +2711,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Search"
+                "$ref": "#/components/schemas/control_plane__knowledge__Search"
               }
             }
           }
@@ -3465,6 +3465,675 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/releases": {
+      "get": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Listing",
+        "operationId": "listing_internal_v1_workspace_ai_projects__project_id__releases_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Publish",
+        "operationId": "publish_internal_v1_workspace_ai_projects__project_id__releases_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Publish"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/access": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Access",
+        "operationId": "access_internal_v1_workspace_ai_projects__project_id__access_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AccessUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/members": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Member",
+        "operationId": "member_internal_v1_workspace_ai_projects__project_id__members_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Member"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/launch": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Launch",
+        "operationId": "launch_internal_v1_workspace_ai_projects__project_id__launch_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Owner"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/entries/{entry_id}/confirm": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Confirm",
+        "operationId": "confirm_internal_v1_workspace_ai_projects_entries__entry_id__confirm_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Owner"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/entries/{entry_id}/resolve": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Resolve",
+        "operationId": "resolve_internal_v1_workspace_ai_projects_entries__entry_id__resolve_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/entries/{entry_id}/search": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Search",
+        "operationId": "search_internal_v1_workspace_ai_projects_entries__entry_id__search_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/control_plane__ai_releases__Search"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/entries/{entry_id}/source": {
+      "get": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Source",
+        "operationId": "source_internal_v1_workspace_ai_projects_entries__entry_id__source_get",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 124,
+              "title": "Name"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/agent/app/v1/chat/completions": {
+      "post": {
+        "tags": [
+          "ai-sponsor"
+        ],
+        "summary": "Completion",
+        "operationId": "completion_agent_app_v1_chat_completions_post",
+        "parameters": [
+          {
+            "name": "authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Authorization"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -7633,6 +8302,39 @@
         ],
         "title": "AcceptanceInput"
       },
+      "AccessUpdate": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Expected Revision"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "budget_micros": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 1000.0,
+            "title": "Budget Micros"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "expected_revision",
+          "enabled",
+          "budget_micros"
+        ],
+        "title": "AccessUpdate"
+      },
       "AccountInput": {
         "properties": {
           "username": {
@@ -9085,6 +9787,46 @@
         ],
         "title": "Initialize"
       },
+      "Member": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "subject": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Subject"
+          },
+          "native_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Id"
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Label"
+          },
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "subject",
+          "native_id",
+          "label",
+          "enabled"
+        ],
+        "title": "Member"
+      },
       "MemberInput": {
         "properties": {
           "subject": {
@@ -9491,6 +10233,51 @@
           "created_at"
         ],
         "title": "ProjectOut"
+      },
+      "Publish": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "trial_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Trial Id"
+          },
+          "expected_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Digest"
+          },
+          "budget_micros": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": 1000.0,
+            "title": "Budget Micros"
+          },
+          "confirm_sponsor": {
+            "type": "boolean",
+            "title": "Confirm Sponsor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "request_id",
+          "trial_id",
+          "expected_digest",
+          "budget_micros",
+          "confirm_sponsor"
+        ],
+        "title": "Publish"
       },
       "QuotaInput": {
         "properties": {
@@ -9899,40 +10686,6 @@
           "policy"
         ],
         "title": "SavePolicy"
-      },
-      "Search": {
-        "properties": {
-          "native_owner_id": {
-            "type": "string",
-            "pattern": "^[0-9a-f]{24}$",
-            "title": "Native Owner Id"
-          },
-          "query": {
-            "type": "string",
-            "maxLength": 2000,
-            "minLength": 1,
-            "title": "Query"
-          },
-          "revision_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Revision Id"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "native_owner_id",
-          "query"
-        ],
-        "title": "Search"
       },
       "ServerInput": {
         "properties": {
@@ -10705,6 +11458,28 @@
         ],
         "title": "Create"
       },
+      "control_plane__ai_releases__Search": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "query"
+        ],
+        "title": "Search"
+      },
       "control_plane__ai_trials__Acceptance": {
         "properties": {
           "native_owner_id": {
@@ -10843,6 +11618,40 @@
           "name"
         ],
         "title": "Create"
+      },
+      "control_plane__knowledge__Search": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          },
+          "revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "query"
+        ],
+        "title": "Search"
       }
     },
     "securitySchemes": {
