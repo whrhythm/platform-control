@@ -87,6 +87,8 @@ def admission(db, claims, body, settings):
         stream=True, stream_options={'include_usage':True}, metadata={'actor_id':actor.identity_hash,
         'sponsor_id':sponsor.identity_hash, 'project_id':app.project_id, 'release_id':release.id,
         'app_call_id':call.id, 'purpose':'published_application'})
+    # LiteLLM retains custom attribution only inside its supported spend log field.
+    payload['metadata']['spend_logs_metadata'] = dict(payload['metadata'])
     identifier, engine = call.id, db.get_bind()
     db.commit()  # Never hold quota locks during provider I/O.
     return identifier, engine, key, payload

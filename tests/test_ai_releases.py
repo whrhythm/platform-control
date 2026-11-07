@@ -130,6 +130,7 @@ def test_sponsor_http_stream_uses_creator_key_strips_reasoning_and_stops_replay(
         assert request.headers['authorization']=='Bearer sk-synthetic-owner'
         outgoing=json.loads(request.content)
         assert outgoing['metadata']['app_call_id']
+        assert outgoing['metadata']['spend_logs_metadata']['app_call_id'] == outgoing['metadata']['app_call_id']
         return httpx.Response(200,text='data: '+json.dumps({'choices':[{'delta':{'content':'回答','reasoning_content':'private'}}]})+
             '\n\ndata: '+json.dumps({'choices':[],'usage':{'prompt_tokens':10,'completion_tokens':20}})+'\n\ndata: [DONE]\n\n')
     original=httpx.AsyncClient
