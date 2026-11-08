@@ -17,7 +17,7 @@ from .models import AgentTask, AuditEvent, WorkspaceProject, BusinessTemplate, P
 from .project_databases import ensure_database, public_database
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
-from .workspace_projects import active_workspace_project, public as project_out
+from .workspace_projects import active_workspace_project, create_project_root, public as project_out
 from .templates.support.app import password_hash
 
 ASSETS = Path(__file__).parent / 'templates' / 'support'
@@ -88,10 +88,19 @@ def create_router(principal_dependency):
         if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
                 WorkspaceProject.environment_id == env.id, active_workspace_project())) >= settings.workspace_projects_limit:
             raise HTTPException(409, 'templates_project_limit')
+        path = 'support-' + UUID(identifier).hex[:16]
+        if db.scalar(select(WorkspaceProject.id).where(
+                WorkspaceProject.environment_id == env.id, WorkspaceProject.project_path == path)):
+            raise HTTPException(409, 'templates_file_conflict')
+        try:
+            create_project_root(db, principal, settings, path, identifier, call_files)
+        except HTTPException as error:
+            code = 'templates_file_conflict' if error.detail == 'projects_root_exists' else 'templates_files_unavailable'
+            raise HTTPException(error.status_code, code) from None
         password = secrets.token_urlsafe(24)
         access = {'username': 'owner', 'password': password, 'password_hash': password_hash(password)}
         project = WorkspaceProject(id=identifier, environment_id=env.id,
-            project_path='support-' + UUID(identifier).hex[:16], name=body.name.strip(),
+            project_path=path, name=body.name.strip(),
             encrypted_goal=seal('登记、分配和跟进售后工单；邀请同事使用，修改应用后保留业务数据。', settings))
         db.add(project); db.flush()
         template = BusinessTemplate(project_id=identifier, template_id='support', version='1',

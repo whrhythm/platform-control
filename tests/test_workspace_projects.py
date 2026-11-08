@@ -19,21 +19,21 @@ def projects(versions, monkeypatch):
 
 
 def save(client, auth, **changes):
-    return client.put(PREFIX, headers=auth, json={'path': 'project', 'name': 'My project',
+    return client.put(PREFIX, headers=auth, json={'path': 'new-project', 'name': 'My project',
         'goal': 'Persist work', 'revision': 0, **changes})
 
 
 def test_associate_retry_update_conflict_preserves_files(projects):
     client, auth, env_id, root = projects
-    original = (root/'project'/'main.py').read_bytes()
     first = save(client, auth); assert first.status_code == 200, first.text
+    (root/'new-project'/'main.py').write_text('preserve source')
     value = first.json()
     assert save(client, auth).json() == value
     assert save(client, auth, goal='different').status_code == 409
     assert save(client, auth, goal='changed', revision=1).json()['revision'] == 2
     assert save(client, auth, goal='changed', revision=1).json()['revision'] == 2
     assert client.get(PREFIX, headers=auth).json()['projects'][0]['goal'] == 'changed'
-    assert (root/'project'/'main.py').read_bytes() == original
+    assert (root/'new-project'/'main.py').read_text() == 'preserve source'
     with client.session_factory() as db:
         assert 'changed' not in db.get(WorkspaceProject, value['id']).encrypted_goal
         assert len(list(db.scalars(select(AuditEvent).where(AuditEvent.action=='project.context.saved')))) == 2
@@ -43,9 +43,10 @@ def test_associate_retry_update_conflict_preserves_files(projects):
 def test_context_scopes_tasks_and_source_comparison(projects):
     client, auth, env_id, root = projects
     identifier = save(client, auth).json()['id']; url = PREFIX+'/'+identifier
+    (root/'new-project'/'main.py').write_text('before')
     settings = get_settings()
     with client.session_factory() as db:
-        for path in ('project', 'unrelated'):
+        for path in ('new-project', 'unrelated'):
             db.add(AgentTask(environment_id=env_id, conversation_id='test-conversation', request_key=path,
                 config={'project_path':path}, encrypted_prompt=seal('private prompt', settings),
                 encrypted_events=seal([],settings), status='completed', resources={
@@ -53,18 +54,18 @@ def test_context_scopes_tasks_and_source_comparison(projects):
                     'acceptance':{'revision':1,'counts':{'total':1,'pending':1,'passed':0,'changes_requested':0}}}))
         db.commit()
     context = client.get(url, headers=auth).json()
-    assert len(context['tasks']) == 1 and context['tasks'][0]['title'] == 'project goal'
+    assert len(context['tasks']) == 1 and context['tasks'][0]['title'] == 'new-project goal'
     assert 'private prompt' not in str(context)
     assert context['application'] is None
     observed = client.get(url+'/source', headers=auth).json()
     assert observed['state'] == 'unbound' and len(observed['source_sha256']) == 64
     with client.session_factory() as db:
-        db.add(UserApplication(environment_id=env_id, project_path='project',status='stopped',desired_state='stopped',
+        db.add(UserApplication(environment_id=env_id, project_path='new-project',status='stopped',desired_state='stopped',
             resources={'last_good':{'provenance':{'revision':'release-one','source_sha256':observed['source_sha256']}}}))
         db.commit()
     assert client.get(url+'/source',headers=auth).json()['state']=='same'
     assert client.get(url,headers=auth).json()['application']['status']=='stopped'
-    (root/'project'/'main.py').write_text('changed')
+    (root/'new-project'/'main.py').write_text('changed')
     changed=client.get(url+'/source', headers=auth).json()
     assert changed['source_sha256'] != observed['source_sha256'] and changed['state']=='changed'
 
@@ -72,7 +73,7 @@ def test_context_scopes_tasks_and_source_comparison(projects):
 def test_invalid_missing_path_and_foreign_project(projects):
     client, auth, env_id, _ = projects
     assert save(client, auth, path='../escape').status_code == 422
-    assert save(client, auth, path='missing').status_code == 404
+    assert save(client, auth, path='project').status_code == 409
     identifier = save(client, auth).json()['id']
     with client.session_factory() as db:
         env = db.get(UserEnvironment,env_id)
@@ -102,7 +103,7 @@ def test_typed_application_create_can_retry_but_cannot_adopt_another_binding(pro
     request_id = str(uuid4())
     for invalid in ('中文', 'UPPERCASE', 'nested/root'):
         assert save(client, auth, path=invalid, request_id=request_id).status_code == 400
-    assert save(client, auth, path='missing', request_id=request_id).status_code == 404
+    assert save(client, auth, path='project', request_id=request_id).json()['detail'] == 'projects_root_exists'
     original = (root / 'project' / 'main.py').read_bytes()
     created = save(client, auth, request_id=request_id)
     assert created.status_code == 200, created.text
@@ -112,3 +113,21 @@ def test_typed_application_create_can_retry_but_cannot_adopt_another_binding(pro
     assert duplicate.status_code == 409
     assert duplicate.json()['detail'] == 'projects_root_in_use'
     assert (root / 'project' / 'main.py').read_bytes() == original
+
+
+def test_retry_adopts_only_its_own_created_directory(projects, versions, monkeypatch):
+    from fastapi import HTTPException
+    client, auth, _, root = projects
+    forward = versions[-1]
+    request_id = str(uuid4())
+
+    def lost_response(*args, **kwargs):
+        forward(*args, **kwargs)
+        raise HTTPException(503, 'lost response')
+
+    monkeypatch.setattr('control_plane.workspace_projects.call_files', lost_response)
+    assert save(client, auth, request_id=request_id).status_code == 503
+    assert (root/'new-project').is_dir()
+    monkeypatch.setattr('control_plane.workspace_projects.call_files', forward)
+    assert save(client, auth, request_id=str(uuid4())).json()['detail'] == 'projects_root_exists'
+    assert save(client, auth, request_id=request_id).status_code == 200

@@ -15,6 +15,7 @@ from .models import AgentTask, AIProjectBinding, AuditEvent, UserApplication, Wo
 from .settings import get_settings
 from .task_acceptance import acceptance_summary
 from .workspace_files import WorkspaceFiles
+from .workspace_checkpoints import encode
 from .workspace_gateway import own_environment, call_files
 
 
@@ -55,11 +56,20 @@ def active_workspace_project():
         AIProjectBinding.project_id == WorkspaceProject.id, AIProjectBinding.state == 'deleted').exists()
 
 
-def check_new_root(db, principal, settings, path):
+def create_project_root(db, principal, settings, path, identifier, forward):
+    # Reuse the workspace service's atomic no-replace publish and signed receipt.
+    # A retry can recover its own mkdir after a lost response, never adopt an old folder.
+    payload = {'entries': {}, 'bytes': 0, 'excluded': []}
     try:
-        call_files(db, principal, settings, 'GET', '/v1/directories', path)
+        result = forward(db, principal, settings, 'POST', '/v1/checkpoint-restore', path,
+            body=encode({'payload': payload, 'request_id': identifier})).json()
     except HTTPException as error:
-        raise HTTPException(error.status_code, 'projects_directory_unavailable') from None
+        code = ('projects_root_exists'
+                if error.status_code == 409 and error.detail == 'File operation could not be completed'
+                else 'projects_directory_unavailable')
+        raise HTTPException(error.status_code, code) from None
+    if result != {'restored': True, 'path': path, 'digest': hashlib.sha256(encode(payload)).hexdigest()}:
+        raise HTTPException(503, 'projects_directory_unavailable')
 
 
 def create_router(principal_dependency):
@@ -111,13 +121,14 @@ def create_router(principal_dependency):
         if body.revision != (row.revision if row else 0):
             raise HTTPException(409, 'projects_changed')
         if row is None:
+            if not re.fullmatch(PROJECT_ROOT, body.path):
+                raise HTTPException(400, 'projects_invalid_request')
             if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
                     WorkspaceProject.environment_id == env.id, active_workspace_project())) >= settings.workspace_projects_limit:
                 raise HTTPException(409, 'projects_limit')
-            check_new_root(db, principal, settings, body.path)
-            row = WorkspaceProject(environment_id=env.id, project_path=body.path, revision=0)
-            if identifier:
-                row.id = identifier
+            identifier = identifier or str(uuid5(NAMESPACE_URL, env.id + '/workspace-directory/' + body.path))
+            create_project_root(db, principal, settings, body.path, identifier, call_files)
+            row = WorkspaceProject(id=identifier, environment_id=env.id, project_path=body.path, revision=0)
             db.add(row)
         row.name, row.encrypted_goal = body.name, seal(body.goal, settings)
         row.revision += 1

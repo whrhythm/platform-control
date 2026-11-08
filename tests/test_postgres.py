@@ -687,7 +687,11 @@ def test_parallel_project_association_and_revision(postgres_harness, monkeypatch
     client, auth, env_id, _, _ = prepare_capacity(client, monkeypatch)
     monkeypatch.setenv('PLATFORM_MODEL_CREDENTIAL_ENCRYPTION_KEY', Fernet.generate_key().decode())
     get_settings.cache_clear()
-    monkeypatch.setattr('control_plane.workspace_projects.call_files', lambda *a, **k: httpx.Response(200, json={'entries': []}))
+    from hashlib import sha256
+    from control_plane.workspace_checkpoints import encode
+    empty_digest = sha256(encode({'entries': {}, 'bytes': 0, 'excluded': []})).hexdigest()
+    monkeypatch.setattr('control_plane.workspace_projects.call_files', lambda *a, **k:
+        httpx.Response(200, json={'restored': True, 'path': a[5], 'digest': empty_digest}))
     url = '/internal/v1/workspace/projects'
     body = {'path': 'existing', 'name': 'Team tool', 'goal': '', 'revision': 0}
     try:
