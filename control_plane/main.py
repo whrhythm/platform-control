@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0027_knowledge_libraries":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0028_assistant_sharing":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 

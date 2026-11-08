@@ -447,6 +447,7 @@ class AIRelease(Base):
     trial_id: Mapped[str] = mapped_column(ForeignKey('ai_project_trials.id'))
     request_id: Mapped[str] = mapped_column(String(36))
     number: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str | None] = mapped_column(String(80), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
@@ -457,6 +458,10 @@ class AIAppMember(Base):
     native_id: Mapped[str] = mapped_column(String(24))
     encrypted_label: Mapped[str] = mapped_column(Text)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    state: Mapped[str] = mapped_column(String(24), default='active', server_default='active')
+    revision: Mapped[int] = mapped_column(Integer, default=1, server_default='1')
+    budget_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AIAppEntry(Base):

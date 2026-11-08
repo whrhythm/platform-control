@@ -14,7 +14,8 @@ from sqlalchemy.orm import Session
 from .ai_releases import entry_access, enabled
 from .auth import Principal
 from .database import get_db
-from .models import AIApplication, AIAppRun, AIAppCall, AIConfiguration, ModelCredential, now
+from .models import AIApplication, AIAppRun, AIAppCall, AIAppMember, AIConfiguration, ModelCredential, now
+from .ai_sharing import usage
 
 router = APIRouter(prefix='/agent/app/v1', tags=['ai-sponsor'])
 
@@ -73,6 +74,10 @@ def admission(db, claims, body, settings):
     held = db.scalar(select(func.coalesce(func.sum(AIAppCall.held_micros), 0)).where(AIAppCall.project_id == app.project_id))
     if held+reserve > app.budget_micros:
         raise HTTPException(429, 'ai_releases_budget_exhausted')
+    if actor.id != sponsor.id:
+        member = db.get(AIAppMember, (app.project_id, actor.id))
+        if member.budget_micros is not None and usage(db, app.project_id, actor.id)['held_micros']+reserve > member.budget_micros:
+            raise HTTPException(429, 'ai_releases_member_budget_exhausted')
     credential = db.scalar(select(ModelCredential).where(ModelCredential.issuer == sponsor.issuer,
         ModelCredential.subject == sponsor.subject, ModelCredential.status == 'ready'))
     if not credential:
@@ -137,7 +142,7 @@ async def completion(request: Request, authorization: str = Header(default=''), 
     try:
         identifier, engine, key, payload = admission(db, claims, body, settings)
     except HTTPException as exc:
-        if exc.detail == 'ai_releases_budget_exhausted':
+        if exc.detail in ('ai_releases_budget_exhausted', 'ai_releases_member_budget_exhausted'):
             # A hard application budget is not transient provider rate limiting.
             return JSONResponse(status_code=402, headers={'x-should-retry':'false'}, content={
                 'error':{'code':exc.detail, 'type':'insufficient_quota',

@@ -50,7 +50,8 @@ def postgres_harness(harness, monkeypatch):
     get_settings.cache_clear()
 
 
-def test_application_budget_concurrent_admission(postgres_harness, monkeypatch):
+@pytest.mark.parametrize('limit_scope', ['application', 'member'])
+def test_application_budget_concurrent_admission(postgres_harness, monkeypatch, limit_scope):
     from cryptography.fernet import Fernet
     from fastapi import HTTPException
     from control_plane.models import (AIApplication, AIRelease, AIAppMember, AIAppEntry, AIAppRun, AIAppCall,
@@ -65,10 +66,28 @@ def test_application_budget_concurrent_admission(postgres_harness, monkeypatch):
     get_settings.cache_clear()
     try:
         client, claims, payload, _ = sponsored((client,auth,env_id,None,None),monkeypatch)
+        member_env_id = None
+        if limit_scope == 'member':
+            import jwt
+            from test_ai_sharing import guest, invite, reply
+            from test_ai_releases import launched
+            from test_ai_projects import PREFIX
+            with client.session_factory() as db:
+                project_id = db.scalar(select(AIApplication)).project_id
+            path = PREFIX+'/'+project_id
+            member_auth, member_env_id = guest(client,auth,env_id)
+            assert invite(client,auth,path).status_code == 200
+            assert reply(client,member_auth,path).status_code == 200
+            *_, runtime = launched(client,member_auth,path,'b'*24)
+            claims = jwt.decode(runtime['credential'][6:],get_settings().librechat_service_token,
+                algorithms=['HS256'],audience='ai-application')
         with client.session_factory() as db:
             identifier, _, _, _ = admission(db,claims,payload,get_settings())
             call=db.get(AIAppCall,identifier)
-            db.get(AIApplication,call.project_id).budget_micros=call.reserved_micros+100
+            if limit_scope == 'member':
+                db.get(AIAppMember,(call.project_id,member_env_id)).budget_micros=call.reserved_micros+100
+            else:
+                db.get(AIApplication,call.project_id).budget_micros=call.reserved_micros+100
             db.delete(call)
             db.commit()
         def attempt(i):
@@ -93,6 +112,8 @@ def test_application_budget_concurrent_admission(postgres_harness, monkeypatch):
                           WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
                 db.execute(delete(model))
             db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
+            if member_env_id:
+                db.execute(delete(UserEnvironment).where(UserEnvironment.id==member_env_id))
 
 
 def test_parallel_requests_never_exceed_tenant_capacity(postgres_harness):

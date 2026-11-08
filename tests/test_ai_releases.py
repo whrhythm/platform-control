@@ -74,6 +74,8 @@ def test_members_sessions_revocation_and_owner_only_management(versions,monkeypa
     assert client.post(path+'/launch',headers=guest,json={'native_owner_id':'b'*24}).status_code==403
     member={'native_owner_id':OWNER,'subject':'guest','native_id':'b'*24,'label':'guest@example.test','enabled':True}
     assert client.post(path+'/members',headers=auth,json=member).status_code==200
+    assert client.post(path+'/invitation',headers=guest,json={'native_owner_id':'b'*24,
+        'expected_revision':1,'accept':True}).status_code==200
     assert client.get(path+'/releases',headers=guest).status_code==404
     entry,target,run,runtime=launched(client,guest,path,'b'*24)
     assert runtime['payer']=='creator'

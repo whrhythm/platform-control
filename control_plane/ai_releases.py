@@ -1,5 +1,5 @@
 """Fixed AI releases, explicit members and server-only runtime admissions."""
-from datetime import timezone
+from datetime import datetime, timezone
 from uuid import UUID, NAMESPACE_URL, uuid5
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,6 +14,7 @@ from .models import (AIApplication, AIRelease, AIAppMember, AIAppEntry, AIAppRun
     AIProjectBinding, AIProjectTrial, UserEnvironment, AuditEvent, WorkspaceProject, now)
 from .settings import get_settings
 from .workspace_gateway import own_environment
+from .ai_sharing import member_state, member_out, utc, add_routes
 
 
 class Publish(Owner):
@@ -36,6 +37,9 @@ class Member(Owner):
     native_id: str = Field(pattern=r'^[0-9a-f]{24}$')
     label: str = Field(min_length=1, max_length=255)
     enabled: bool
+    expected_revision: int | None = Field(default=None, ge=1)
+    budget_micros: int | None = Field(default=None, ge=0, le=100000000)
+    expires_at: datetime | None = None
 
 
 class Search(Owner):
@@ -45,6 +49,7 @@ class Search(Owner):
 
 class Revoke(Owner):
     native_id: str = Field(pattern=r'^[0-9a-f]{24}$')
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 def enabled():
@@ -85,7 +90,7 @@ def check_access(db, principal, project_id, native_id=None):
         expected = binding.native_owner_id
     else:
         member = db.get(AIAppMember, (app.project_id, actor.id))
-        if not member or not member.enabled:
+        if not member or member_state(member) != 'active':
             raise HTTPException(403, 'ai_releases_access_denied')
         expected = member.native_id
     if native_id and native_id != expected:
@@ -123,7 +128,7 @@ def entry_out(db, entry, release):
     from .ai_application_contracts import AgentSnapshot
     snap = AgentSnapshot.model_validate(unseal(db.get(AIProjectTrial, release.trial_id).encrypted_snapshot, get_settings()))
     return {**release_out(db, release), 'entry_id': entry.id, 'agent_id': 'agent_app_'+UUID(entry.id).hex,
-        'name': project.name, 'model': snap.model.model, 'ready': entry.ready, 'payer': 'creator'}
+        'name': release.name or project.name, 'model': snap.model.model, 'ready': entry.ready, 'payer': 'creator'}
 
 
 def detail(db, project_id, settings):
@@ -137,12 +142,13 @@ def detail(db, project_id, settings):
         'held_micros': sum(v[2] or 0 for v in calls), 'calls': [{'state': v[0], 'count': v[1]} for v in calls]},
         'releases': [release_out(db, r) for r in db.scalars(select(AIRelease).where(
             AIRelease.project_id == app.project_id).order_by(AIRelease.number.desc()))],
-        'members': [{'native_id': m.native_id, 'label': unseal(m.encrypted_label, settings), 'enabled': m.enabled}
+        'members': [member_out(db, m, settings)
             for m in db.scalars(select(AIAppMember).where(AIAppMember.project_id == app.project_id))]}
 
 
 def create_router(principal_dependency):
     router = APIRouter(prefix='/internal/v1/workspace/ai-projects', tags=['ai-releases'])
+    add_routes(router, principal_dependency)
 
     @router.get('/{project_id}/releases')
     def listing(project_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -181,7 +187,7 @@ def create_router(principal_dependency):
         if count >= settings.ai_releases_limit:
             raise HTTPException(409, 'ai_releases_limit')
         release = AIRelease(id=identifier, project_id=binding.project_id, trial_id=trial.id,
-            request_id=str(body.request_id), number=count+1)
+            request_id=str(body.request_id), number=count+1, name=db.get(WorkspaceProject, binding.project_id).name)
         db.add(release)
         app.active_release_id, app.enabled = identifier, True
         # Publishing never resets accumulated spend or silently changes the existing budget.
@@ -207,22 +213,42 @@ def create_router(principal_dependency):
     def member(project_id: UUID, body: Member, principal=Depends(principal_dependency), db=Depends(get_db)):
         settings = enabled()
         env, _ = owner(db, principal, project_id, body.native_owner_id)
+        if not body.enabled:
+            raise HTTPException(400, 'ai_releases_invalid_request')
         target = db.scalar(select(UserEnvironment).where(UserEnvironment.issuer == principal.issuer,
             UserEnvironment.subject == body.subject))
-        if not db.get(AIApplication, str(project_id)) or not target or target.id == env.id:
+        app = db.get(AIApplication, str(project_id))
+        if (not app or not app.active_release_id or not target or target.id == env.id
+                or target.status in ('deleted', 'suspended') or not allowed(db, target.issuer, target.subject)):
             raise HTTPException(409, 'ai_releases_member_unavailable')
+        if body.expires_at and utc(body.expires_at) <= now():
+            raise HTTPException(422, 'ai_releases_expiry_invalid')
         row = db.get(AIAppMember, (str(project_id), target.id))
+        if row and row.native_id != body.native_id:
+            raise HTTPException(409, 'ai_releases_member_unavailable')
         if not row:
             if db.scalar(select(func.count()).select_from(AIAppMember).where(
                     AIAppMember.project_id == str(project_id))) >= settings.ai_releases_member_limit:
                 raise HTTPException(409, 'ai_releases_limit')
             row = AIAppMember(project_id=str(project_id), environment_id=target.id,
-                native_id=body.native_id, encrypted_label=seal(body.label, settings))
+                native_id=body.native_id, encrypted_label=seal(body.label, settings),
+                state='pending', enabled=True, revision=1,
+                budget_micros=body.budget_micros, expires_at=utc(body.expires_at))
             db.add(row)
+        elif body.enabled and member_state(row) in ('active', 'pending'):
+            # A repeated invite never changes a live policy or erases its usage.
+            return detail(db, project_id, settings)
+        else:
+            if body.expected_revision != row.revision:
+                raise HTTPException(409, 'ai_releases_changed')
+            row.state, row.enabled = ('pending', True) if body.enabled else ('revoked', False)
+            if body.enabled:
+                row.expires_at = utc(body.expires_at)
+            row.revision += 1
         if row.native_id != body.native_id:
             raise HTTPException(409, 'ai_releases_member_unavailable')
-        row.enabled = body.enabled
-        audit(db, env, principal, 'member_enabled' if body.enabled else 'member_revoked', body.native_id)
+        audit(db, env, principal, 'member_invited' if body.enabled else 'member_revoked',
+            row.project_id+'/'+row.native_id+'@'+str(row.revision))
         db.commit()
         return detail(db, project_id, settings)
 
@@ -234,8 +260,13 @@ def create_router(principal_dependency):
             AIAppMember.native_id == body.native_id))
         if not row:
             raise HTTPException(404, 'ai_releases_member_unavailable')
-        row.enabled = False
-        audit(db, env, principal, 'member_revoked', body.native_id)
+        if body.expected_revision is not None and row.revision != body.expected_revision:
+            raise HTTPException(409, 'ai_releases_changed')
+        if not row.enabled and row.state == 'revoked':
+            return detail(db, project_id, settings)
+        row.enabled, row.state = False, 'revoked'
+        row.revision += 1
+        audit(db, env, principal, 'member_revoked', row.project_id+'/'+row.native_id+'@'+str(row.revision))
         db.commit()
         return detail(db, project_id, settings)
 

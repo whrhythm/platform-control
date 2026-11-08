@@ -19,7 +19,7 @@ def assert_library_backfill_preserves_pinned_data(config, engine):
     from datetime import timedelta
     from sqlalchemy import delete
     from control_plane.models import (WorkspaceProject, AIProjectBinding, ProjectKnowledge,
-        KnowledgeLibrary, AIProjectTrial, AIApplication, AIRelease, now)
+        KnowledgeLibrary, AIProjectTrial, AIApplication, AIRelease, AIAppMember, now)
     from control_plane.knowledge import revision_scope
     # Seed the old shape through nullable compatibility columns, then remove them.
     with Session(engine) as db:
@@ -52,6 +52,10 @@ def assert_library_backfill_preserves_pinned_data(config, engine):
         db.commit()
     try:
         command.downgrade(config,'0026_ai_releases')
+        with engine.begin() as connection:
+            connection.execute(text('INSERT INTO ai_app_members (project_id,environment_id,native_id,encrypted_label,enabled) '
+                'VALUES (:project,:env,:native,:label,true)'),
+                {'project':ids[0],'env':ids[5],'native':'b'*24,'label':'unchanged-encrypted-member'})
         command.upgrade(config,'head')
         with Session(engine) as db:
             p,first_id,second_id,trial_id,release_id,*_ = ids
@@ -65,12 +69,20 @@ def assert_library_backfill_preserves_pinned_data(config, engine):
             assert db.get(AIProjectTrial,trial_id).encrypted_snapshot == 'unchanged-trial-snapshot'
             assert db.get(AIProjectTrial,trial_id).knowledge_revision_id == first_id
             assert db.get(AIApplication,p).active_release_id == release_id
+            member = db.get(AIAppMember,(p,ids[5]))
+            assert member.state == 'active' and member.enabled and member.revision == 1
+            assert member.budget_micros is None and member.expires_at is None
+            assert member.encrypted_label == 'unchanged-encrypted-member'
+        with pytest.raises(RuntimeError,match='forward recovery'):
+            command.downgrade(config,'0027_knowledge_libraries')
+        with Session(engine) as db:
+            db.execute(delete(AIAppMember).where(AIAppMember.project_id==ids[0])); db.commit()
         with pytest.raises(RuntimeError,match='Preserve libraries'):
             command.downgrade(config,'0026_ai_releases')
     finally:
         with Session(engine) as db:
             p,_,_,_,_,env_id,tenant_id = ids
-            for model in (AIRelease,AIApplication,AIProjectTrial,ProjectKnowledge,AIProjectBinding):
+            for model in (AIAppMember,AIRelease,AIApplication,AIProjectTrial,ProjectKnowledge,AIProjectBinding):
                 db.execute(delete(model).where(model.project_id==p))
             db.execute(delete(KnowledgeLibrary).where(KnowledgeLibrary.id==p))
             db.execute(delete(WorkspaceProject).where(WorkspaceProject.id==p))
@@ -102,7 +114,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0027_knowledge_libraries"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0028_assistant_sharing"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:
