@@ -169,3 +169,9 @@
 - 2026-11-08 已通过 Argo CD 部署，控制面 `c8a83b4`，LibreChat `3ce0061b0`，GitOps `e62155c`。控制面全量 383 项通过、41 项跳过，补跑删除专测 3 项通过。LibreChat 生产构建、类型和静态检查通过，前端 78 项与接口 29 项通过。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
 - 两个已授权账号在实际部署环境验收一个合成项目。创建者试用并发布，受邀成员调用一次后生成真实用量。创建者经项目菜单查看删除与保留范围并确认，浏览器模拟后续请求断线，成员此时已无法启动助手。界面点「重试」后项目从列表消失，旧项目与试用不可访问。数据库只读复核确认专属知识原文与索引已清零，独立库、资料目录、代码项目、成员历史对话及原用量记录保留。首次浏览器运行误用了项目行定位，修正定位后复跑，没有重复模型调用。
 - 本地证据见 `platform-control/release/p1-self-delete-ui.json`、`p1-self-delete-preview.png`、`p1-self-delete-retry.png`、`p1-self-delete-db-before.json` 和 `p1-self-delete-db-after.json`。
+
+## 项目编辑窗口
+
+- 2026-11-08 已部署 LibreChat `2c530228d`，GitOps `47abeda`。项目「⋯ → 编辑」展示已绑定的智能体或应用类型与根目录，两项为只读。名称和描述沿用原有保存流程。目录、现有文件和部署归属按原绑定保留，未修改后端契约。
+- 构建、类型、静态检查通过，前端 78 项、接口 29 项通过。实际浏览器核对应用和智能体的类型及目录，修改合成智能体项目的名称和描述后刷新复核，绑定 ID 和目录一致。验收结束从界面删除了合成项目。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
+- 本地证据见 `platform-control/release/p1-project-edit-ui.json`、`p1-project-edit-assistant.png` 和 `p1-project-edit-deployed.json`。
