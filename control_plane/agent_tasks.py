@@ -146,6 +146,8 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
     quotas = active_quotas(db, env.id, settings)
     active = list(db.scalars(select(AgentTask).where(AgentTask.environment_id == env.id, AgentTask.status.in_(ACTIVE))))
     project = config['project_path']
+    from .project_retirement import require_available_project_path
+    require_available_project_path(db, env.id, project)
     overlap = any(project == row.config['project_path'] or project.startswith(row.config['project_path'] + '/') or
                   row.config['project_path'].startswith(project + '/') for row in active)
     if len(active) >= quotas['agent_concurrency'] or overlap:

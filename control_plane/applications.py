@@ -17,6 +17,7 @@ from .capacity import application_limit
 from .application_resources import active_resources
 from .plan_quotas import active_quotas, admit_application
 from .release_provenance import freeze, application_provenance
+from .project_retirement import require_available_project_path
 
 
 def application_out(app):
@@ -77,6 +78,7 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
             raise HTTPException(400, 'A Dockerfile is required in this directory')
         # Serialize intent creation against the same durable environment row.
         db.refresh(env, with_for_update=True)
+        require_available_project_path(db, env.id, path)
         database = db.scalar(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id,
             ProjectDatabase.project_path == path, ProjectDatabase.status != 'deleted'))
         if database and database.status != 'ready':
@@ -142,6 +144,8 @@ def create_router(principal_dependency, *, prefix='/internal/v1/workspace'):
                                                       UserApplication.environment_id == env.id).with_for_update())
         if not app:
             raise HTTPException(404, 'Application not found')
+        if action != 'delete':
+            require_available_project_path(db, env.id, app.project_path)
         if app.error_code == WRITE_REVIEW_CODE:
             raise HTTPException(409, 'Previous operation requires administrator review')
         target = {'start': 'running', 'stop': 'stopped', 'delete': 'deleted'}[action]

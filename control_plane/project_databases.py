@@ -16,6 +16,7 @@ from .settings import get_settings
 from .workspace_files import WorkspaceFiles, InvalidWorkspacePath
 from .workspace_gateway import own_environment, call_files
 from .plan_quotas import active_quotas
+from .project_retirement import require_available_project_path
 
 MIB = 1024 ** 2
 
@@ -77,6 +78,7 @@ def ensure_database(db, principal, project_path):
     env = own_environment(db, principal)
     call_files(db, principal, settings, 'GET', '/v1/directories', project_path)
     db.refresh(env, with_for_update=True)
+    require_available_project_path(db, env.id, project_path)
     if env.status == 'suspended': raise HTTPException(403, 'environment_suspended')
     rows = list(db.scalars(select(ProjectDatabase).where(ProjectDatabase.environment_id == env.id)))
     row = next((value for value in rows if value.project_path == project_path), None)

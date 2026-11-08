@@ -13,7 +13,7 @@ from sqlalchemy import select, func
 
 from .agent_tasks import ACTIVE, seal, unseal
 from .database import get_db
-from .models import AgentTask, AuditEvent, WorkspaceProject, BusinessTemplate, ProjectDatabase, UserApplication, now
+from .models import AgentTask, AuditEvent, CodeProjectDeletion, WorkspaceProject, BusinessTemplate, ProjectDatabase, UserApplication, now
 from .project_databases import ensure_database, public_database
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
@@ -48,7 +48,8 @@ def create_router(principal_dependency):
         if project_id is None: return env, settings
         project = db.get(WorkspaceProject, str(project_id))
         template = db.get(BusinessTemplate, str(project_id))
-        if not project or project.environment_id != env.id or not template:
+        if (not project or project.environment_id != env.id or not template or
+                db.get(CodeProjectDeletion, project.id)):
             raise HTTPException(404, 'templates_not_found')
         return env, settings, project, template
 
@@ -82,6 +83,8 @@ def create_router(principal_dependency):
         identifier = str(uuid5(NAMESPACE_URL, env.id + '/support/' + str(body.request_id)))
         project = db.get(WorkspaceProject, identifier)
         if project:
+            if db.get(CodeProjectDeletion, project.id):
+                raise HTTPException(409, 'templates_request_conflict')
             if project.name != body.name.strip(): raise HTTPException(409, 'templates_request_conflict')
             return output(db, settings, project, db.get(BusinessTemplate, identifier))
         if not body.name.strip(): raise HTTPException(422, 'templates_invalid_name')

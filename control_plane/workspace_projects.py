@@ -11,7 +11,8 @@ from sqlalchemy import func, select
 from .agent_tasks import ACTIVE, seal, unseal
 from .applications import application_out
 from .database import get_db
-from .models import AgentTask, AIProjectBinding, AuditEvent, UserApplication, WorkspaceProject, now
+from .models import AgentTask, AIProjectBinding, AuditEvent, CodeProjectDeletion, UserApplication, WorkspaceProject, now
+from .project_retirement import require_available_project_path
 from .settings import get_settings
 from .task_acceptance import acceptance_summary
 from .workspace_files import WorkspaceFiles
@@ -52,8 +53,10 @@ def public(row, settings):
 
 
 def active_workspace_project():
-    return ~select(AIProjectBinding.project_id).where(
+    return (~select(AIProjectBinding.project_id).where(
         AIProjectBinding.project_id == WorkspaceProject.id, AIProjectBinding.state == 'deleted').exists()
+        & ~select(CodeProjectDeletion.project_id).where(
+            CodeProjectDeletion.project_id == WorkspaceProject.id, CodeProjectDeletion.completed.is_(True)).exists())
 
 
 def create_project_root(db, principal, settings, path, identifier, forward):
@@ -95,6 +98,7 @@ def create_router(principal_dependency):
     def save(body: ProjectInput, principal=Depends(principal_dependency), db=Depends(get_db)):
         env = own_environment(db, principal)
         db.refresh(env, with_for_update=True)
+        require_available_project_path(db, env.id, body.path)
         if env.status == 'suspended':
             raise HTTPException(403, 'projects_account_suspended')
         settings = get_settings()

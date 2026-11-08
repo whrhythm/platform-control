@@ -34,6 +34,10 @@ def root_in_use(db, project):
 def plan_folder(db, principal, project):
     if root_in_use(db, project):
         return {'reason': 'in_use'}
+    return inspect_owned_folder(db, principal, project)
+
+
+def inspect_owned_folder(db, principal, project):
     try:
         scope = call_files(db, principal, get_settings(), 'GET', '/v1/project-root',
                            project.project_path, params={'project_id': project.id}).json()['scope']
@@ -42,6 +46,26 @@ def plan_folder(db, principal, project):
             return {'reason': 'unverified'}
         raise HTTPException(503, 'ai_projects_folder_check_unavailable') from None
     return {'scope': scope} if scope else {'reason': 'unverified'}
+
+
+def folder_preview(folder):
+    scope = folder.get('scope')
+    return {
+        'folder_cleanup': {key: scope[key] for key in ('files', 'directories', 'bytes')} if scope else None,
+        'folder_retention_reason': folder.get('reason'),
+    }
+
+
+def remove_planned_folder(db, principal, project, scope):
+    try:
+        result = call_files(db, principal, get_settings(), 'DELETE', '/v1/project-root',
+            project.project_path, params={'project_id': project.id, 'digest': scope['digest'],
+                                          'inode': scope['inode']}).json()
+    except HTTPException:
+        raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable') from None
+    if type(result.get('removed')) is not bool:
+        raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable')
+    return result['removed']
 
 
 def deletion_plan(db, binding, project):
@@ -93,13 +117,8 @@ def deletion_plan(db, binding, project):
 
 
 def preview(plan):
-    folder = plan['folder_cleanup']
-    scope = folder.get('scope')
     return {'state': 'confirm', 'confirmation': sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest(),
-            'folder': plan['folder'],
-            'folder_cleanup': ({key: scope[key] for key in ('files', 'directories', 'bytes')}
-                               if scope else None),
-            'folder_retention_reason': folder.get('reason'),
+            'folder': plan['folder'], **folder_preview(plan['folder_cleanup']),
             'knowledge_libraries': int(bool(plan['library'])),
             'knowledge_revisions': len(plan['revisions']), 'preserved_libraries': len(plan['preserved_libraries']),
             'trials': len(plan['trials']), 'releases': len(plan['releases']), 'shares': len(plan['members'])}
@@ -197,18 +216,8 @@ def create_router(principal_dependency):
         folder_retained = False
         scope = deletion.plan.get('folder_cleanup', {}).get('scope')
         if scope:
-            if root_in_use(db, project):
-                folder_retained = True
-            else:
-                try:
-                    result = call_files(db, principal, get_settings(), 'DELETE', '/v1/project-root',
-                        deletion.plan['folder'], params={'project_id': project.id, 'digest': scope['digest'],
-                                                         'inode': scope['inode']}).json()
-                except HTTPException:
-                    raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable') from None
-                if type(result.get('removed')) is not bool:
-                    raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable')
-                folder_retained = not result['removed']
+            folder_retained = (root_in_use(db, project) or
+                               not remove_planned_folder(db, principal, project, scope))
             audit(db, env, principal, 'root_preserved' if folder_retained else 'root_removed', project.id)
         trials = select(AIProjectTrial.id).where(AIProjectTrial.project_id == project.id)
         released = select(AIRelease.trial_id).where(AIRelease.project_id == project.id)

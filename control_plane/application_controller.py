@@ -308,6 +308,9 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         objects = application_objects(app, env, settings, database_secret=state.get('database_secret'),
                                       object_secret=state.get('object_storage_secret'), runtime_rights=runtime_rights)
         workloads = deepcopy(state.get('workloads', {}))
+        if app.desired_state == 'deleted':
+            order = ('ApisixRoute', 'Deployment', 'Service', 'NetworkPolicy')
+            objects.sort(key=lambda obj: order.index(obj['kind']))
         for desired in objects:
             kind, meta = desired['kind'], desired['metadata']
             path = object_path(meta['namespace'], kind, meta['name'])
@@ -316,10 +319,11 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
                 raise DeliveryError('application_write_requires_review')
             if app.desired_state == 'deleted':
                 if step and step.get('state') == 'created':
-                    cluster.delete(path, step['uid'])
+                    cluster.delete(path, step['uid'], foreground=(kind == 'Deployment'))
                     workloads[kind] = {'state': 'deleting', 'uid': step['uid']}
                     state['workloads'] = deepcopy(workloads)
                     update(resources=deepcopy(state))
+                    return
                 elif step and step.get('state') == 'deleting':
                     actual = cluster.get(path)
                     if actual:

@@ -445,6 +445,13 @@ class AIProjectDeletion(Base):
     plan: Mapped[dict] = mapped_column(JSON)
 
 
+class CodeProjectDeletion(Base):
+    __tablename__ = 'code_project_deletions'
+    project_id: Mapped[str] = mapped_column(ForeignKey('workspace_projects.id'), primary_key=True)
+    plan: Mapped[dict] = mapped_column(JSON)
+    completed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 class AIRelease(Base):
     __tablename__ = 'ai_releases'
     __table_args__ = (UniqueConstraint('project_id', 'request_id'), UniqueConstraint('project_id', 'number'))
