@@ -245,6 +245,10 @@ def reconcile_application(sessions, app_id, cluster, harbor, settings):
         fields.setdefault('expected_desired', app.desired_state)
         return change_app(sessions, app_id, **fields)
     if app.status == 'failed':
+        if app.desired_state == 'deleted':
+            # An explicit deletion retry resumes UID-checked removal. A failed
+            # retirement must not bring back a previous runtime.
+            return
         if app.error_code == WRITE_REVIEW_CODE or state.get('cleanup', {}).get('status') == 'complete':
             return
         try:

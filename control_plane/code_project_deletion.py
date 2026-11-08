@@ -60,6 +60,9 @@ def plan_deletion(db, principal, project, app, database):
         raise HTTPException(409, 'ai_projects_deletion_busy')
     if app and app.error_code and 'requires_review' in app.error_code:
         raise HTTPException(409, 'ai_projects_deletion_review')
+    if (app and app.status == 'failed' and
+            app.resources.get('cleanup', {}).get('status') != 'complete'):
+        raise HTTPException(409, 'ai_projects_deletion_busy')
     if overlapping_resource(db, project):
         folder = {'reason': 'in_use'}
         # Directory provenance still determines whether the attached database
@@ -114,7 +117,7 @@ def progress(db, deletion, *, advance=False, retry=False):
     deployment = plan['deployment']
     if deployment:
         app = db.get(UserApplication, deployment['id'], with_for_update=advance)
-        if not app or app.revision != deployment['revision']:
+        if not app or app.revision != deployment['revision'] or app.desired_state != 'deleted':
             raise HTTPException(409, 'ai_projects_deletion_review')
         if app.status != 'deleted':
             if advance and app.status == 'failed':
@@ -136,6 +139,9 @@ def progress(db, deletion, *, advance=False, retry=False):
                 if row.status == 'failed' and row.resources.get('deletion_requested') and not retry:
                     raise HTTPException(503, 'ai_projects_deletion_retry')
                 if row.status != 'deleting':
+                    project = db.get(WorkspaceProject, deletion.project_id)
+                    if shared_database(db, project, row):
+                        raise HTTPException(409, 'ai_projects_deletion_review')
                     row.status, row.error_code = 'deleting', None
                     row.resources = {**row.resources, 'deletion_requested': True}
             return {'state': 'database'}
