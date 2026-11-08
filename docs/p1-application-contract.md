@@ -191,3 +191,13 @@
 - 2026-11-08 已部署控制面及工作区文件服务源码 `d463bfd`、LibreChat `fddf4d840`，GitOps `16aaa21`。四个工作区文件服务完成更新。其中一个 Kata Pod 初始化停滞，经控制器重建恢复，持久卷保留。控制面全量 388 项通过、41 项跳过，LibreChat 构建、类型及静态检查、78 项前端和 29 项接口测试通过。Windows Lighthouse 准备阶段缺少 rimraf。
 - 实际浏览器以指定账号删除一个合成智能体项目，确认窗正确显示 2 个文件和 1 个子目录。完成后项目、目录及子目录文件均无法读取，另一个旧应用目录的文件列表未变。没有目录授权的旧请求被拒绝。隔离测试另外核对旧项目复用目录保留、确认后文件变化时保留、链接目标保留和中断重试。
 - 本地证据见 `platform-control/release/p1-delete-root-ui.json`、`p1-delete-root-preview.png`、`p1-delete-root-deployed.json`、`p1-delete-root-workspaces-retry.json` 与 `p1-delete-root-pytest.log`。
+
+## 代码应用项目自助删除
+
+- 所有者从 LibreChat 项目菜单打开删除确认。确认页分别展示部署、域名、数据库、镜像和文件的处理范围。确认时重新核对清单摘要。清理数据库会永久删除数据，流程不创建备份。
+- 先解除项目的 APISIX 路由，再等待 Deployment、Pod、Service 和 NetworkPolicy 清理完成。共享 DNS 配置保持原状。确认数据库归属和代次且无其他应用引用后，才清理项目数据库。共享数据库和归属不明的资源保留。Harbor 镜像和仓库保留，因为平台无法确认集群外的引用。共享对象、历史对话和账单继续保留。
+- 工作区文件服务继续验证专属根目录的创建回执、内容清单和引用。旧目录、归属不明的目录以及确认后范围变化的目录保留。控制面在迁移 `0030` 引入的清理表中持久化范围和进度，清理期间阻止新的发布、运行任务和数据库申请占用该目录。控制面与 LibreChat 逐步确认完成后才移除项目入口。
+- 打开项目删除窗口可以续跑。请求中断或可恢复的控制器错误显示「重试」，从上次确认的步骤继续。关闭页面后已提交的部署或数据库清理继续执行，重新打开窗口后可推进剩余步骤。资源标识不一致等归属异常停止自动清理，须核验后处理。启动、目录处理结果与完成写入审计。
+- 2026-11-08 已通过 Argo CD 部署控制面与应用控制器 `16ceeb5`、LibreChat `04823f8b3`、GitOps `f088471`。控制面全量 390 项通过、41 项跳过，补跑迁移、控制器和删除回归 21 项通过、7 项跳过。LibreChat 生产构建、类型和静态检查通过，前端 78 项与接口 30 项通过。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
+- 用获准的专用测试账号在真实 LibreChat 界面删除合成代码应用。确认窗展示应用域名、数据库、镜像和含 3 个文件、1 个子目录的专属根目录。旧版请求缺少代码应用确认标记，返回 409。浏览器中断确认后的第二个请求，在原窗口点击「重试」后项目退出列表且根目录不可读。集群复核 Deployment、Pod、Service、NetworkPolicy、APISIXRoute 均由 1 变为 0。PostgreSQL 目录确认专属数据库已清除，Harbor 仍能查询原镜像。旧目录和共享数据库的保留由隔离回归测试覆盖。
+- 本地证据见 `platform-control/release/p1-delete-code-deployed.json`、`p1-delete-code-confirm.png`、`p1-delete-code-ui.json`、`p1-delete-code-before.json` 与 `p1-delete-code-after.json`。
