@@ -9,7 +9,7 @@ from sqlalchemy import func, select
 from .agent_tasks import seal, unseal
 from .database import get_db
 from .knowledge_format import prepare, FORMAT
-from .models import AIProjectBinding, AuditEvent, CapacityAccount, ProjectKnowledge, now
+from .models import AIProjectBinding, AuditEvent, CapacityAccount, ProjectKnowledge, KnowledgeLibrary, now
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
 
@@ -48,6 +48,36 @@ def latest(db, project_id):
 def public(row):
     return {k: getattr(row, k) for k in ('id', 'digest', 'manifest', 'source_bytes', 'index_bytes',
         'chunks', 'state', 'error_code', 'created_at', 'updated_at')}
+
+
+def revision_scope(row):
+    return row.project_id or row.library_id
+
+
+def revision_allowed(db, binding, row):
+    if row.environment_id != binding.environment_id:
+        return False
+    if row.project_id == binding.project_id or (row.library_id and row.library_id == binding.knowledge_library_id):
+        return True
+    from .models import AIProjectTrial
+    return bool(db.scalar(select(AIProjectTrial.id).where(AIProjectTrial.project_id == binding.project_id,
+        AIProjectTrial.knowledge_revision_id == row.id).limit(1)))
+
+
+def reserve_storage(db, env, principal, settings, amount):
+    from .capacity import sample_storage
+    from .project_versions import version_usage
+    observed = call_files(db, principal, settings, 'GET', '/v1/usage', '').json()
+    samples = sample_storage(db, env, observed)
+    if samples['files'].status != 'ok' or (settings.storage_metering_enabled and
+            any(item.status != 'ok' or item.used_bytes is None for item in samples.values())):
+        raise HTTPException(503, 'knowledge_usage_unavailable')
+    used = sum(max(0, item.used_bytes or 0) for item in samples.values())
+    used += version_usage(db, env.id)+knowledge_usage(db, env.id)
+    account = db.get(CapacityAccount, env.id)
+    budget = (account.plan['storage_gib'] if account else env.storage_gib)*1024**3
+    if used+amount > budget:
+        raise HTTPException(507, 'knowledge_storage_full')
 
 
 class KnowledgeClient:
@@ -89,8 +119,10 @@ def create_router(principal_dependency):
 
     @router.get('/{project_id}/knowledge')
     def listing(project_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
-        _, _, settings = owned(db, principal, project_id)
-        rows = list(db.scalars(select(ProjectKnowledge).where(ProjectKnowledge.project_id == str(project_id),
+        _, binding, settings = owned(db, principal, project_id)
+        scope_filter = (ProjectKnowledge.library_id == binding.knowledge_library_id if binding.knowledge_library_id
+                        else ProjectKnowledge.project_id == str(project_id))
+        rows = list(db.scalars(select(ProjectKnowledge).where(scope_filter,
             ProjectKnowledge.state != 'deleted').order_by(ProjectKnowledge.created_at.desc())))
         active = latest(db, str(project_id))
         return {'revisions': [public(row) for row in rows], 'active_revision_id': active.id if active else None,
@@ -101,6 +133,8 @@ def create_router(principal_dependency):
         env, binding, settings = owned(db, principal, project_id)
         if body.native_owner_id != binding.native_owner_id:
             raise HTTPException(403, 'knowledge_owner_mismatch')
+        if binding.knowledge_library_id and binding.knowledge_library_id != binding.project_id:
+            raise HTTPException(409, 'knowledge_library_managed')
         files = [f.model_dump() for f in body.files]
         try:
             digest, size, index_bytes, chunks = prepare(files, settings.knowledge_file_limit,
@@ -117,25 +151,17 @@ def create_router(principal_dependency):
             ProjectKnowledge.project_id == str(project_id), ProjectKnowledge.state != 'deleted'))
         if count >= settings.knowledge_revision_limit:
             raise HTTPException(409, 'knowledge_revision_limit')
-        from .capacity import sample_storage
-        from .project_versions import version_usage
-        observed = call_files(db, principal, settings, 'GET', '/v1/usage', '').json()
-        samples = sample_storage(db, env, observed)
-        if samples['files'].status != 'ok' or (settings.storage_metering_enabled and
-                any(item.status != 'ok' or item.used_bytes is None for item in samples.values())):
-            raise HTTPException(503, 'knowledge_usage_unavailable')
-        # A metered deployment must not treat an unavailable component as zero.
-        used = sum(max(0, item.used_bytes or 0) for item in samples.values())
-        used += version_usage(db, env.id)+knowledge_usage(db, env.id)
-        account = db.get(CapacityAccount, env.id)
-        budget = (account.plan['storage_gib'] if account else env.storage_gib)*1024**3
-        if used+size+index_bytes > budget:
-            raise HTTPException(507, 'knowledge_storage_full')
+        reserve_storage(db, env, principal, settings, size+index_bytes)
+        from .knowledge_libraries import legacy_library
+        library = legacy_library(db, binding)
+        if not library or library.state != 'active':
+            raise HTTPException(409, 'knowledge_library_not_found')
         row = ProjectKnowledge(id=str(uuid4()), project_id=str(project_id), environment_id=env.id,
-            request_id=str(body.request_id), digest=digest, encrypted_source=seal(files, settings),
+            library_id=library.id, request_id=str(body.request_id), digest=digest, encrypted_source=seal(files, settings),
             manifest=[{'name': f['name'], 'bytes': len(f['content'].encode())} for f in files],
             source_bytes=size, index_bytes=index_bytes, chunks=len(chunks), state='queued')
         db.add(row)
+        library.head_revision_id, library.updated_at = row.id, now()
         audit(db, env, principal, 'requested', row.id)
         db.commit()
         return public(row)
@@ -167,6 +193,19 @@ def create_router(principal_dependency):
                 .where(AIApplication.enabled.is_(True), AIProjectTrial.knowledge_revision_id == row.id))
             if referenced:
                 raise HTTPException(409, 'knowledge_release_in_use')
+            if row.library_id:
+                # Shared-library revisions cannot be removed through a legacy project route.
+                refs = db.scalar(select(AIProjectTrial.id).where(AIProjectTrial.knowledge_revision_id == row.id).limit(1))
+                shared = db.scalar(select(AIProjectBinding.project_id).where(
+                    AIProjectBinding.knowledge_library_id == row.library_id,
+                    AIProjectBinding.project_id != str(project_id)).limit(1))
+                if refs or shared:
+                    raise HTTPException(409, 'knowledge_release_in_use')
+                library = db.get(KnowledgeLibrary, row.library_id)
+                if library and library.head_revision_id == row.id:
+                    library.head_revision_id = None
+                if library and library.active_revision_id == row.id:
+                    library.active_revision_id = None
             if binding.knowledge_revision_id == row.id:
                 binding.knowledge_revision_id = None
             row.state, row.updated_at, row.lease_token, row.lease_until = 'deleting', now(), None, None
@@ -176,31 +215,34 @@ def create_router(principal_dependency):
 
     @router.post('/{project_id}/knowledge/search')
     def search(project_id: UUID, body: Search, principal=Depends(principal_dependency), db=Depends(get_db)):
-        _, binding, settings = owned(db, principal, project_id)
+        env, binding, settings = owned(db, principal, project_id)
         if binding.native_owner_id != body.native_owner_id:
             raise HTTPException(403, 'knowledge_owner_mismatch')
         row = db.get(ProjectKnowledge, str(body.revision_id)) if body.revision_id else latest(db, str(project_id))
-        if not row or row.project_id != str(project_id) or row.state != 'ready':
+        if not row or not revision_allowed(db, binding, row) or row.state != 'ready':
             return {'revision_id': None, 'sources': []}
-        scope, identifier, digest = row.project_id, row.id, row.digest
+        if row.chunks == 0:
+            return {'revision_id': row.id, 'digest': row.digest, 'sources': []}
+        scope, identifier, digest = revision_scope(row), row.id, row.digest
         db.commit()  # Do not hold an environment lock while embedding a query.
         try:
             result = KnowledgeClient(settings).call('POST', scope, identifier, {'query': body.query, 'k': 5}, query=True)
         except Exception:
             raise HTTPException(503, 'knowledge_search_unavailable') from None
         # Deletion/revocation during the query must prevent subsequent disclosure.
-        owned(db, principal, project_id)
+        _, binding, _ = owned(db, principal, project_id)
+        db.refresh(binding)
         db.refresh(row)
-        if row.state != 'ready':
+        if row.state != 'ready' or not revision_allowed(db, binding, row):
             raise HTTPException(409, 'knowledge_revision_changed')
         return {'revision_id': identifier, 'digest': digest, 'sources': result['sources']}
 
     @router.get('/{project_id}/knowledge/{revision_id}/source')
     def source(project_id: UUID, revision_id: UUID, name: str = Query(min_length=1, max_length=124),
                principal=Depends(principal_dependency), db=Depends(get_db)):
-        _, _, settings = owned(db, principal, project_id)
+        env, binding, settings = owned(db, principal, project_id)
         row = db.get(ProjectKnowledge, str(revision_id))
-        if not row or row.project_id != str(project_id) or row.state != 'ready':
+        if not row or not revision_allowed(db, binding, row) or row.state != 'ready':
             raise HTTPException(404, 'knowledge_not_found')
         for file in unseal(row.encrypted_source, settings):
             if file['name'] == name:

@@ -6,8 +6,8 @@ from uuid import uuid4
 from sqlalchemy import select, or_
 
 from .agent_tasks import unseal
-from .knowledge import KnowledgeClient
-from .models import AIProjectBinding, ProjectKnowledge, UserEnvironment, now
+from .knowledge import KnowledgeClient, revision_scope
+from .models import AIProjectBinding, ProjectKnowledge, KnowledgeLibrary, UserEnvironment, now
 
 
 def run_once(sessions, settings, client=None):
@@ -35,7 +35,7 @@ def run_once(sessions, settings, client=None):
         candidate.lease_token, candidate.lease_until = token, now()+timedelta(seconds=settings.knowledge_request_seconds+60)
         candidate.attempts += 1
         candidate.updated_at = now()
-        scope, revision, digest = candidate.project_id, candidate.id, candidate.digest
+        scope, revision, digest = revision_scope(candidate), candidate.id, candidate.digest
         expected = (candidate.source_bytes, candidate.index_bytes, candidate.chunks)
         encrypted = candidate.encrypted_source
         db.commit()
@@ -45,6 +45,8 @@ def run_once(sessions, settings, client=None):
             if client.call('DELETE', scope, revision).get('deleted') is not True:
                 raise ValueError('delete_unconfirmed')
             state, code = 'deleted', None
+        elif expected[2] == 0:
+            state, code = 'ready', None
         else:
             # The store commits metadata and all chunks atomically. A previous lost reply is recoverable.
             try:
@@ -71,11 +73,24 @@ def run_once(sessions, settings, client=None):
         if state == 'deleted':
             row.encrypted_source, row.manifest, row.source_bytes, row.index_bytes = '', [], 0, 0
         if state == 'ready':
-            binding = db.get(AIProjectBinding, scope)
-            current = db.get(ProjectKnowledge, binding.knowledge_revision_id) if binding.knowledge_revision_id else None
-            # A late recovery of v1 must never switch a ready v2 draft back to v1.
-            if not current or row.created_at >= current.created_at:
-                binding.knowledge_revision_id = row.id
+            if row.library_id:
+                library = db.get(KnowledgeLibrary, row.library_id)
+                if library.state == 'active' and library.head_revision_id == row.id:
+                    library.active_revision_id, library.updated_at = row.id, now()
+                    for binding in db.scalars(select(AIProjectBinding).where(AIProjectBinding.knowledge_library_id == library.id)):
+                        binding.knowledge_revision_id = row.id
+            else:
+                binding = db.get(AIProjectBinding, scope)
+                current = db.get(ProjectKnowledge, binding.knowledge_revision_id) if binding and binding.knowledge_revision_id else None
+                if binding and (not current or row.created_at >= current.created_at):
+                    binding.knowledge_revision_id = row.id
+        if state == 'deleted' and row.library_id:
+            library = db.get(KnowledgeLibrary, row.library_id)
+            db.flush()
+            remaining = db.scalar(select(ProjectKnowledge.id).where(ProjectKnowledge.library_id == library.id,
+                ProjectKnowledge.state != 'deleted').limit(1))
+            if library.state == 'deleting' and not remaining:
+                library.state, library.updated_at = 'deleted', now()
         db.commit()
     return True
 

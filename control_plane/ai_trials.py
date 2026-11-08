@@ -79,7 +79,7 @@ def snapshot(db, binding, config, settings):
             route_revision=sha256(settings.litellm_url.encode()).hexdigest(),
             temperature=config.temperature, max_output_tokens=config.max_output_tokens),
         skills=(SkillRevision(skill_id=config.response_style, revision='1', content=STYLES[config.response_style]),),
-        knowledge=(KnowledgeRevision(collection_id=binding.project_id,
+        knowledge=(KnowledgeRevision(collection_id=(revision.library_id or binding.project_id),
             file_id='collection:'+revision.id, file_digest=revision.digest,
             index_revision=revision.id, index_digest=revision.digest, grant_id=binding.project_id),) if revision else (),
         tools=(ToolRevision(tool_id='file_search', definition_digest=sha256(b'project-file-search-v1').hexdigest(),
@@ -110,7 +110,8 @@ def usable(db, row, settings):
         raise HTTPException(409, 'ai_trials_output_limit')
     if row.knowledge_revision_id:
         revision = db.get(ProjectKnowledge, row.knowledge_revision_id)
-        if (not settings.knowledge_enabled or not revision or revision.project_id != row.project_id or
+        if (not settings.knowledge_enabled or not revision or not snap.knowledge or
+                (revision.library_id or revision.project_id) != str(snap.knowledge[0].collection_id) or
                 revision.environment_id != row.environment_id or revision.state != 'ready' or
                 revision.digest != snap.knowledge[0].index_digest):
             raise HTTPException(409, 'ai_trials_knowledge_unavailable')

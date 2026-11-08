@@ -292,11 +292,16 @@ def create_router(principal_dependency):
         _, release, trial, _, _, _, _, settings = entry_access(db, principal, entry_id)
         if not trial.knowledge_revision_id:
             return {'revision_id':None, 'sources':[]}
-        from .knowledge import KnowledgeClient
+        from .knowledge import KnowledgeClient, revision_scope
+        from .models import ProjectKnowledge
         revision = trial.knowledge_revision_id
+        row = db.get(ProjectKnowledge, revision)
+        if row.chunks == 0:
+            return {'revision_id': revision, 'sources': []}
+        scope = revision_scope(row)
         db.commit()
         try:
-            result = KnowledgeClient(settings).call('POST', release.project_id, revision, {'query':body.query,'k':5}, query=True)
+            result = KnowledgeClient(settings).call('POST', scope, revision, {'query':body.query,'k':5}, query=True)
         except Exception:
             raise HTTPException(503, 'ai_releases_knowledge_unavailable') from None
         db.expire_all()

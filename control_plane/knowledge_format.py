@@ -9,8 +9,8 @@ CHARS = 400
 OVERLAP = 60
 
 
-def prepare(files, max_files=10, max_bytes=1024*1024, max_chunks=4000):
-    if not isinstance(files, list) or not 1 <= len(files) <= max_files:
+def prepare(files, max_files=10, max_bytes=1024*1024, max_chunks=4000, *, allow_empty=False):
+    if not isinstance(files, list) or not (0 if allow_empty else 1) <= len(files) <= max_files:
         raise ValueError('knowledge_file_limit')
     names, chunks, originals = set(), [], 0
     for item in files:

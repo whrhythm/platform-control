@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0026_ai_releases":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0027_knowledge_libraries":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -52,6 +52,8 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation(request: Request, error: RequestValidationError):
+    if request.url.path.startswith('/internal/v1/workspace/knowledge-libraries'):
+        return JSONResponse(status_code=422, content={'detail': 'knowledge_invalid_request'})
     if request.url.path.startswith('/internal/v1/workspace/ai-projects'):
         return JSONResponse(status_code=422, content={'detail': 'ai_projects_invalid_request'})
     if request.url.path.endswith('/acceptance'):
@@ -325,6 +327,8 @@ from .ai_projects import create_router as create_ai_projects_router
 app.include_router(create_ai_projects_router(workspace_service_principal))
 from .knowledge import create_router as create_knowledge_router
 app.include_router(create_knowledge_router(workspace_service_principal))
+from .knowledge_libraries import create_router as create_libraries_router
+app.include_router(create_libraries_router(workspace_service_principal))
 from .ai_trials import create_router as create_ai_trials_router
 app.include_router(create_ai_trials_router(workspace_service_principal))
 from .ai_releases import create_router as create_ai_releases_router

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     knowledge_file_bytes: int = Field(default=1048576, ge=1024, le=1048576)
     knowledge_chunk_limit: int = Field(default=4000, ge=1, le=4000)
     knowledge_revision_limit: int = Field(default=20, ge=1, le=100)
+    knowledge_library_limit: int = Field(default=20, ge=1, le=100)
     knowledge_request_seconds: int = Field(default=180, ge=10, le=300)
     knowledge_query_seconds: int = Field(default=20, ge=1, le=60)
     knowledge_poll_seconds: int = Field(default=3, ge=1, le=30)

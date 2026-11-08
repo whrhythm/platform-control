@@ -224,7 +224,7 @@ def test_knowledge_parallel_imports_reserve_once_and_enforce_capacity(postgres_h
     import httpx
     from uuid import uuid4
     from cryptography.fernet import Fernet
-    from control_plane.models import AIProjectBinding, WorkspaceProject, ProjectKnowledge, StorageMeasurement, WorkspaceFileService
+    from control_plane.models import AIProjectBinding, WorkspaceProject, ProjectKnowledge, KnowledgeLibrary, StorageMeasurement, WorkspaceFileService
     from control_plane.knowledge_format import prepare
     from test_capacity import prepare_capacity
     client, _ = postgres_harness
@@ -252,7 +252,51 @@ def test_knowledge_parallel_imports_reserve_once_and_enforce_capacity(postgres_h
         assert client.post(path,headers=auth,json={**payload,'request_id':str(uuid4())}).status_code==507
     finally:
         with client.session_factory.begin() as db:
-            for model in (ProjectKnowledge,AIProjectBinding,WorkspaceProject,StorageMeasurement,CapacityAccount,
+            for model in (ProjectKnowledge,AIProjectBinding,KnowledgeLibrary,WorkspaceProject,StorageMeasurement,CapacityAccount,
+                          WorkspaceFileService,WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
+                db.execute(delete(model).where(model.environment_id==env_id))
+            db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))
+
+
+def test_library_backfill_preserves_postgres_releases(postgres_harness):
+    from test_migrations import assert_library_backfill_preserves_pinned_data
+    client, _ = postgres_harness
+    config = Config(str(Path(__file__).resolve().parents[1] / 'alembic.ini'))
+    assert_library_backfill_preserves_pinned_data(config, client.session_factory.kw['bind'])
+
+
+def test_library_parallel_edits_use_revision_cas(postgres_harness, monkeypatch):
+    import httpx
+    from uuid import uuid4
+    from cryptography.fernet import Fernet
+    from control_plane.models import KnowledgeLibrary, ProjectKnowledge, StorageMeasurement, WorkspaceFileService
+    from test_capacity import prepare_capacity
+    client, _ = postgres_harness
+    client, auth, env_id, observed, _ = prepare_capacity(client, monkeypatch)
+    for name, value in [('AI_PROJECTS_ENABLED','true'),('KNOWLEDGE_ENABLED','true'),
+        ('MODEL_CREDENTIAL_ENCRYPTION_KEY',Fernet.generate_key().decode())]:
+        monkeypatch.setenv('PLATFORM_'+name,value)
+    get_settings.cache_clear()
+    monkeypatch.setattr('control_plane.knowledge.call_files',lambda *a,**kw:httpx.Response(200,json=observed))
+    url='/internal/v1/workspace/knowledge-libraries'
+    try:
+        library=client.post(url,headers=auth,json={'request_id':str(uuid4()),'name':'并发库'}).json()
+        path=url+'/'+library['id']+'/files'
+        payload={'request_id':str(uuid4()),'expected_revision_id':None,'action':'upsert','files':[{'name':'a.txt','content':'initial'}]}
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results=list(pool.map(lambda _:client.post(path,headers=auth,json=payload),range(8)))
+        assert all(r.status_code==202 for r in results), [r.text for r in results]
+        assert len({r.json()['head_revision_id'] for r in results})==1
+        revision=results[0].json()['head_revision_id']
+        def edit(i):
+            return client.post(path,headers=auth,json={**payload,'request_id':str(uuid4()),
+                'expected_revision_id':revision,'files':[{'name':'a.txt','content':str(i)}]})
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results=list(pool.map(edit,range(4)))
+        assert sorted(r.status_code for r in results)==[202,409,409,409]
+    finally:
+        with client.session_factory.begin() as db:
+            for model in (ProjectKnowledge,KnowledgeLibrary,StorageMeasurement,CapacityAccount,
                           WorkspaceFileService,WorkspaceVolumeBinding,WorkspaceProvisioningIntent):
                 db.execute(delete(model).where(model.environment_id==env_id))
             db.execute(delete(UserEnvironment).where(UserEnvironment.id==env_id))

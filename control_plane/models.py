@@ -423,6 +423,7 @@ class AIProjectBinding(Base):
     native_owner_id: Mapped[str] = mapped_column(String(24))
     agent_id: Mapped[str] = mapped_column(String(80), unique=True)
     knowledge_revision_id: Mapped[str | None] = mapped_column(String(36))
+    knowledge_library_id: Mapped[str | None] = mapped_column(String(36), index=True)
     state: Mapped[str] = mapped_column(String(24), default='preparing')
     encrypted_initial: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
@@ -533,14 +534,32 @@ class AITrialRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class KnowledgeLibrary(Base):
+    __tablename__ = 'knowledge_libraries'
+    __table_args__ = (UniqueConstraint('environment_id', 'request_id', name='uq_library_request'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
+    environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
+    request_id: Mapped[str] = mapped_column(String(36))
+    name: Mapped[str] = mapped_column(String(80))
+    state: Mapped[str] = mapped_column(String(24), default='active')
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    head_revision_id: Mapped[str | None] = mapped_column(String(36))
+    active_revision_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class ProjectKnowledge(Base):
     __tablename__ = 'project_knowledge'
-    __table_args__ = (UniqueConstraint('project_id', 'request_id', name='uq_knowledge_request'),)
+    __table_args__ = (UniqueConstraint('project_id', 'request_id', name='uq_knowledge_request'),
+                     UniqueConstraint('library_id', 'request_id', name='uq_library_revision_request'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
-    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), index=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey('ai_project_bindings.project_id'), index=True, nullable=True)
+    library_id: Mapped[str | None] = mapped_column(ForeignKey('knowledge_libraries.id'), index=True)
     environment_id: Mapped[str] = mapped_column(ForeignKey('user_environments.id'), index=True)
     request_id: Mapped[str] = mapped_column(String(36))
     digest: Mapped[str] = mapped_column(String(64))
+    edit_digest: Mapped[str | None] = mapped_column(String(64))
     encrypted_source: Mapped[str] = mapped_column(Text)
     manifest: Mapped[list] = mapped_column(JSON)
     source_bytes: Mapped[int] = mapped_column(BigInteger)
