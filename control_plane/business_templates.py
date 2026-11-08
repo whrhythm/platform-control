@@ -17,7 +17,7 @@ from .models import AgentTask, AuditEvent, WorkspaceProject, BusinessTemplate, P
 from .project_databases import ensure_database, public_database
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
-from .workspace_projects import public as project_out
+from .workspace_projects import active_workspace_project, public as project_out
 from .templates.support.app import password_hash
 
 ASSETS = Path(__file__).parent / 'templates' / 'support'
@@ -86,7 +86,7 @@ def create_router(principal_dependency):
             return output(db, settings, project, db.get(BusinessTemplate, identifier))
         if not body.name.strip(): raise HTTPException(422, 'templates_invalid_name')
         if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
-                WorkspaceProject.environment_id == env.id)) >= settings.workspace_projects_limit:
+                WorkspaceProject.environment_id == env.id, active_workspace_project())) >= settings.workspace_projects_limit:
             raise HTTPException(409, 'templates_project_limit')
         password = secrets.token_urlsafe(24)
         access = {'username': 'owner', 'password': password, 'password_hash': password_hash(password)}

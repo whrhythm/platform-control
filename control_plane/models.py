@@ -439,6 +439,12 @@ class AIApplication(Base):
     revision: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class AIProjectDeletion(Base):
+    __tablename__ = 'ai_project_deletions'
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), primary_key=True)
+    plan: Mapped[dict] = mapped_column(JSON)
+
+
 class AIRelease(Base):
     __tablename__ = 'ai_releases'
     __table_args__ = (UniqueConstraint('project_id', 'request_id'), UniqueConstraint('project_id', 'number'))

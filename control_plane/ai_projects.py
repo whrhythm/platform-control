@@ -11,7 +11,7 @@ from .database import get_db
 from .models import AIProjectBinding, AuditEvent, WorkspaceProject, now
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
-from .workspace_projects import PROJECT_ROOT, check_new_root, public as project_out
+from .workspace_projects import PROJECT_ROOT, active_workspace_project, check_new_root, public as project_out
 
 
 class Create(BaseModel):
@@ -48,7 +48,8 @@ def create_router(principal_dependency):
             return env, settings
         project = db.get(WorkspaceProject, str(project_id))
         binding = db.get(AIProjectBinding, str(project_id))
-        if not project or project.environment_id != env.id or not binding:
+        if (not project or project.environment_id != env.id or not binding or
+                binding.state not in ('preparing', 'ready')):
             raise HTTPException(404, 'ai_projects_not_found')
         return env, settings, project, binding
 
@@ -70,7 +71,7 @@ def create_router(principal_dependency):
         if not settings.ai_projects_enabled:
             return {'enabled': False, 'projects': []}
         rows = db.execute(select(WorkspaceProject, AIProjectBinding).join(AIProjectBinding)
-            .where(WorkspaceProject.environment_id == env.id)
+            .where(WorkspaceProject.environment_id == env.id, AIProjectBinding.state != 'deleted')
             .order_by(WorkspaceProject.created_at.desc())).all()
         return {'enabled': True, 'projects': [output(settings, p, b) for p, b in rows]}
 
@@ -81,13 +82,14 @@ def create_router(principal_dependency):
         project = db.get(WorkspaceProject, identifier)
         if project:
             binding = db.get(AIProjectBinding, identifier)
-            if (not binding or binding.native_owner_id != body.native_owner_id or
+            if (not binding or binding.state not in ('preparing', 'ready') or
+                    binding.native_owner_id != body.native_owner_id or
                     (body.path is not None and project.project_path != body.path) or
                     project.name != body.name or unseal(project.encrypted_goal, settings) != body.purpose):
                 raise HTTPException(409, 'ai_projects_request_conflict')
             return output(settings, project, binding)
         if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
-                WorkspaceProject.environment_id == env.id)) >= settings.workspace_projects_limit:
+                WorkspaceProject.environment_id == env.id, active_workspace_project())) >= settings.workspace_projects_limit:
             raise HTTPException(409, 'ai_projects_limit')
         policy = effective_policy(db, settings)
         if not policy['chat_model'] or policy['chat_model'] not in policy['allowed_models']:

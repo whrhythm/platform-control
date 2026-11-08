@@ -102,6 +102,8 @@ def draft_snapshot(db, binding, settings):
 
 
 def usable(db, row, settings):
+    if row.state == 'deleted':
+        raise HTTPException(404, 'ai_trials_not_found')
     snap = AgentSnapshot.model_validate(unseal(row.encrypted_snapshot, settings))
     if (snap.model.model not in effective_policy(db, settings)['allowed_models'] or
             snap.model.route_revision != sha256(settings.litellm_url.encode()).hexdigest()):

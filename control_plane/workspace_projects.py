@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from .agent_tasks import ACTIVE, seal, unseal
 from .applications import application_out
 from .database import get_db
-from .models import AgentTask, AuditEvent, UserApplication, WorkspaceProject, now
+from .models import AgentTask, AIProjectBinding, AuditEvent, UserApplication, WorkspaceProject, now
 from .settings import get_settings
 from .task_acceptance import acceptance_summary
 from .workspace_files import WorkspaceFiles
@@ -50,6 +50,11 @@ def public(row, settings):
             'updated_at': row.updated_at.replace(tzinfo=timezone.utc) if row.updated_at.tzinfo is None else row.updated_at}
 
 
+def active_workspace_project():
+    return ~select(AIProjectBinding.project_id).where(
+        AIProjectBinding.project_id == WorkspaceProject.id, AIProjectBinding.state == 'deleted').exists()
+
+
 def check_new_root(db, principal, settings, path):
     try:
         call_files(db, principal, settings, 'GET', '/v1/directories', path)
@@ -63,7 +68,7 @@ def create_router(principal_dependency):
     def owned(db, principal, identifier):
         env = own_environment(db, principal)
         row = db.scalar(select(WorkspaceProject).where(WorkspaceProject.id == str(identifier),
-            WorkspaceProject.environment_id == env.id))
+            WorkspaceProject.environment_id == env.id, active_workspace_project()))
         if row is None:
             raise HTTPException(404, 'projects_not_found')
         return env, row
@@ -71,7 +76,8 @@ def create_router(principal_dependency):
     @router.get('')
     def listing(principal=Depends(principal_dependency), db=Depends(get_db)):
         env = own_environment(db, principal)
-        rows = db.scalars(select(WorkspaceProject).where(WorkspaceProject.environment_id == env.id)
+        rows = db.scalars(select(WorkspaceProject).where(WorkspaceProject.environment_id == env.id,
+                          active_workspace_project())
                           .order_by(WorkspaceProject.updated_at.desc(), WorkspaceProject.id))
         return {'projects': [public(row, get_settings()) for row in rows]}
 
@@ -84,6 +90,9 @@ def create_router(principal_dependency):
         settings = get_settings()
         row = db.scalar(select(WorkspaceProject).where(WorkspaceProject.environment_id == env.id,
             WorkspaceProject.project_path == body.path))
+        binding = db.get(AIProjectBinding, row.id) if row else None
+        if binding and binding.state in ('deleting', 'deleted'):
+            raise HTTPException(409, 'projects_changed')
         identifier = None
         if body.request_id:
             if body.revision or not re.fullmatch(PROJECT_ROOT, body.path):
@@ -103,7 +112,7 @@ def create_router(principal_dependency):
             raise HTTPException(409, 'projects_changed')
         if row is None:
             if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
-                    WorkspaceProject.environment_id == env.id)) >= settings.workspace_projects_limit:
+                    WorkspaceProject.environment_id == env.id, active_workspace_project())) >= settings.workspace_projects_limit:
                 raise HTTPException(409, 'projects_limit')
             check_new_root(db, principal, settings, body.path)
             row = WorkspaceProject(environment_id=env.id, project_path=body.path, revision=0)
