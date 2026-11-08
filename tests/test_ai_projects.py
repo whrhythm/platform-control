@@ -63,3 +63,23 @@ def test_disabled_feature_and_forged_client_identity(versions, monkeypatch):
     get_settings.cache_clear()
     assert client.get(PREFIX, headers=auth).json() == {'enabled': False, 'projects': []}
     assert client.post(PREFIX, headers=auth, json=body).status_code == 404
+
+
+def test_selected_root_preserves_existing_files_and_is_exclusive(versions, monkeypatch):
+    client, auth, root = setup(versions, monkeypatch)
+    monkeypatch.setattr('control_plane.workspace_projects.call_files', versions[-1])
+    body = {'request_id': str(uuid4()), 'name': '售后项目', 'purpose': '知识助手',
+            'native_owner_id': OWNER, 'path': 'project'}
+    original = (root / 'project' / 'main.py').read_bytes()
+    assert client.post(PREFIX, headers=auth, json={**body, 'path': '不存在'}).status_code == 422
+    assert client.post(PREFIX, headers=auth, json={**body, 'path': 'missing'}).status_code == 404
+    created = client.post(PREFIX, headers=auth, json=body)
+    assert created.status_code == 201, created.text
+    project = created.json()['project']
+    assert project['path'] == 'project'
+    assert client.post(PREFIX, headers=auth, json=body).json()['project']['id'] == project['id']
+    assert client.post(PREFIX, headers=auth, json={**body, 'request_id': str(uuid4())}).status_code == 409
+    assert client.put('/internal/v1/workspace/projects', headers=auth, json={
+        'request_id': str(uuid4()), 'path': 'project', 'name': 'Another project', 'goal': '',
+    }).json()['detail'] == 'projects_root_in_use'
+    assert (root / 'project' / 'main.py').read_bytes() == original

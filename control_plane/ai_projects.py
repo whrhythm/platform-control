@@ -11,7 +11,7 @@ from .database import get_db
 from .models import AIProjectBinding, AuditEvent, WorkspaceProject, now
 from .settings import get_settings
 from .workspace_gateway import call_files, own_environment
-from .workspace_projects import public as project_out
+from .workspace_projects import PROJECT_ROOT, check_new_root, public as project_out
 
 
 class Create(BaseModel):
@@ -21,6 +21,7 @@ class Create(BaseModel):
     purpose: str = Field(min_length=1, max_length=1000)
     # Stamped by the authenticated LibreChat BFF, not accepted from browser JSON.
     native_owner_id: str = Field(pattern=r'^[0-9a-f]{24}$')
+    path: str | None = Field(default=None, pattern='^' + PROJECT_ROOT + '$')
 
 
 class Owner(BaseModel):
@@ -81,6 +82,7 @@ def create_router(principal_dependency):
         if project:
             binding = db.get(AIProjectBinding, identifier)
             if (not binding or binding.native_owner_id != body.native_owner_id or
+                    (body.path is not None and project.project_path != body.path) or
                     project.name != body.name or unseal(project.encrypted_goal, settings) != body.purpose):
                 raise HTTPException(409, 'ai_projects_request_conflict')
             return output(settings, project, binding)
@@ -90,13 +92,22 @@ def create_router(principal_dependency):
         policy = effective_policy(db, settings)
         if not policy['chat_model'] or policy['chat_model'] not in policy['allowed_models']:
             raise HTTPException(503, 'ai_projects_model_unavailable')
+        if body.path:
+            if db.scalar(select(WorkspaceProject.id).where(
+                WorkspaceProject.environment_id == env.id, WorkspaceProject.project_path == body.path
+            )):
+                raise HTTPException(409, 'ai_projects_root_in_use')
+            try:
+                check_new_root(db, principal, settings, body.path)
+            except HTTPException as error:
+                raise HTTPException(error.status_code, 'ai_projects_directory_unavailable') from None
         initial = {'name': body.name, 'description': body.purpose, 'provider': 'LiteLLM',
             'model': policy['chat_model'], 'tools': [], 'skills_enabled': False,
             'instructions': '你是这个项目的业务助手，项目用途：' + body.purpose +
                 '\n当前尚未配置知识检索。不要声称已读取用户文件或提供虚构引用。'
                 '没有依据时说明限制，不假装已执行工具、发布应用或处理业务记录。'}
         project = WorkspaceProject(id=identifier, environment_id=env.id,
-            project_path='assistant-' + UUID(identifier).hex[:16], name=body.name,
+            project_path=body.path or 'assistant-' + UUID(identifier).hex[:16], name=body.name,
             encrypted_goal=seal(body.purpose, settings))
         db.add(project)
         db.flush()

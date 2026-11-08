@@ -1,4 +1,5 @@
 import hashlib
+from uuid import uuid4
 from cryptography.fernet import Fernet
 import pytest
 from sqlalchemy import select
@@ -94,3 +95,20 @@ def test_source_failure_does_not_remove_project(projects,monkeypatch):
     response=client.get(PREFIX+'/'+identifier+'/source',headers=auth)
     assert response.status_code==503 and 'secret' not in response.text
     assert client.get(PREFIX+'/'+identifier,headers=auth).status_code==200
+
+
+def test_typed_application_create_can_retry_but_cannot_adopt_another_binding(projects):
+    client, auth, _, root = projects
+    request_id = str(uuid4())
+    for invalid in ('中文', 'UPPERCASE', 'nested/root'):
+        assert save(client, auth, path=invalid, request_id=request_id).status_code == 400
+    assert save(client, auth, path='missing', request_id=request_id).status_code == 404
+    original = (root / 'project' / 'main.py').read_bytes()
+    created = save(client, auth, request_id=request_id)
+    assert created.status_code == 200, created.text
+    assert save(client, auth, request_id=request_id).json() == created.json()
+    assert save(client, auth, request_id=request_id, name='Changed').status_code == 409
+    duplicate = save(client, auth, request_id=str(uuid4()))
+    assert duplicate.status_code == 409
+    assert duplicate.json()['detail'] == 'projects_root_in_use'
+    assert (root / 'project' / 'main.py').read_bytes() == original

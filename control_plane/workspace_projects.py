@@ -1,7 +1,8 @@
 """Project context is metadata plus observed records, never inferred business completion."""
 import hashlib
+import re
 from datetime import timezone
-from uuid import UUID
+from uuid import NAMESPACE_URL, UUID, uuid5
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -17,12 +18,16 @@ from .workspace_files import WorkspaceFiles
 from .workspace_gateway import own_environment, call_files
 
 
+PROJECT_ROOT = r'[a-z0-9][a-z0-9-]{0,79}'
+
+
 class ProjectInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     path: str = Field(min_length=1, max_length=255)
     name: str = Field(min_length=1, max_length=80)
     goal: str = Field(max_length=1000)
     revision: int = Field(default=0, ge=0)
+    request_id: UUID | None = None
 
     @field_validator('path')
     @classmethod
@@ -43,6 +48,13 @@ def public(row, settings):
             'goal': unseal(row.encrypted_goal, settings), 'revision': row.revision,
             'created_at': row.created_at.replace(tzinfo=timezone.utc) if row.created_at.tzinfo is None else row.created_at,
             'updated_at': row.updated_at.replace(tzinfo=timezone.utc) if row.updated_at.tzinfo is None else row.updated_at}
+
+
+def check_new_root(db, principal, settings, path):
+    try:
+        call_files(db, principal, settings, 'GET', '/v1/directories', path)
+    except HTTPException as error:
+        raise HTTPException(error.status_code, 'projects_directory_unavailable') from None
 
 
 def create_router(principal_dependency):
@@ -72,6 +84,19 @@ def create_router(principal_dependency):
         settings = get_settings()
         row = db.scalar(select(WorkspaceProject).where(WorkspaceProject.environment_id == env.id,
             WorkspaceProject.project_path == body.path))
+        identifier = None
+        if body.request_id:
+            if body.revision or not re.fullmatch(PROJECT_ROOT, body.path):
+                raise HTTPException(400, 'projects_invalid_request')
+            identifier = str(uuid5(NAMESPACE_URL, env.id + '/code-project/' + str(body.request_id)))
+            previous = db.get(WorkspaceProject, identifier)
+            if previous:
+                if (previous.project_path != body.path or previous.name != body.name or
+                        unseal(previous.encrypted_goal, settings) != body.goal):
+                    raise HTTPException(409, 'projects_request_conflict')
+                return public(previous, settings)
+            if row:
+                raise HTTPException(409, 'projects_root_in_use')
         if row and row.name == body.name and unseal(row.encrypted_goal, settings) == body.goal and body.revision in (row.revision, row.revision - 1):
             return public(row, settings)
         if body.revision != (row.revision if row else 0):
@@ -80,11 +105,10 @@ def create_router(principal_dependency):
             if db.scalar(select(func.count()).select_from(WorkspaceProject).where(
                     WorkspaceProject.environment_id == env.id)) >= settings.workspace_projects_limit:
                 raise HTTPException(409, 'projects_limit')
-            try:
-                call_files(db, principal, settings, 'GET', '/v1/directories', body.path)
-            except HTTPException as error:
-                raise HTTPException(error.status_code, 'projects_directory_unavailable') from None
+            check_new_root(db, principal, settings, body.path)
             row = WorkspaceProject(environment_id=env.id, project_path=body.path, revision=0)
+            if identifier:
+                row.id = identifier
             db.add(row)
         row.name, row.encrypted_goal = body.name, seal(body.goal, settings)
         row.revision += 1

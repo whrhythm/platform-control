@@ -11422,6 +11422,18 @@
             "minimum": 0.0,
             "title": "Revision",
             "default": 0
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
           }
         },
         "additionalProperties": false,
@@ -12734,6 +12746,18 @@
             "type": "string",
             "pattern": "^[0-9a-f]{24}$",
             "title": "Native Owner Id"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^[a-z0-9][a-z0-9-]{0,79}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path"
           }
         },
         "additionalProperties": false,
