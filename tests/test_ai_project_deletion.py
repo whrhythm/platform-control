@@ -88,3 +88,32 @@ def test_deletion_revokes_runtime_and_preserves_billing_including_inflight(versi
         assert db.get(AIProjectDraft, project) is None
         trial = db.scalar(select(AIProjectTrial).where(AIProjectTrial.project_id == project))
         assert trial.encrypted_snapshot == '' and trial.knowledge_revision_id is None
+
+
+def test_project_created_library_is_preserved_when_another_project_uses_it(versions, monkeypatch):
+    client, auth, project = initialized(versions, monkeypatch)
+    base = PREFIX + '/' + project
+    owner = {'native_owner_id': OWNER}
+    revision = client.post(base + '/knowledge', headers=auth, json={
+        **owner, 'request_id': str(uuid4()), 'files': [{'name': 'shared.md', 'content': 'shared source'}],
+    }).json()['id']
+    store = Store()
+    assert run_once(client.session_factory, get_settings(), store)
+    second = client.post(PREFIX, headers=auth, json={
+        **owner, 'request_id': str(uuid4()), 'name': 'Second assistant', 'purpose': 'Use shared knowledge',
+    }).json()
+    second_path = PREFIX + '/' + second['project']['id']
+    assert client.post(second_path + '/confirm', headers=auth, json={
+        **owner, 'agent_id': second['agent_id'],
+    }).status_code == 200
+    assert client.post(second_path + '/knowledge-library', headers=auth, json={
+        **owner, 'library_id': project, 'expected_library_id': None,
+    }).status_code == 200
+    url = base + '/deletion'
+    plan = client.get(url, headers=auth).json()
+    assert (plan['knowledge_libraries'], plan['knowledge_revisions'], plan['preserved_libraries']) == (0, 0, 1)
+    assert client.post(url, headers=auth, json={**owner, 'confirmation': plan['confirmation']}).json()['state'] == 'native'
+    assert client.post(url + '/complete', headers=auth, json=owner).status_code == 200
+    detail = client.get('/internal/v1/workspace/knowledge-libraries/' + project, headers=auth).json()
+    assert detail['active_revision_id'] == revision
+    assert [row['id'] for row in detail['references']['projects']] == [second['project']['id']]
