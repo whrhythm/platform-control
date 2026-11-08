@@ -7,18 +7,41 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import Field
 from sqlalchemy import delete, or_, select, update
 
-from .agent_tasks import seal
+from .agent_tasks import ACTIVE, seal
 from .ai_projects import Owner
 from .database import get_db
 from .models import (AIAppEntry, AIAppMember, AIApplication, AIProjectBinding, AIProjectDeletion,
     AIProjectDraft, AIProjectTrial, AIRelease, AITrialRun, AITrialSession, AuditEvent,
-    KnowledgeLibrary, ProjectKnowledge, WorkspaceProject, now)
+    AgentTask, KnowledgeLibrary, ProjectDatabase, ProjectKnowledge, UserApplication, WorkspaceProject, now)
 from .settings import get_settings
-from .workspace_gateway import own_environment
+from .workspace_gateway import call_files, own_environment
 
 
 class Advance(Owner):
     confirmation: str | None = Field(default=None, pattern=r'^[0-9a-f]{64}$')
+    remove_folder: bool = False
+
+
+def root_in_use(db, project):
+    path = project.project_path
+    env_id = project.environment_id
+    return any(db.scalar(select(model.id).where(model.environment_id == env_id,
+        model.project_path == path, model.status != 'deleted').limit(1))
+        for model in (UserApplication, ProjectDatabase)) or bool(db.scalar(select(AgentTask.id).where(
+            AgentTask.environment_id == env_id, AgentTask.status.in_(ACTIVE)).limit(1)))
+
+
+def plan_folder(db, principal, project):
+    if root_in_use(db, project):
+        return {'reason': 'in_use'}
+    try:
+        scope = call_files(db, principal, get_settings(), 'GET', '/v1/project-root',
+                           project.project_path, params={'project_id': project.id}).json()['scope']
+    except HTTPException as error:
+        if error.status_code in (400, 413):
+            return {'reason': 'unverified'}
+        raise HTTPException(503, 'ai_projects_folder_check_unavailable') from None
+    return {'scope': scope} if scope else {'reason': 'unverified'}
 
 
 def deletion_plan(db, binding, project):
@@ -70,15 +93,21 @@ def deletion_plan(db, binding, project):
 
 
 def preview(plan):
+    folder = plan['folder_cleanup']
+    scope = folder.get('scope')
     return {'state': 'confirm', 'confirmation': sha256(json.dumps(plan, sort_keys=True).encode()).hexdigest(),
-            'folder': plan['folder'], 'knowledge_libraries': int(bool(plan['library'])),
+            'folder': plan['folder'],
+            'folder_cleanup': ({key: scope[key] for key in ('files', 'directories', 'bytes')}
+                               if scope else None),
+            'folder_retention_reason': folder.get('reason'),
+            'knowledge_libraries': int(bool(plan['library'])),
             'knowledge_revisions': len(plan['revisions']), 'preserved_libraries': len(plan['preserved_libraries']),
             'trials': len(plan['trials']), 'releases': len(plan['releases']), 'shares': len(plan['members'])}
 
 
 def status(db, deletion, *, include_agents=False):
-    if not deletion.plan:
-        return {'state': 'deleted'}
+    if 'revisions' not in deletion.plan:
+        return {'state': 'deleted', **deletion.plan}
     rows = list(db.scalars(select(ProjectKnowledge).where(ProjectKnowledge.id.in_(deletion.plan['revisions']),
                                                          ProjectKnowledge.state != 'deleted')))
     if rows:
@@ -104,6 +133,9 @@ def create_router(principal_dependency):
         db.add(AuditEvent(tenant_id=env.first_tenant_id, issuer=principal.issuer, subject=principal.subject,
                          action='ai_project.' + action, target_id=target))
 
+    def plan_deletion(db, principal, binding, project):
+        return {**deletion_plan(db, binding, project), 'folder_cleanup': plan_folder(db, principal, project)}
+
     @router.get('/{project_id}/deletion')
     def inspect(project_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
         _, binding, project = owned(db, principal, project_id)
@@ -112,7 +144,7 @@ def create_router(principal_dependency):
             return status(db, deletion)
         if binding.state != 'ready':
             raise HTTPException(409, 'ai_projects_deletion_not_ready')
-        return preview(deletion_plan(db, binding, project))
+        return preview(plan_deletion(db, principal, binding, project))
 
     @router.post('/{project_id}/deletion')
     def advance(project_id: UUID, body: Advance, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -122,8 +154,9 @@ def create_router(principal_dependency):
             return status(db, deletion, include_agents=True)
         if binding.state != 'ready':
             raise HTTPException(409, 'ai_projects_deletion_not_ready')
-        plan = deletion_plan(db, binding, project)
-        if preview(plan)['confirmation'] != body.confirmation:
+        plan = plan_deletion(db, principal, binding, project)
+        if (preview(plan)['confirmation'] != body.confirmation or
+                bool(plan['folder_cleanup'].get('scope')) != body.remove_folder):
             raise HTTPException(409, 'ai_projects_deletion_changed')
         binding.state, binding.updated_at = 'deleting', now()
         binding.knowledge_revision_id = binding.knowledge_library_id = None
@@ -158,9 +191,25 @@ def create_router(principal_dependency):
             raise HTTPException(409, 'ai_projects_deletion_not_ready')
         state = status(db, deletion)['state']
         if state == 'deleted':
-            return {'state': state}
+            return status(db, deletion)
         if state != 'native':
             raise HTTPException(409, 'ai_projects_deletion_not_ready')
+        folder_retained = False
+        scope = deletion.plan.get('folder_cleanup', {}).get('scope')
+        if scope:
+            if root_in_use(db, project):
+                folder_retained = True
+            else:
+                try:
+                    result = call_files(db, principal, get_settings(), 'DELETE', '/v1/project-root',
+                        deletion.plan['folder'], params={'project_id': project.id, 'digest': scope['digest'],
+                                                         'inode': scope['inode']}).json()
+                except HTTPException:
+                    raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable') from None
+                if type(result.get('removed')) is not bool:
+                    raise HTTPException(503, 'ai_projects_folder_cleanup_unavailable')
+                folder_retained = not result['removed']
+            audit(db, env, principal, 'root_preserved' if folder_retained else 'root_removed', project.id)
         trials = select(AIProjectTrial.id).where(AIProjectTrial.project_id == project.id)
         released = select(AIRelease.trial_id).where(AIRelease.project_id == project.id)
         db.execute(delete(AITrialRun).where(AITrialRun.trial_id.in_(trials)))
@@ -173,9 +222,9 @@ def create_router(principal_dependency):
         binding.state, binding.updated_at = 'deleted', now()
         project.project_path, project.name = '@deleted/' + project.id, ''
         project.encrypted_goal, project.updated_at = seal('', get_settings()), now()
-        deletion.plan = {}
+        deletion.plan = {'folder_retained': True} if folder_retained else {}
         audit(db, env, principal, 'deletion_completed', project.id)
         db.commit()
-        return {'state': 'deleted'}
+        return status(db, deletion)
 
     return router

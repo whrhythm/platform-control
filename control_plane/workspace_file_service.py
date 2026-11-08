@@ -147,6 +147,29 @@ def create_app(root: str, service_token: str, *, max_file_bytes: int = 16 * 1024
         except (OSError, ValueError) as error:
             raise sanitized_error(error) from None
 
+    @app.get('/v1/project-root', dependencies=[Depends(authenticate)])
+    async def project_root(path: str = Query(max_length=255), project_id: str = Query(pattern=r'^[0-9a-f-]{36}$')):
+        from .project_root_cleanup import scope
+        try:
+            async with snapshots:
+                return {'scope': await run_in_threadpool(scope, files, path, project_id, service_token)}
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
+    @app.delete('/v1/project-root', dependencies=[Depends(authenticate)])
+    async def delete_project_root(path: str = Query(max_length=255),
+                                  project_id: str = Query(pattern=r'^[0-9a-f-]{36}$'),
+                                  digest: str = Query(pattern=r'^[0-9a-f]{64}$'),
+                                  inode: int = Query(ge=1)):
+        from .project_root_cleanup import retire
+        try:
+            async with snapshots:
+                result = await run_in_threadpool(retire, files, path, project_id, digest, inode, service_token)
+                invalidate_usage()
+                return result
+        except (OSError, ValueError) as error:
+            raise sanitized_error(error) from None
+
     @app.get('/v1/archive', dependencies=[Depends(authenticate)], response_class=Response)
     async def download_archive(path: str = Query(min_length=1, max_length=4096)):
         await snapshots.acquire()

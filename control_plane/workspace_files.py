@@ -50,6 +50,15 @@ class WorkspaceFiles:
         return parts
 
     @contextmanager
+    def _directory_handle(self, parent: int, name: str):
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+        fd = os.open(name, flags, dir_fd=parent)
+        try:
+            yield fd
+        finally:
+            os.close(fd)
+
+    @contextmanager
     def _directory(self, parts: list[str]):
         flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
         current = os.open(self.root, flags)

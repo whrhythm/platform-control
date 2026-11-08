@@ -122,6 +122,18 @@ def restored(files, target, request_id, digest, token):
         return False
 
 
+def rename_noreplace(root, source, target):
+    libc = ctypes.CDLL(None, use_errno=True)
+    rename = getattr(libc, 'renameat2', None)
+    if rename is None:
+        raise OSError(errno.ENOSYS, 'Atomic no-replace rename unavailable')
+    rename.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+    rename.restype = ctypes.c_int
+    if rename(root, os.fsencode(source), root, os.fsencode(target), 1) != 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code))
+
+
 def restore(files, target, payload, request_id, token):
     validate(payload)
     digest = hashlib.sha256(encode(payload)).hexdigest()
@@ -177,13 +189,7 @@ def restore(files, target, payload, request_id, token):
                     stream.write(encode(receipt_value(target,request_id,digest,token)));stream.flush();os.fsync(stream.fileno())
                 os.fsync(parent)
             finally:os.close(parent)
-            libc=ctypes.CDLL(None,use_errno=True)
-            rename=getattr(libc,'renameat2',None)
-            if rename is None:raise OSError(errno.ENOSYS,'Atomic no-replace rename unavailable')
-            rename.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
-            rename.restype=ctypes.c_int
-            if rename(root,stage.encode(),root,target.encode(),1)!=0:
-                code=ctypes.get_errno();raise OSError(code,os.strerror(code))
+            rename_noreplace(root, stage, target)
             os.fsync(root)
         finally:
             try:remove_tree(root,stage)

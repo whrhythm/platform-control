@@ -9798,6 +9798,11 @@
               }
             ],
             "title": "Confirmation"
+          },
+          "remove_folder": {
+            "type": "boolean",
+            "title": "Remove Folder",
+            "default": false
           }
         },
         "additionalProperties": false,
