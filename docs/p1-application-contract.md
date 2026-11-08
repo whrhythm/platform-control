@@ -201,3 +201,12 @@
 - 2026-11-08 已通过 Argo CD 部署控制面与应用控制器 `16ceeb5`、LibreChat `04823f8b3`、GitOps `f088471`。控制面全量 390 项通过、41 项跳过，补跑迁移、控制器和删除回归 21 项通过、7 项跳过。LibreChat 生产构建、类型和静态检查通过，前端 78 项与接口 30 项通过。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
 - 用获准的专用测试账号在真实 LibreChat 界面删除合成代码应用。确认窗展示应用域名、数据库、镜像和含 3 个文件、1 个子目录的专属根目录。旧版请求缺少代码应用确认标记，返回 409。浏览器中断确认后的第二个请求，在原窗口点击「重试」后项目退出列表且根目录不可读。集群复核 Deployment、Pod、Service、NetworkPolicy、APISIXRoute 均由 1 变为 0。PostgreSQL 目录确认专属数据库已清除，Harbor 仍能查询原镜像。旧目录和共享数据库的保留由隔离回归测试覆盖。
 - 本地证据见 `platform-control/release/p1-delete-code-deployed.json`、`p1-delete-code-confirm.png`、`p1-delete-code-ui.json`、`p1-delete-code-before.json` 与 `p1-delete-code-after.json`。
+
+## 智能体创建与试用工作台
+
+- 中央项目对话用当前聊天模型生成行为指令建议。用户在中央查看、编辑并确认建议，服务端沿用所有者校验初始化草稿，或按当前摘要保存修改。草稿更新只改行为指令，保留当前模型、输出限制和知识绑定。普通聊天、试用会话和正式应用会话各自使用原有入口。
+- 右侧默认打开固定版本的试用。能力标签复用原有草稿设置并显示实际知识检索和授权状态，资料标签复用知识库关联及管理。切换标签保留试用界面。发布入口固定在工作台顶部，仍需本次草稿的试用验收、额度和发布确认。
+- 本切片复用原生项目、会话和现有草稿、试用、正式版本数据，沿用原有表和权限。自动接入 Tool、Skill、MCP 的能力仍需按 D 批次单独验收。工作台支持两档宽度。
+- 2026-11-08 已通过 Argo CD 部署 LibreChat `6f06d7bf8`，GitOps `8e979b0`。生产构建、类型和静态检查通过，78 项前端和 35 项接口测试通过。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
+- 在真实 LibreChat 中用同一个合成项目完成新建、中央对话生成并保存草稿、试用、中央对话修改、试用新版、记录验收及发布。两次试用回答分别为 `ORBIT-6307` 和 `ORBIT-9814`。切换标签保留两个输入框，更新草稿时保留旧试用。正式版本摘要与第二次试用一致，顶部显示线上版本。另核对已有项目及绑定仍可读取。验证中修复了空闲状态误禁用入口及会话保存后入口消失两个问题，最后从实际试用记录继续完成发布。
+- 本地证据见 `platform-control/release/p1-assistant-workbench-ui.json`、`p1-assistant-workbench-trial.png`、`p1-assistant-workbench-publish.png` 和 `p1-assistant-workbench-deployed.json`。
