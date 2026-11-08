@@ -210,3 +210,9 @@
 - 2026-11-08 已通过 Argo CD 部署 LibreChat `6f06d7bf8`，GitOps `8e979b0`。生产构建、类型和静态检查通过，78 项前端和 35 项接口测试通过。Windows Lighthouse 准备阶段缺少 rimraf，未取得性能结果。
 - 在真实 LibreChat 中用同一个合成项目完成新建、中央对话生成并保存草稿、试用、中央对话修改、试用新版、记录验收及发布。两次试用回答分别为 `ORBIT-6307` 和 `ORBIT-9814`。切换标签保留两个输入框，更新草稿时保留旧试用。正式版本摘要与第二次试用一致，顶部显示线上版本。另核对已有项目及绑定仍可读取。验证中修复了空闲状态误禁用入口及会话保存后入口消失两个问题，最后从实际试用记录继续完成发布。
 - 本地证据见 `platform-control/release/p1-assistant-workbench-ui.json`、`p1-assistant-workbench-trial.png`、`p1-assistant-workbench-publish.png` 和 `p1-assistant-workbench-deployed.json`。
+
+### 智能体工作台上下分区
+
+- 上区使用紧凑的「概览」「能力」「资料」标签。试用版本、验收和新窗口操作集中在概览，发布从头部进入上区。上区内容过长时独立滚动，下区持续显示同一试用对话。
+- 2026-11-08 已部署 LibreChat `2d9235502`、GitOps `6c6b477`。生产构建、类型和静态检查通过，78 项前端与 35 项接口测试通过。Windows Lighthouse 准备阶段缺少 rimraf。
+- 在实际部署环境验证深浅主题和 390 像素窄屏。切换标签、进入发布和打开验收时，试用历史及输入保持，中央未发送内容和现有线上版本保持。核对了上下区无重叠、工作台无横向溢出。证据见 `platform-control/release/p1-split-workbench-ui.json`、`p1-split-workbench-capabilities.png`、`p1-split-workbench-narrow.png`。
