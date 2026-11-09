@@ -41,18 +41,23 @@ def test_catalog_invitation_accept_revoke_reinvite_and_expiry(versions, monkeypa
     client.post(path+'/releases',headers=auth,json=body)
     mine = client.get(PREFIX+'/catalog',headers=auth).json()['items']
     assert len(mine)==1 and mine[0]['kind']=='mine'
+    assert mine[0]['member_summary'] == {'active': 0, 'pending': 0}
     assert not client.get(PREFIX+'/catalog',headers=other).json()['items']
     first = invite(client,auth,path,budget_micros=20000)
     assert first.status_code==200,first.text
     assert invite(client,auth,path,budget_micros=99999).json()==first.json()
     assert first.json()['members'][0]['state']=='pending'
+    assert client.get(PREFIX+'/catalog',headers=auth).json()['items'][0]['member_summary'] == {'active': 0, 'pending': 1}
     pending = client.get(PREFIX+'/catalog',headers=other).json()
     assert len(pending['invitations'])==1 and not pending['items']
+    assert 'member_summary' not in pending['invitations'][0]
     assert 'snapshot' not in str(pending) and 'encrypted' not in str(pending)
     assert client.post(path+'/launch',headers=other,json={'native_owner_id':'b'*24}).status_code==403
     assert reply(client,other,path).status_code==200
     assert reply(client,other,path).status_code==200
     assert client.get(PREFIX+'/catalog',headers=other).json()['items'][0]['budget_micros']==20000
+    assert 'member_summary' not in client.get(PREFIX+'/catalog',headers=other).json()['items'][0]
+    assert client.get(PREFIX+'/catalog',headers=auth).json()['items'][0]['member_summary'] == {'active': 1, 'pending': 0}
     entry, target, run, _ = launched(client,other,path,'b'*24)
     for suffix in ('/members/policy','/access'):
         payload = {'native_owner_id':'b'*24,'expected_revision':1,'budget_micros':50000}
@@ -72,6 +77,7 @@ def test_catalog_invitation_accept_revoke_reinvite_and_expiry(versions, monkeypa
     with client.session_factory.begin() as db:
         member = db.get(AIAppMember,(body.get('project_id',path.rsplit('/',1)[-1]),env_id))
         member.expires_at=now()-timedelta(seconds=1)
+    assert client.get(PREFIX+'/catalog',headers=auth).json()['items'][0]['member_summary'] == {'active': 0, 'pending': 0}
     assert not client.get(PREFIX+'/catalog',headers=other).json()['items']
     assert client.post(target+'/resolve',headers=other,json=run).status_code==403
     with client.session_factory() as db:

@@ -66,6 +66,16 @@ def add_routes(router, principal_dependency):
             AIAppMember.environment_id == actor.id))}
         bindings = list(db.scalars(select(AIProjectBinding).where(
             (AIProjectBinding.environment_id == actor.id) | AIProjectBinding.project_id.in_(grants))))
+        summaries = {binding.project_id: {'active': 0, 'pending': 0} for binding in bindings
+                     if binding.environment_id == actor.id}
+        if summaries:
+            counts = db.execute(select(AIAppMember.project_id, AIAppMember.state, func.count()).where(
+                AIAppMember.project_id.in_(summaries), AIAppMember.enabled.is_(True),
+                AIAppMember.state.in_(('active', 'pending')),
+                (AIAppMember.expires_at.is_(None) | (AIAppMember.expires_at > now())),
+            ).group_by(AIAppMember.project_id, AIAppMember.state))
+            for project_id, state, count in counts:
+                summaries[project_id][state] = count
         items, invitations = [], []
         for binding in bindings:
             app = db.get(AIApplication, binding.project_id)
@@ -89,6 +99,8 @@ def add_routes(router, principal_dependency):
                     'application_budget_micros': app.budget_micros,
                     'application_held_micros': usage(db, app.project_id)['held_micros'],
                     **usage(db, app.project_id, None if mine else actor.id)}
+            if mine:
+                item['member_summary'] = summaries[binding.project_id]
             (invitations if state == 'pending' else items).append(item)
         return {'items': items, 'invitations': invitations}
 
