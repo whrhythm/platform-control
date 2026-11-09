@@ -11069,13 +11069,24 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$"
+                "pattern": "(?:^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$|^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$)"
               },
               {
                 "type": "null"
               }
             ],
             "title": "Tool Reference"
+          },
+          "calculator_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calculator Enabled"
           }
         },
         "additionalProperties": false,
@@ -11688,6 +11699,18 @@
           },
           "config": {
             "$ref": "#/components/schemas/Config"
+          },
+          "expected_knowledge_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Knowledge Revision Id"
           }
         },
         "additionalProperties": false,
@@ -13243,6 +13266,18 @@
           },
           "config": {
             "$ref": "#/components/schemas/Config"
+          },
+          "expected_knowledge_revision_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Knowledge Revision Id"
           },
           "expected_digest": {
             "type": "string",
