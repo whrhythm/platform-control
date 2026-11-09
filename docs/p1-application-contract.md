@@ -256,3 +256,9 @@
 - 2026-11-09 已部署 LibreChat `331d1c6a9`、GitOps `428ebac`，确认同步健康。静态检查、生产构建、前端类型检查、93 项前端与 36 项接口回归通过。
 - 真实浏览器验证了知识树原位预览、原生工具卡片取消与重选、保存指令及自然语言入口读取最新草稿。初次外部查询返回了错误，补上状态识别与回归测试。最终在该草稿对应的试用版本 2 查询 `pallets/flask`，核对持久会话中真实返回、画布执行成功和模型使用结果后的回答。
 - 验收试用 `6132cc52-6296-58cc-8702-77133f1529e6`。本地证据见 `platform-control/release/p1-workbench-trace-final-ui.json`、`p1-workbench-trace-deepwiki.png`、`p1-workbench-trace-knowledge.png`、`p1-workbench-trace-tools.png` 与 `p1-workbench-trace-deployed.json`。
+
+### 原生智能体构建器选择知识库
+
+- 普通智能体可在「指令」下选择一个本人拥有且就绪的知识库，或选「不使用知识库」。保存验证智能体及库归属，运行时按文件检索权限加载工具。共享使用不继承私有库权限。原生智能体使用当前就绪修订，项目试用和正式发布仍使用固定修订。
+- 2026-11-09，控制面 `2269dea` 与 LibreChat `e237941f8` 通过 GitOps `541c90a`、`52d01ac` 部署并确认同步健康。控制面 27 项与 LibreChat 163 项回归通过，生产构建、四个工作区类型检查与静态检查通过。Lighthouse 因测试容器缺少 openssl 未取得测量结果。
+- 真实界面选库、创建并读取已保存的绑定。普通智能体实际检索合成库 `guide.md` 并回答 `NAV-EDIT-VERIFIED`。首条发送后界面未即时显示，重开会话可看到已保存回答；同一会话追问再次检索并即时显示。证据见本地 `platform-control/release/p1-native-library-ui.json`、`p1-native-library-picker.png` 与 `p1-native-library-followup.png`。
