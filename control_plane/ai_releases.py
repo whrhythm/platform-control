@@ -10,7 +10,7 @@ from .accounts import allowed
 from .agent_tasks import seal, unseal
 from .ai_trials import Owner, Resolve, draft_snapshot, usable
 from .ai_trial_tools import PERSONAL_REFERENCE, RELEASABLE_REFERENCE
-from .generated_tools import describe as describe_generated, execute
+from .generated_tools import InputRejected, bounds_message, describe as describe_generated, execute
 from .ai_tool_reviews import ReviewDescriptor, require_review, review_id, review_out
 from .auth import Principal
 from .database import get_db
@@ -412,7 +412,17 @@ def create_router(principal_dependency):
         generated = grant.descriptor.get('generated')
         if (generated is None) != (body.arguments is None):
             raise HTTPException(422, 'ai_releases_invalid_request')
-        output = execute(generated['program'], body.arguments) if generated else None
+        output = None
+        if generated:
+            program = generated['program']
+            if program.get('bounds') and db.scalar(select(AuditEvent.id).where(
+                    AuditEvent.action == 'ai_release.tool_input_rejected', AuditEvent.target_id == run.id).limit(1)):
+                return {'allowed': True, 'text': bounds_message(program)}
+            try:
+                output = execute(program, body.arguments)
+            except InputRejected as problem:
+                output = str(problem)
+                audit(db, sponsor, principal, 'tool_input_rejected', run.id)
         audit(db, sponsor, principal, 'tool_admitted', run.id)
         db.commit()
         return {'allowed': True, 'text': output} if generated else {'allowed': True}

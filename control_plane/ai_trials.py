@@ -14,7 +14,7 @@ from .agent_tasks import seal, unseal
 from .ai_application_contracts import AgentSnapshot, ModelRevision, KnowledgeRevision, SkillRevision, ToolRevision
 from .ai_policy import effective_policy
 from .ai_trial_tools import TRIAL_REFERENCE, descriptors, describe, find, fixed_tool, generated_tool, snapshot_reference
-from .generated_tools import approved_descriptors, describe as describe_generated, execute, generated_row
+from .generated_tools import InputRejected, approved_descriptors, describe as describe_generated, execute, generated_row
 from .database import get_db
 from .models import AIProjectBinding, AIProjectDraft, AIProjectTrial, AITrialSession, AITrialRun, AuditEvent, ProjectKnowledge, WorkspaceProject, now
 from .settings import get_settings
@@ -344,9 +344,13 @@ def create_router(principal_dependency):
             raise HTTPException(409, 'ai_trials_tool_limit')
         if generated:
             generated = generated_row(db, row.project_id, generated.reference, lock=True)
-            output = execute(generated.descriptor['generated']['program'], body.arguments)
+            try:
+                output = execute(generated.descriptor['generated']['program'], body.arguments)
+                outcome = 'tool_completed'
+            except InputRejected as problem:
+                output, outcome = str(problem), 'tool_rejected'
             audit(db, env, principal, 'tool_started', target)
-            audit(db, env, principal, 'tool_completed', target)
+            audit(db, env, principal, outcome, target)
             db.commit()
             return {'text': output}
         server, tool = selected

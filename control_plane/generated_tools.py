@@ -6,7 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, ValidationError, model_validator
 from sqlalchemy import select
 
 from .agent_tasks import seal, submit_task, unseal
@@ -42,6 +42,37 @@ class Build(BaseModel):
 
 class BuildRequest(Build):
     native_owner_id: str = Field(pattern=r'^[0-9a-f]{24}$')
+
+
+class IntegerRange(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    minimum: StrictInt = Field(ge=-LIMIT, le=LIMIT)
+    maximum: StrictInt = Field(ge=-LIMIT, le=LIMIT)
+
+    @model_validator(mode='after')
+    def ordered(self):
+        if self.minimum > self.maximum:
+            raise ValueError('minimum must not exceed maximum')
+        return self
+
+
+class ReviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    native_owner_id: str = Field(pattern=r'^[0-9a-f]{24}$')
+    bounds: dict[str, IntegerRange] | None = Field(default=None, min_length=1, max_length=8)
+    expected_reference: str | None = Field(default=None, pattern=GENERATED_REFERENCE)
+
+
+class InputRejected(ValueError):
+    pass
+
+
+def bounds_message(program):
+    values = '；'.join(
+        f'{key} 必须是 {value["minimum"]} 到 {value["maximum"]} 之间的整数'
+        for key, value in program['bounds'].items()
+    )
+    return f'输入超出工具允许范围。{values}。本次未计算结果。'
 
 
 def invalid():
@@ -88,7 +119,14 @@ def evaluate(node, values):
 
 
 def execute(program, arguments):
-    if set(arguments) != set(program['parameters']):
+    bounds = program.get('bounds')
+    wrong_fields = set(arguments) != set(program['parameters'])
+    if bounds and (wrong_fields or any(
+        type(arguments[key]) is not int or not bound['minimum'] <= arguments[key] <= bound['maximum']
+        for key, bound in bounds.items()
+    )):
+        raise InputRejected(bounds_message(program))
+    if wrong_fields:
         raise invalid()
     result = evaluate(program['expression'], {key: number(value) for key, value in arguments.items()})
     return json.dumps({'result': result}, ensure_ascii=False)
@@ -124,8 +162,42 @@ def capture(raw, body):
     snapshot = {'engine': 'integer-rules-v1', 'name': body.name, 'title': body.title,
                 'requirements': body.requirements, 'source_digest': sha256(raw).hexdigest(),
                 'program': program, 'cases': cases}
+    return reference_for(snapshot), snapshot
+
+
+def reference_for(snapshot):
     digest = sha256(json.dumps(snapshot, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
-    return f'projecttool:{body.name}:{digest}', snapshot
+    return f'projecttool:{snapshot["name"]}:{digest}'
+
+
+def with_bounds(snapshot, bounds):
+    parameters = snapshot['program']['parameters']
+    if set(bounds) != set(parameters):
+        raise HTTPException(422, 'ai_generated_tool_bounds_invalid')
+    program = {**snapshot['program'], 'bounds': {key: bounds[key].model_dump() for key in parameters}}
+    verified = []
+    for case in snapshot['cases']:
+        try:
+            result = execute(program, case['inputs'])
+        except InputRejected:
+            continue
+        if json.loads(result)['result'] != case['result']:
+            raise HTTPException(422, 'ai_generated_tool_tests_failed')
+        verified.append(case)
+    if not verified:
+        raise HTTPException(422, 'ai_generated_tool_bounds_no_cases')
+    boundary_tests = []
+    for key in parameters:
+        bound = bounds[key]
+        for outside in (bound.minimum - 1, bound.maximum + 1):
+            inputs = {**verified[0]['inputs'], key: outside}
+            try:
+                execute(program, inputs)
+            except InputRejected:
+                boundary_tests.append(inputs)
+            else:
+                raise HTTPException(422, 'ai_generated_tool_tests_failed')
+    return {**snapshot, 'program': program, 'verified_cases': verified, 'boundary_tests': boundary_tests}
 
 
 def generated_row(db, project_id, reference, lock=False):
@@ -135,11 +207,13 @@ def generated_row(db, project_id, reference, lock=False):
 def describe(row):
     snapshot = row.descriptor['generated']
     fields = snapshot['program']['parameters']
+    bounds = snapshot['program'].get('bounds', {})
     return {'reference': row.reference, 'name': snapshot['name'], 'service': snapshot['title'],
             'description': snapshot['requirements'][:500],
             'data_notice': '项目私有规则，输入仅用于平台内计算。',
             'input_schema': {'type': 'object', 'required': fields, 'additionalProperties': False,
-                'properties': {key: {'type': 'integer', 'minimum': -LIMIT, 'maximum': LIMIT} for key in fields}}}
+                'properties': {key: {'type': 'integer', **bounds.get(key, {'minimum': -LIMIT, 'maximum': LIMIT})}
+                               for key in fields}}}
 
 
 def approved_descriptors(db, project_id):
@@ -172,6 +246,7 @@ def create_router(principal_dependency):
         reference = task.resources.get('tool_reference')
         row = db.get(AIToolReview, review_id(task.resources['tool_project'], reference)) if reference else None
         return {'id': task.id, 'status': task.status, 'path': task.config['project_path']+'/'+SOURCE,
+                'bounds': row.descriptor['generated']['program'].get('bounds') if row else None,
                 'review': {'reference': row.reference, 'state': row.state} if row else None}
 
     @router.post('/{project_id}/generated-tools')
@@ -235,31 +310,44 @@ def create_router(principal_dependency):
         return output(db, task)
 
     @router.post('/{project_id}/generated-tools/{task_id}')
-    def submit(project_id: UUID, task_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
+    def submit(project_id: UUID, task_id: UUID, body: ReviewRequest, principal=Depends(principal_dependency), db=Depends(get_db)):
         settings, env, task = owned_task(db, principal, project_id, task_id)
-        if task.resources.get('tool_reference'):
+        binding = db.get(AIProjectBinding, str(project_id))
+        if binding.native_owner_id != body.native_owner_id:
+            raise HTTPException(404, 'ai_generated_tool_unavailable')
+        prior = task.resources.get('tool_reference')
+        if prior and body.bounds is None:
             return output(db, task)
-        written = next((event.get('source_digest') for event in reversed(unseal(task.encrypted_events, settings))
-                        if event['kind'] == 'file' and event.get('operation') == 'write'
-                        and event.get('path') == SOURCE), None)
-        if task.status != 'completed' or not written:
-            raise HTTPException(409, 'ai_generated_tool_not_ready')
-        raw = call_files(db, principal, settings, 'GET', '/v1/file', task.config['project_path']+'/'+SOURCE).content
-        if sha256(raw).hexdigest() != written:
-            raise HTTPException(409, 'ai_generated_tool_source_changed')
-        settings, env, task = owned_task(db, principal, project_id, task_id)
-        if task.resources.get('tool_reference'):
+        if prior:
+            snapshot = db.get(AIToolReview, review_id(str(project_id), prior)).descriptor['generated']
+        else:
+            written = next((event.get('source_digest') for event in reversed(unseal(task.encrypted_events, settings))
+                            if event['kind'] == 'file' and event.get('operation') == 'write'
+                            and event.get('path') == SOURCE), None)
+            if task.status != 'completed' or not written:
+                raise HTTPException(409, 'ai_generated_tool_not_ready')
+            raw = call_files(db, principal, settings, 'GET', '/v1/file', task.config['project_path']+'/'+SOURCE).content
+            if sha256(raw).hexdigest() != written:
+                raise HTTPException(409, 'ai_generated_tool_source_changed')
+            settings, env, task = owned_task(db, principal, project_id, task_id)
+            try:
+                proposal = Build.model_validate(unseal(task.resources['tool_build'], settings))
+            except ValidationError:
+                raise invalid() from None
+            _, snapshot = capture(raw, proposal)
+        if body.bounds is not None:
+            snapshot = with_bounds(snapshot, body.bounds)
+        reference = reference_for(snapshot)
+        current = task.resources.get('tool_reference')
+        if current == reference:
             return output(db, task)
-        try:
-            body = Build.model_validate(unseal(task.resources['tool_build'], settings))
-        except ValidationError:
-            raise invalid() from None
-        reference, snapshot = capture(raw, body)
+        if current != body.expected_reference:
+            raise HTTPException(409, 'ai_generated_tool_request_conflict')
         identifier = review_id(str(project_id), reference)
         if not db.get(AIToolReview, identifier):
             db.add(AIToolReview(id=identifier, project_id=str(project_id), reference=reference, state='pending',
-                revision=1, descriptor={'name': body.name, 'title': body.title, 'description': body.requirements[:500],
-                    'target': '项目内规则执行 · 无网络和凭据', 'parameters': body.parameters,
+                revision=1, descriptor={'name': snapshot['name'], 'title': snapshot['title'], 'description': snapshot['requirements'][:500],
+                    'target': '项目内规则执行 · 无网络和凭据', 'parameters': snapshot['program']['parameters'],
                     'generated': snapshot}))
         task.resources = {**task.resources, 'tool_reference': reference}
         audit(db, env, principal, 'review_requested', identifier)

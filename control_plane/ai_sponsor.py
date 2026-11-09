@@ -11,10 +11,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from .ai_releases import entry_access, enabled, release_tool_reference
+from .ai_releases import entry_access, enabled, release_tool_grant, release_tool_reference
+from .generated_tools import InputRejected, bounds_message
 from .auth import Principal
 from .database import get_db
-from .models import AIApplication, AIAppRun, AIAppCall, AIAppMember, AIConfiguration, ModelCredential, now
+from .models import AIApplication, AIAppRun, AIAppCall, AIAppMember, AIConfiguration, AuditEvent, ModelCredential, now
 from .ai_sharing import usage
 
 router = APIRouter(prefix='/agent/app/v1', tags=['ai-sponsor'])
@@ -66,6 +67,10 @@ def admission(db, claims, body, settings):
                 not isinstance(tool['function'].get('name'), str) or
                 tool['function']['name'] not in allowed_tools):
             raise HTTPException(400, 'ai_releases_invalid_request')
+    if release.tool_review_id and db.scalar(select(AuditEvent.id).where(
+            AuditEvent.action == 'ai_release.tool_input_rejected', AuditEvent.target_id == run.id).limit(1)):
+        grant = release_tool_grant(db, release, snap)
+        raise InputRejected(bounds_message(grant.descriptor['generated']['program']))
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if db.scalar(select(AIAppCall.id).where(AIAppCall.run_id == run.id, AIAppCall.request_hash == digest)):
         raise HTTPException(409, 'ai_releases_call_already_submitted')
@@ -123,6 +128,18 @@ def settle(engine, identifier, usage, *, completed=False, rejected=False):
         db.commit()
 
 
+def input_rejected_response(claims, body, message):
+    base = {'id': 'chatcmpl-'+claims['run'], 'object': 'chat.completion.chunk',
+            'created': int(now().timestamp()), 'model': body['model']}
+    def stream():
+        yield 'data: '+json.dumps({**base, 'choices': [
+            {'index':0, 'delta':{'role':'assistant', 'content':message}, 'finish_reason':None}]}, ensure_ascii=False)+'\n\n'
+        yield 'data: '+json.dumps({**base, 'choices': [
+            {'index':0, 'delta':{}, 'finish_reason':'stop'}]})+'\n\n'
+        yield 'data: [DONE]\n\n'
+    return StreamingResponse(stream(), media_type='text/event-stream', headers={'Cache-Control':'no-store'})
+
+
 @router.post('/chat/completions')
 async def completion(request: Request, authorization: str = Header(default=''), db=Depends(get_db)):
     settings = enabled()
@@ -147,6 +164,9 @@ async def completion(request: Request, authorization: str = Header(default=''), 
         raise HTTPException(400, 'ai_releases_invalid_request') from None
     try:
         identifier, engine, key, payload = admission(db, claims, body, settings)
+    except InputRejected as problem:
+        db.rollback()
+        return input_rejected_response(claims, body, str(problem))
     except HTTPException as exc:
         if exc.detail in ('ai_releases_budget_exhausted', 'ai_releases_member_budget_exhausted'):
             # A hard application budget is not transient provider rate limiting.

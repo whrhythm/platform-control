@@ -15,8 +15,10 @@ type Review = {
   revision: number;
   generated?: {
     source_digest: string;
-    program: { expression: unknown };
+    program: { expression: unknown; bounds?: Record<string, { minimum: number; maximum: number }> };
     cases: Array<{ inputs: Record<string, number>; result: number }>;
+    verified_cases?: Array<{ inputs: Record<string, number>; result: number }>;
+    boundary_tests?: Array<Record<string, number>>;
   };
 };
 const status: Record<State, string> = {
@@ -73,12 +75,20 @@ export default function AssistantToolReviews() {
         <dt>项目</dt><dd>{row.project_id}</dd>
         <dt>执行范围</dt><dd><code>{row.generated ? row.target : 'GET '+row.target}</code></dd>
         <dt>参数</dt><dd>{row.parameters.join('、') || '无'}</dd>
+        {row.generated?.program.bounds && <>
+          <dt>参数允许范围（含端点）</dt>
+          <dd>{Object.entries(row.generated.program.bounds).map(([key, bound]) =>
+            <div key={key}>{key} <strong>{bound.minimum}–{bound.maximum}</strong></div>)}</dd>
+        </>}
         <dt>工具版本</dt><dd><code>{row.reference}</code></dd>
       </dl>
       {row.generated && <details>
-        <summary>规则与测试用例（{row.generated.cases.length} 项通过）</summary>
+        <summary>规则与测试用例（{(row.generated.verified_cases ?? row.generated.cases).length} 项通过
+          {row.generated.boundary_tests && `，${row.generated.boundary_tests.length} 项越界拒绝`}）</summary>
         <p>源码摘要 <code>{row.generated.source_digest}</code></p>
-        <pre>{JSON.stringify({ expression: row.generated.program.expression, cases: row.generated.cases }, null, 2)}</pre>
+        <pre>{JSON.stringify({ expression: row.generated.program.expression,
+          cases: row.generated.verified_cases ?? row.generated.cases,
+          ...(row.generated.boundary_tests ? { rejectedInputs: row.generated.boundary_tests } : {}) }, null, 2)}</pre>
       </details>}
       {row.state === 'pending' && <>
         <label><input type="checkbox" checked={ack === row.id}

@@ -4938,6 +4938,16 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -12329,6 +12339,29 @@
         ],
         "title": "Initialize"
       },
+      "IntegerRange": {
+        "properties": {
+          "minimum": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": -100000000.0,
+            "title": "Minimum"
+          },
+          "maximum": {
+            "type": "integer",
+            "maximum": 100000000.0,
+            "minimum": -100000000.0,
+            "title": "Maximum"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "minimum",
+          "maximum"
+        ],
+        "title": "IntegerRange"
+      },
       "InvitationReply": {
         "properties": {
           "native_owner_id": {
@@ -13432,6 +13465,49 @@
           "error_code"
         ],
         "title": "ReviewOut"
+      },
+      "ReviewRequest": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "bounds": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/IntegerRange"
+                },
+                "type": "object",
+                "maxProperties": 8,
+                "minProperties": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bounds"
+          },
+          "expected_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^projecttool:[a-z][a-z0-9_]{0,47}:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Reference"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id"
+        ],
+        "title": "ReviewRequest"
       },
       "Revision": {
         "properties": {

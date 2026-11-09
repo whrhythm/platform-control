@@ -160,8 +160,9 @@ def sponsored(versions,monkeypatch):
 def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, harness, monkeypatch):
     from control_plane.ai_tool_reviews import review_id
     from control_plane.generated_tools import Build, capture, validate_build
-    from control_plane.models import AIToolReview
+    from control_plane.models import AIToolReview, AgentTask
 
+    monkeypatch.setenv('PLATFORM_AGENT_TASKS_ENABLED', 'true')
     client, auth, path, previous, config = prepared(versions, monkeypatch)
     build = Build(request_id=uuid4(), name='service_fee', title='Service fee', requirements='Add two units.',
         parameters=['units'], cases=[{'inputs': {'units': 2}, 'result': 4}, {'inputs': {'units': 5}, 'result': 7}])
@@ -173,10 +174,15 @@ def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, 
     project = path.rsplit('/', 1)[-1]
     identifier = review_id(project, reference)
     owner = {'native_owner_id': OWNER}
+    task_id = str(uuid4())
     with client.session_factory.begin() as db:
         db.add(AIToolReview(id=identifier, project_id=project, reference=reference, state='pending', revision=1,
             descriptor={'generated': immutable, 'name':build.name, 'title':build.title,
                 'description':build.requirements, 'target':'local rules', 'parameters':build.parameters}))
+        db.add(AgentTask(id=task_id, environment_id=versions[2], conversation_id='tool_'+build.request_id.hex,
+            request_key='test-bound-rules', config={'project_path':'test/rules'}, status='completed',
+            encrypted_prompt='unused', encrypted_events='unused',
+            resources={'tool_project':project, 'tool_reference':reference}))
     body = {**owner, 'expected_digest':previous['expected_digest'], 'config':{**config,'tool_reference':reference}}
     assert client.post(path+'/draft', headers=auth, json=body).status_code == 409
     _, token = harness
@@ -204,6 +210,51 @@ def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, 
     assert runtime['generated_tool']['reference'] == reference and runtime['personal_tool'] is None
     assert client.post(target+'/tool-admission', headers=auth, json={**run,'arguments':{'units':8}}).json() == {
         'allowed':True,'text':'{"result": 10}'}
+    review_route = path+'/generated-tools/'+task_id
+    bounds = {'units':{'minimum':1,'maximum':100}}
+    change = {**owner,'bounds':bounds,'expected_reference':reference}
+    assert client.post(review_route, headers=auth, json={**change,'bounds':{'other':bounds['units']}}).status_code == 422
+    assert client.post(review_route, headers=auth, json={**change,'bounds':{'units':{'minimum':10,'maximum':1}}}).status_code == 422
+    assert client.post(review_route, headers=auth, json={**change,'bounds':{'units':{'minimum':6,'maximum':9}}}).json() == {
+        'detail':'ai_generated_tool_bounds_no_cases'}
+    requested = client.post(review_route, headers=auth, json=change).json()
+    fixed = requested['review']['reference']
+    assert fixed != reference and requested['bounds'] == bounds and requested['review']['state'] == 'pending'
+    assert client.post(review_route, headers=auth, json=change).json() == requested
+    assert client.post(review_route, headers=auth, json={**change,'bounds':{'units':{'minimum':1,'maximum':90}}}).status_code == 409
+    with client.session_factory() as db:
+        assert 'bounds' not in db.get(AIToolReview, identifier).descriptor['generated']['program']
+    assert client.post(path+'/draft', headers=auth, json={**body,'expected_digest':draft['digest'],
+        'config':{**config,'tool_reference':fixed}}).status_code == 409
+    fixed_review = review_id(project, fixed)
+    assert client.post('/v1/admin/assistant-tool-reviews/'+fixed_review, headers=admin,
+        json={'revision':1,'state':'approved','acknowledged':True}).status_code == 200
+    bounded = client.post(path+'/draft', headers=auth, json={**body,'expected_digest':draft['digest'],
+        'config':{**config,'tool_reference':fixed}}).json()
+    bounded_trial = client.post(path+'/trials', headers=auth, json={**owner, 'request_id':str(uuid4()),
+        'expected_digest':bounded['digest']}).json()
+    trial = path+'/trials/'+bounded_trial['id']
+    assert client.post(trial+'/confirm', headers=auth, json=owner).status_code == 200
+    checked = {**owner, 'conversation_id':str(uuid4()),'message_id':str(uuid4())}
+    assert client.post(trial+'/resolve', headers=auth, json=checked).status_code == 200
+    new_acceptance = {**acceptance, **checked}
+    assert '未计算结果' in client.post(PREFIX+'/trials/'+bounded_trial['id']+'/tool', headers=auth,
+        json={**checked,'arguments':{'units':0}}).json()['text']
+    assert client.post(trial+'/acceptance', headers=auth, json=new_acceptance).status_code == 409
+    assert client.post(PREFIX+'/trials/'+bounded_trial['id']+'/tool', headers=auth,
+        json={**checked,'arguments':{'units':1}}).json() == {'text':'{"result": 3}'}
+    assert client.post(trial+'/acceptance', headers=auth, json=new_acceptance).status_code == 200
+    assert client.post(path+'/releases', headers=auth, json={**publish,'request_id':str(uuid4()),
+        'trial_id':bounded_trial['id'],'expected_digest':bounded['digest'],'confirm_tool_reference':fixed}).status_code == 200
+    _, fixed_target, fixed_run, runtime = launched(client, auth, path)
+    assert runtime['generated_tool']['input_schema']['properties']['units'] == {'type':'integer', **bounds['units']}
+    assert client.post(fixed_target+'/tool-admission', headers=auth, json={**fixed_run,'arguments':{'units':100}}).json()['text'] == '{"result": 102}'
+    denied = client.post(fixed_target+'/tool-admission', headers=auth, json={**fixed_run,'arguments':{'units':101}}).json()['text']
+    assert '1 到 100' in denied and '未计算结果' in denied
+    assert client.post(fixed_target+'/tool-admission', headers=auth, json={**fixed_run,'arguments':{'units':1}}).json()['text'] == denied
+    sponsor = client.post('/agent/app/v1/chat/completions', headers={'Authorization':'Bearer '+runtime['credential']},
+        json={'model':'test-model','stream':True,'messages':[{'role':'user','content':'quote'}]})
+    assert sponsor.status_code == 200 and denied in sponsor.text and '[DONE]' in sponsor.text
     assert client.post(review, headers=admin, json={'revision':2,'state':'revoked','acknowledged':True}).status_code == 200
     assert client.post(target+'/tool-admission', headers=auth, json={**run,'arguments':{'units':8}}).status_code == 409
 
