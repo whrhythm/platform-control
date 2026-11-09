@@ -74,6 +74,8 @@ async def relay(upstream, db, env, settings, project_id, conversation_id, body):
                 if len(calls) != 1:
                     raise ValueError('multiple_development_calls')
                 arguments = json.loads(selected[0]['arguments'])
+                if not isinstance(arguments, dict):
+                    raise ValueError('invalid_development_arguments')
                 instruction = arguments.get('instruction')
                 if set(arguments) != {'instruction'} or not isinstance(instruction, str) or not 1 <= len(instruction.strip()) <= 8000:
                     raise ValueError('invalid_development_instruction')

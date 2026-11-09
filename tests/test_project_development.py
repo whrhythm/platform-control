@@ -95,8 +95,9 @@ def test_real_tool_request_creates_owner_task_and_durable_reference(project):
         assert tasks[0].config['project_path'] == 'owned'
 
 
-def test_malformed_call_cannot_start_runtime(project):
-    text = run_stream(project, [{'delta': {'tool_calls': [{'function': {'name': 'develop_project', 'arguments': '{'}}]}},
+@pytest.mark.parametrize('arguments', ['{', 'null', '[]', '"not an object"'])
+def test_malformed_call_cannot_start_runtime(project, arguments):
+    text = run_stream(project, [{'delta': {'tool_calls': [{'function': {'name': 'develop_project', 'arguments': arguments}}]}},
                                {'delta': {}, 'finish_reason': 'tool_calls'}])
     assert '未启动' in text
     with project[0].session_factory() as db:
