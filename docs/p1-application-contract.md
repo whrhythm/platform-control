@@ -248,3 +248,11 @@
 - 2026-11-09，控制面 `4ef00c4` 与 LibreChat `dbc70c8f9` 通过 GitOps `34e0fb5` 部署并确认就绪。验收初版缺少流式工具定义，实际试用未调用；修正后沿用已保存的草稿与试用版本。没有数据库迁移。
 - 真实 UI 验收通过。普通用户从自然语言需求生成草稿，模型自行选择已审核的 `mcp:deepwiki:read_wiki_structure:4`，确认窗口显示数据外发说明。保存后画布出现工具节点。私人试用中按草稿要求确认发送公开仓库名 `fastapi/fastapi`，画布记录调用中 → 调用完成 → 结果返回。会话持久化了一次 `reviewed_tool` 的 completed 事件及非空输出，回答列出了 10 个顶层章节及多个子章节。
 - 验收项目 `8d73dee1-5194-5a39-99f6-081565df63e9`，试用 `f3f06bc8-7629-59ad-a117-18ce037891d6`。本地证据见 `platform-control/release/p1-reviewed-tool-confirm-ui.json`、`p1-reviewed-tool-trial.png`、`p1-reviewed-tool-deployed.json` 和 `p1-reviewed-tool-build.log`。该证据覆盖一项已审核且无需凭据的只读工具，正式发布与私有凭据工具仍属后续。
+
+### 工作台页签、原生草稿编辑与试用轨迹
+
+- 工作台上区提供总览、知识库、智能体配置。知识库文件树和预览在页签内滚动，配置复用原生模型和指令控件、工具行与 Tool Library 卡片。工具目录沿用项目草稿返回的已审核清单。自然语言建议保留确认与外发告知，手工修改集中到配置页签。保存复用项目草稿接口和摘要校验，不另存一份原生 Agent 配置。
+- 总览从试用会话收到的事件显示提交、模型输出、工具请求、运行时处理及结果。收到后续模型输出才画出下一步。SDK 把网关错误包装成已结束的调用时，以固定错误标记识别失败。空闲及恢复历史会话时不生成模拟轨迹。下方的试用版本、会话和未发送输入跨页签保持。
+- 2026-11-09 已部署 LibreChat `331d1c6a9`、GitOps `428ebac`，确认同步健康。静态检查、生产构建、前端类型检查、93 项前端与 36 项接口回归通过。
+- 真实浏览器验证了知识树原位预览、原生工具卡片取消与重选、保存指令及自然语言入口读取最新草稿。初次外部查询返回了错误，补上状态识别与回归测试。最终在该草稿对应的试用版本 2 查询 `pallets/flask`，核对持久会话中真实返回、画布执行成功和模型使用结果后的回答。
+- 验收试用 `6132cc52-6296-58cc-8702-77133f1529e6`。本地证据见 `platform-control/release/p1-workbench-trace-final-ui.json`、`p1-workbench-trace-deepwiki.png`、`p1-workbench-trace-knowledge.png`、`p1-workbench-trace-tools.png` 与 `p1-workbench-trace-deployed.json`。
