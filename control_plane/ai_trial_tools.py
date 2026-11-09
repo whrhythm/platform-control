@@ -11,6 +11,8 @@ from .models import MCPServer
 
 
 REFERENCE = r'^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$'
+PERSONAL_REFERENCE = r'^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$'
+TRIAL_REFERENCE = f'(?:{REFERENCE}|{PERSONAL_REFERENCE})'
 
 
 def descriptors(db, settings):
@@ -65,10 +67,13 @@ def snapshot_reference(reference, project_id):
 
 
 def fixed_tool(db, settings, snapshot, project_id):
-    tools = [tool for tool in snapshot.tools if tool.tool_id != 'file_search']
+    tools = [tool for tool in snapshot.tools if tool.tool_id not in ('file_search', 'calculator')]
     if not tools:
         return None
-    if (len(tools) != 1 or not re.fullmatch(REFERENCE, tools[0].tool_id)
+    if (len(tools) != 1 or not re.fullmatch(TRIAL_REFERENCE, tools[0].tool_id)
             or tools[0] != snapshot_reference(tools[0].tool_id, project_id)):
         raise HTTPException(409, 'ai_trials_tool_unavailable')
+    if re.fullmatch(PERSONAL_REFERENCE, tools[0].tool_id):
+        # LibreChat owns the action and verifies its author and definition on each trial run.
+        return None
     return find(db, settings, tools[0].tool_id)

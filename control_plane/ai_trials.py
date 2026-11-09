@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from .agent_tasks import seal, unseal
 from .ai_application_contracts import AgentSnapshot, ModelRevision, KnowledgeRevision, SkillRevision, ToolRevision
 from .ai_policy import effective_policy
-from .ai_trial_tools import REFERENCE, descriptors, describe, find, fixed_tool, snapshot_reference
+from .ai_trial_tools import TRIAL_REFERENCE, descriptors, describe, find, fixed_tool, snapshot_reference
 from .database import get_db
 from .models import AIProjectBinding, AIProjectDraft, AIProjectTrial, AITrialSession, AITrialRun, AuditEvent, ProjectKnowledge, WorkspaceProject, now
 from .settings import get_settings
@@ -34,7 +34,8 @@ class Config(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2, allow_inf_nan=False)
     max_output_tokens: int = Field(default=2048, ge=256, le=16384)
     response_style: Literal['grounded', 'support'] = 'grounded'
-    tool_reference: str | None = Field(default=None, pattern=REFERENCE)
+    tool_reference: str | None = Field(default=None, pattern=TRIAL_REFERENCE)
+    calculator_enabled: bool | None = None
 
 
 class Owner(BaseModel):
@@ -44,6 +45,7 @@ class Owner(BaseModel):
 
 class Initialize(Owner):
     config: Config
+    expected_knowledge_revision_id: UUID | None = None
 
 
 class Update(Initialize):
@@ -88,6 +90,8 @@ def snapshot(db, binding, config, settings):
             definition_digest=sha256(b'project-file-search-v1').hexdigest(), grant_id=binding.project_id))
     if config.tool_reference:
         tools.append(snapshot_reference(config.tool_reference, binding.project_id))
+    if config.calculator_enabled:
+        tools.append(snapshot_reference('calculator', binding.project_id))
     return AgentSnapshot(instructions=config.instructions,
         model=ModelRevision(provider='LiteLLM', model=config.model,
             # This identifies the configured gateway route, not an immutable provider model build.
@@ -105,7 +109,7 @@ def config_allowed(db, config, settings):
         raise HTTPException(409, 'ai_trials_model_unavailable')
     if config.max_output_tokens > settings.ai_trials_output_limit:
         raise HTTPException(409, 'ai_trials_output_limit')
-    if config.tool_reference:
+    if config.tool_reference and config.tool_reference.startswith('mcp:'):
         find(db, settings, config.tool_reference)
 
 
@@ -199,6 +203,9 @@ def create_router(principal_dependency):
     @router.post('/{project_id}/draft/initialize')
     def initialize(project_id: UUID, body: Initialize, principal=Depends(principal_dependency), db=Depends(get_db)):
         env, binding, settings = owned(db, principal, project_id, body.native_owner_id)
+        if ('expected_knowledge_revision_id' in body.model_fields_set and
+                (str(body.expected_knowledge_revision_id) if body.expected_knowledge_revision_id else None) != binding.knowledge_revision_id):
+            raise HTTPException(409, 'ai_trials_draft_changed')
         if not db.get(AIProjectDraft, binding.project_id):
             config_allowed(db, body.config, settings)
             db.add(AIProjectDraft(project_id=binding.project_id, encrypted_config=seal(body.config.model_dump(exclude_none=True), settings)))

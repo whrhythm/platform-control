@@ -82,6 +82,39 @@ def test_scope_policy_and_input_rejection(versions, monkeypatch):
     assert client.get(path+'/trials', headers=auth).status_code == 404
 
 
+def test_personal_tool_and_calculator_share_fixed_draft_with_knowledge(versions, monkeypatch):
+    from control_plane.models import AIProjectBinding, ProjectKnowledge
+    client, auth, path, config, _ = initialized(versions, monkeypatch)
+    monkeypatch.setenv('PLATFORM_KNOWLEDGE_ENABLED', 'true')
+    get_settings.cache_clear()
+    project, revision = path.rsplit('/', 1)[1], str(uuid4())
+    with client.session_factory.begin() as db:
+        binding = db.get(AIProjectBinding, project)
+        db.add(ProjectKnowledge(id=revision, project_id=project, environment_id=binding.environment_id,
+            request_id=str(uuid4()), digest='a'*64, encrypted_source='test-encrypted',
+            manifest=[], source_bytes=10, index_bytes=10, chunks=1, state='ready'))
+        binding.knowledge_revision_id = revision
+    owner = {'native_owner_id': OWNER}
+    assert client.post(path+'/draft/initialize', headers=auth, json={**owner, 'config': config,
+        'expected_knowledge_revision_id': None}).status_code == 409
+    initial = client.get(path+'/trials', headers=auth).json()
+    ref = 'action:quote:'+'b'*64
+    saved = client.post(path+'/draft', headers=auth, json={**owner, 'expected_digest': initial['digest'],
+        'config': {**config, 'tool_reference': ref, 'calculator_enabled': True}}).json()
+    assert saved['config']['tool_reference'] == ref and saved['config']['calculator_enabled']
+    trial = client.post(path+'/trials', headers=auth,
+        json={**owner, 'request_id': str(uuid4()), 'expected_digest': saved['digest']}).json()
+    target = path+'/trials/'+trial['id']
+    assert client.post(target+'/confirm', headers=auth, json=owner).status_code == 200
+    run = {**owner, 'conversation_id': str(uuid4()), 'message_id': str(uuid4())}
+    resolved = client.post(target+'/resolve', headers=auth, json=run).json()
+    assert resolved['knowledge_revision_id'] == revision
+    assert {tool['tool_id'] for tool in resolved['snapshot']['tools']} == {'file_search', ref, 'calculator'}
+    assert resolved['reviewed_tool'] is None
+    assert client.post(PREFIX+'/trials/'+trial['id']+'/tool', headers=auth,
+        json={**run, 'arguments': {}}).status_code == 409
+
+
 def test_reviewed_tool_discovery_snapshot_dispatch_and_revocation(versions, harness, monkeypatch):
     from test_mcp_catalog import create, publish
     client, auth, path, config, initial = initialized(versions, monkeypatch)
