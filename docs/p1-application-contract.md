@@ -275,3 +275,10 @@
 - 2026-11-09，LibreChat `f0a288ca3`、示例 OpenAPI 地址更正 `c8983a177`、GitOps `f92a817`。已确认 Argo CD 同步健康、两项部署就绪。静态检查、前端类型检查、生产构建、300 项工具库测试及 39 项接口回归通过。额外尝试的项目数据层套件因内存 MongoDB 未启动而未取得结果。
 - 在真实界面创建并索引合成知识库，普通聊天模型根据能力清单生成名称、说明和指令，再在原生构建器保存、绑定知识库并添加计算器。通过原生 Action 编辑器导入报价 API，并确认「Made by you」展示该 Action。该步骤验证了 LLM 生成配置与用户确认保存的流程。
 - 新会话首轮在原页面显示 160 元。持久会话同时记录自定义 `lookup_support_quote` 返回 137 元和 `QUOT-731`、`file_search` 从 `support-policy.md` 查到 23 元和 `POL-SAFFRON-92`、内置 `calculator` 返回 160。本轮只在创建者账号使用，未将演示智能体对外发布。证据见本地 `platform-control/release/p1-tool-combo-ui.json`、`p1-tool-combo-made-by-you.png`、`p1-tool-combo-result.png` 与 `p1-tool-combo-tests.log`。
+
+### 账号级 Action 复用与工具文件
+
+- 原生工具库「我创建的」从账号加载已有 Action，优先显示 OpenAPI 标题。向本人另一智能体添加时保存原 Action 的引用，运行时核对工具归属、智能体归属和引用。解除引用保留工具定义和其他引用。已有未复用 Action 继续走原生编辑流程，复用后的定义在智能体里只读。
+- 资料空间「工具」使用 `tools/`，项目文件页「工具」使用项目根目录下的 `tools/`。目录可按需创建，文件复用现有空间的上传、预览和配额管理。资料空间的编辑与运行配置独立。报价示例由验收人员上传 OpenAPI、源码和 Dockerfile，普通 Action 导入尚不自动生成源码目录。
+- 2026-11-09，LibreChat `c0416f357`、GitOps `f680fd5` 已部署并确认 Argo CD 同步健康。按变更范围运行构建、类型和静态检查。首轮 310 项前端与 30 项接口通过，目录加载修正后 303 项前端通过，运行适配修正后 247 项初始化与权限测试通过。Lighthouse 因环境缺少 openssl 未取得测量结果。
+- 用指定创建者账号从普通新会话打开构建器，看到同一报价工具。资料空间可打开 `tools/support-quote/openapi.yaml`，三个源文件均在文件树可见。项目文件页创建的目录由文件接口确认位于项目根目录内。第二个智能体实际调用并返回 `QUOT-731`，移除第二个引用后，原智能体再次调用，并结合知识库和计算器得出 160 元。随后从界面恢复第二个引用并读取配置确认。真实会话 `cca8df3f-283a-5f3e-b662-17ec87d2a14a`、`f5c2dba3-2dbf-566e-820f-1d4910f78499`，证据见本地 `platform-control/release/p1-action-reuse-ui.json` 及同名前缀截图。
