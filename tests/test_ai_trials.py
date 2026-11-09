@@ -82,6 +82,64 @@ def test_scope_policy_and_input_rejection(versions, monkeypatch):
     assert client.get(path+'/trials', headers=auth).status_code == 404
 
 
+def test_reviewed_tool_discovery_snapshot_dispatch_and_revocation(versions, harness, monkeypatch):
+    from test_mcp_catalog import create, publish
+    client, auth, path, config, initial = initialized(versions, monkeypatch)
+    _, token = harness
+    monkeypatch.setenv('PLATFORM_MCP_GATEWAY_URL', 'https://gateway.example.test')
+    monkeypatch.setenv('PLATFORM_MCP_GATEWAY_TOKEN', 'x'*40)
+    get_settings.cache_clear()
+    catalog = client, auth, '', {'Authorization': 'Bearer ' + token('operator', groups=['platform-admins'])}
+    row = create(catalog)
+    calls = []
+
+    async def discovery(*args, **kwargs):
+        base = {'inputSchema': {'type': 'object', 'properties': {}}, 'fingerprint': 'known', 'supported': True}
+        return {'tools': [{**base, 'name': 'read_docs'}, {**base, 'name': 'write_docs'}], 'addresses': ['8.8.8.8']}
+
+    async def invoke(*args, **kwargs):
+        calls.append(kwargs)
+        return {'text': 'Actual gateway response'}
+
+    monkeypatch.setattr('control_plane.mcp_admin.gateway', discovery)
+    monkeypatch.setattr('control_plane.ai_trials.gateway', invoke)
+    owner = {'native_owner_id': OWNER}
+    ref = f"mcp:{row['id']}:read_docs:{row['revision']}"
+    draft = {**owner, 'expected_digest': initial['digest'], 'config': {**config, 'tool_reference': ref}}
+    assert client.get(path+'/trials', headers=auth).json()['available_tools'] == []
+    assert client.post(path+'/draft', headers=auth, json=draft).status_code == 409
+    row = publish(catalog, row, {'read_docs': 'read', 'write_docs': 'write'})
+    ref = f"mcp:{row['id']}:read_docs:{row['revision']}"
+    draft['config']['tool_reference'] = ref
+    available = client.get(path+'/trials', headers=auth).json()['available_tools']
+    assert [tool['reference'] for tool in available] == [ref]
+    assert not {'url', 'addresses', 'auth', 'secret'} & available[0].keys()
+    wrong = {**draft, 'config': {**config, 'tool_reference': ref.replace('read_docs', 'write_docs')}}
+    assert client.post(path+'/draft', headers=auth, json=wrong).status_code == 409
+    saved = client.post(path+'/draft', headers=auth, json=draft).json()
+    trial = client.post(path+'/trials', headers=auth,
+                        json={**owner, 'request_id': str(uuid4()), 'expected_digest': saved['digest']}).json()
+    trial_path = path+'/trials/'+trial['id']
+    assert client.post(trial_path+'/confirm', headers=auth, json=owner).status_code == 200
+    body = {**owner, 'conversation_id': str(uuid4()), 'message_id': str(uuid4())}
+    execute = PREFIX+'/trials/'+trial['id']+'/tool'
+    assert client.post(execute, headers=auth, json={**body, 'arguments': {}}).status_code == 409
+    runtime = client.post(trial_path+'/resolve', headers=auth, json=body).json()
+    assert runtime['reviewed_tool']['reference'] == ref
+    assert runtime['snapshot']['tools'][0]['tool_id'] == ref
+    assert client.post(execute, headers={**auth, 'X-CodeChat-Subject': 'foreign'},
+                       json={**body, 'arguments': {}}).status_code == 404
+    assert client.post(execute, headers=auth, json={**body, 'arguments': {}}).json() == {
+        'text': 'Actual gateway response'}
+    assert len(calls) == 1 and calls[0]['tool']['name'] == 'read_docs'
+    assert client.post('/v1/admin/mcp/'+row['id']+'/disable', headers=catalog[3],
+                       json={'revision': row['revision']}).status_code == 200
+    assert client.post(execute, headers=auth, json={**body, 'arguments': {}}).status_code == 409
+    assert len(calls) == 1
+    assert client.post(path+'/draft', headers=auth, json={**owner, 'config': config,
+                       'expected_digest': saved['digest']}).status_code == 200
+
+
 def test_knowledge_changes_invalidate_confirmation_but_old_trial_keeps_revision(versions, monkeypatch):
     from control_plane.models import AIProjectBinding, ProjectKnowledge
     client, auth, path, _, _ = initialized(versions, monkeypatch)

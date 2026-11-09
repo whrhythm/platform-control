@@ -4526,6 +4526,77 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects/trials/{trial_id}/tool": {
+      "post": {
+        "tags": [
+          "ai-trials"
+        ],
+        "summary": "Call Tool",
+        "operationId": "call_tool_internal_v1_workspace_ai_projects_trials__trial_id__tool_post",
+        "parameters": [
+          {
+            "name": "trial_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Trial Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolCall"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/ai-projects/{project_id}/trials/{trial_id}/acceptance": {
       "post": {
         "tags": [
@@ -10812,6 +10883,18 @@
             ],
             "title": "Response Style",
             "default": "grounded"
+          },
+          "tool_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Reference"
           }
         },
         "additionalProperties": false,
@@ -12838,6 +12921,40 @@
           "created_at"
         ],
         "title": "TestOrderOut"
+      },
+      "ToolCall": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Message Id"
+          },
+          "arguments": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "conversation_id",
+          "message_id",
+          "arguments"
+        ],
+        "title": "ToolCall"
       },
       "Update": {
         "properties": {

@@ -1,4 +1,6 @@
 """Owner-only fixed previews; the authenticated BFF supplies native chat receipts."""
+import json
+from itertools import islice
 from hashlib import sha256
 from datetime import timezone
 from typing import Literal
@@ -11,9 +13,11 @@ from sqlalchemy import func, select
 from .agent_tasks import seal, unseal
 from .ai_application_contracts import AgentSnapshot, ModelRevision, KnowledgeRevision, SkillRevision, ToolRevision
 from .ai_policy import effective_policy
+from .ai_trial_tools import REFERENCE, descriptors, describe, find, fixed_tool, snapshot_reference
 from .database import get_db
 from .models import AIProjectBinding, AIProjectDraft, AIProjectTrial, AITrialSession, AITrialRun, AuditEvent, ProjectKnowledge, WorkspaceProject, now
 from .settings import get_settings
+from .mcp_client import gateway
 from .workspace_gateway import own_environment
 
 
@@ -30,6 +34,7 @@ class Config(BaseModel):
     temperature: float = Field(default=0, ge=0, le=2, allow_inf_nan=False)
     max_output_tokens: int = Field(default=2048, ge=256, le=16384)
     response_style: Literal['grounded', 'support'] = 'grounded'
+    tool_reference: str | None = Field(default=None, pattern=REFERENCE)
 
 
 class Owner(BaseModel):
@@ -65,6 +70,10 @@ class Acceptance(Resolve):
     sources_checked: bool
 
 
+class ToolCall(Resolve):
+    arguments: dict
+
+
 def trial_agent_id(identifier):
     return 'agent_trial_' + UUID(identifier).hex
 
@@ -73,6 +82,12 @@ def snapshot(db, binding, config, settings):
     revision = db.get(ProjectKnowledge, binding.knowledge_revision_id) if binding.knowledge_revision_id else None
     if binding.knowledge_revision_id and (not settings.knowledge_enabled or not revision or revision.state != 'ready'):
         raise HTTPException(409, 'ai_trials_knowledge_unavailable')
+    tools = []
+    if revision:
+        tools.append(ToolRevision(tool_id='file_search',
+            definition_digest=sha256(b'project-file-search-v1').hexdigest(), grant_id=binding.project_id))
+    if config.tool_reference:
+        tools.append(snapshot_reference(config.tool_reference, binding.project_id))
     return AgentSnapshot(instructions=config.instructions,
         model=ModelRevision(provider='LiteLLM', model=config.model,
             # This identifies the configured gateway route, not an immutable provider model build.
@@ -82,8 +97,7 @@ def snapshot(db, binding, config, settings):
         knowledge=(KnowledgeRevision(collection_id=(revision.library_id or binding.project_id),
             file_id='collection:'+revision.id, file_digest=revision.digest,
             index_revision=revision.id, index_digest=revision.digest, grant_id=binding.project_id),) if revision else (),
-        tools=(ToolRevision(tool_id='file_search', definition_digest=sha256(b'project-file-search-v1').hexdigest(),
-            grant_id=binding.project_id),) if revision else ())
+        tools=tuple(tools))
 
 
 def config_allowed(db, config, settings):
@@ -91,6 +105,8 @@ def config_allowed(db, config, settings):
         raise HTTPException(409, 'ai_trials_model_unavailable')
     if config.max_output_tokens > settings.ai_trials_output_limit:
         raise HTTPException(409, 'ai_trials_output_limit')
+    if config.tool_reference:
+        find(db, settings, config.tool_reference)
 
 
 def draft_snapshot(db, binding, settings):
@@ -117,6 +133,7 @@ def usable(db, row, settings):
                 revision.environment_id != row.environment_id or revision.state != 'ready' or
                 revision.digest != snap.knowledge[0].index_digest):
             raise HTTPException(409, 'ai_trials_knowledge_unavailable')
+    fixed_tool(db, settings, snap, row.project_id)
     return snap
 
 
@@ -166,9 +183,10 @@ def create_router(principal_dependency):
         rows = db.scalars(select(AIProjectTrial).where(AIProjectTrial.project_id == binding.project_id)
             .order_by(AIProjectTrial.number.desc()))
         return {'project_id': binding.project_id, 'revision': draft.revision if draft else None,
-            'config': config.model_dump() if config else None, 'digest': current,
+            'config': config.model_dump(exclude_none=True) if config else None, 'digest': current,
             'knowledge_revision_id': binding.knowledge_revision_id, 'unavailable_reason': error,
             'models': effective_policy(db, settings)['allowed_models'], 'output_limit': settings.ai_trials_output_limit,
+            'available_tools': list(islice(descriptors(db, settings), 12)),
             'trials': [{**trial_out(row, settings, current if not error else None), 'conversation_ids': list(db.scalars(
                 select(AITrialSession.conversation_id).where(AITrialSession.trial_id == row.id)
                 .order_by(AITrialSession.created_at.desc())))} for row in rows]}
@@ -183,7 +201,7 @@ def create_router(principal_dependency):
         env, binding, settings = owned(db, principal, project_id, body.native_owner_id)
         if not db.get(AIProjectDraft, binding.project_id):
             config_allowed(db, body.config, settings)
-            db.add(AIProjectDraft(project_id=binding.project_id, encrypted_config=seal(body.config.model_dump(), settings)))
+            db.add(AIProjectDraft(project_id=binding.project_id, encrypted_config=seal(body.config.model_dump(exclude_none=True), settings)))
             audit(db, env, principal, 'draft_initialized', binding.project_id)
             db.commit()
         return detail(db, binding, settings)
@@ -196,7 +214,7 @@ def create_router(principal_dependency):
             raise HTTPException(409, 'ai_trials_draft_changed')
         config_allowed(db, body.config, settings)
         if snapshot(db, binding, body.config, settings).digest() != current.digest():
-            draft.encrypted_config = seal(body.config.model_dump(), settings)
+            draft.encrypted_config = seal(body.config.model_dump(exclude_none=True), settings)
             draft.revision += 1
             draft.updated_at = now()
             audit(db, env, principal, 'draft_updated', binding.project_id)
@@ -273,7 +291,9 @@ def create_router(principal_dependency):
         if not run:
             db.add(AITrialRun(message_id=body.message_id, conversation_id=str(body.conversation_id), trial_id=row.id))
         db.commit()
-        return {**trial_out(row, settings), 'snapshot': snap.model_dump(mode='json')}
+        selected = fixed_tool(db, settings, snap, row.project_id)
+        return {**trial_out(row, settings), 'snapshot': snap.model_dump(mode='json'),
+                'reviewed_tool': describe(*selected) if selected else None}
 
     @router.post('/trials/{trial_id}/resolve')
     def resolve_by_id(trial_id: UUID, body: Resolve, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -281,6 +301,50 @@ def create_router(principal_dependency):
         if not row:
             raise HTTPException(404, 'ai_trials_not_found')
         return resolve(UUID(row.project_id), trial_id, body, principal, db)
+
+    @router.post('/trials/{trial_id}/tool')
+    async def call_tool(trial_id: UUID, body: ToolCall, principal=Depends(principal_dependency), db=Depends(get_db)):
+        row = db.get(AIProjectTrial, str(trial_id))
+        if not row:
+            raise HTTPException(404, 'ai_trials_not_found')
+        env, _, settings, row = trial_owned(db, principal, UUID(row.project_id), trial_id, body.native_owner_id)
+        snap = usable(db, row, settings)
+        run = db.get(AITrialRun, body.message_id)
+        session = db.get(AITrialSession, str(body.conversation_id))
+        if (row.state != 'ready' or not run or not session or session.environment_id != env.id
+                or run.trial_id != row.id or session.trial_id != row.id
+                or run.conversation_id != session.conversation_id):
+            raise HTTPException(409, 'ai_trials_session_mismatch')
+        selected = fixed_tool(db, settings, snap, row.project_id)
+        if not selected:
+            raise HTTPException(409, 'ai_trials_tool_unavailable')
+        try:
+            arguments_size = len(json.dumps(body.arguments, allow_nan=False).encode())
+        except ValueError:
+            arguments_size = 8193
+        if arguments_size > 8192:
+            raise HTTPException(422, 'ai_trials_tool_arguments_invalid')
+        target = row.id + ':' + body.message_id
+        count = db.scalar(select(func.count()).select_from(AuditEvent).where(
+            AuditEvent.action == 'ai_trial.tool_started', AuditEvent.target_id == target))
+        if count >= min(3, settings.agent_mcp_calls):
+            raise HTTPException(409, 'ai_trials_tool_limit')
+        server, tool = selected
+        config, addresses = server.config, server.addresses
+        audit(db, env, principal, 'tool_started', target)
+        db.commit()
+        try:
+            result = await gateway(settings, 'call', config, addresses=addresses,
+                                   tool=tool, arguments=body.arguments)
+        except Exception:
+            result = {}
+        output = result.get('text') if isinstance(result, dict) else None
+        success = isinstance(output, str) and bool(output.strip()) and 'error' not in result
+        audit(db, env, principal, 'tool_completed' if success else 'tool_failed', target)
+        db.commit()
+        if not success:
+            raise HTTPException(503, 'ai_trials_tool_failed')
+        return {'text': output[:12000]}
 
     @router.post('/{project_id}/trials/{trial_id}/acceptance')
     def accept(project_id: UUID, trial_id: UUID, body: Acceptance, principal=Depends(principal_dependency), db=Depends(get_db)):

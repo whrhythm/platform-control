@@ -172,7 +172,9 @@ def create_router(principal_dependency):
         trial = db.get(AIProjectTrial, str(body.trial_id))
         if not trial or trial.project_id != binding.project_id or trial.state != 'ready':
             raise HTTPException(409, 'ai_releases_trial_required')
-        usable(db, trial, settings)
+        snap = usable(db, trial, settings)
+        if any(tool.tool_id != 'file_search' for tool in snap.tools):
+            raise HTTPException(409, 'ai_releases_tool_trial_only')
         accepted = unseal(trial.encrypted_acceptance, settings) if trial.encrypted_acceptance else {}
         _, _, current = draft_snapshot(db, binding, settings)
         if (accepted.get('outcome') != 'passed' or current.digest() != trial.digest or
