@@ -4749,6 +4749,57 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects/generated-tools": {
+      "get": {
+        "tags": [
+          "generated-tools"
+        ],
+        "summary": "Catalog",
+        "operationId": "catalog_internal_v1_workspace_ai_projects_generated_tools_get",
+        "parameters": [
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/ai-projects/{project_id}/generated-tools": {
       "post": {
         "tags": [

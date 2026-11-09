@@ -226,6 +226,38 @@ def approved_descriptors(db, project_id):
 def create_router(principal_dependency):
     router = APIRouter(prefix='/internal/v1/workspace/ai-projects', tags=['generated-tools'])
 
+    @router.get('/generated-tools')
+    def catalog(principal=Depends(principal_dependency), db=Depends(get_db)):
+        settings = get_settings()
+        if not (settings.ai_projects_enabled and settings.ai_trials_enabled and settings.agent_tasks_enabled):
+            return {'tools': []}
+        env = own_environment(db, principal)
+        if env.status == 'suspended':
+            return {'tools': []}
+        projects = (select(WorkspaceProject.id, WorkspaceProject.name)
+                    .join(AIProjectBinding, AIProjectBinding.project_id == WorkspaceProject.id)
+                    .where(WorkspaceProject.environment_id == env.id, AIProjectBinding.environment_id == env.id,
+                           AIProjectBinding.state == 'ready').subquery())
+        versions = db.execute(select(AIToolReview, projects.c.name)
+            .join(projects, AIToolReview.project_id == projects.c.id)
+            .where(AIToolReview.reference.startswith('projecttool:'))
+            .order_by(AIToolReview.created_at.desc(), AIToolReview.id))
+        tools = [{'id': row.id, 'reference': row.reference, 'title': row.descriptor['title'],
+                  'project_id': row.project_id, 'project_name': name, 'state': row.state}
+                 for row, name in versions]
+        unpublished = db.execute(select(AgentTask, projects.c.id, projects.c.name)
+            .join(projects, AgentTask.resources['tool_project'].as_string() == projects.c.id)
+            .where(AgentTask.environment_id == env.id, AgentTask.status == 'completed',
+                   AgentTask.resources['tool_reference'].as_string().is_(None))
+            .order_by(AgentTask.created_at.desc(), AgentTask.id))
+        for task, project_id, name in unpublished:
+            if any(event['kind'] == 'file' and event.get('operation') == 'write'
+                   and event.get('path') == SOURCE and event.get('source_digest')
+                   for event in unseal(task.encrypted_events, settings)):
+                tools.append({'id': task.id, 'reference': None, 'title': unseal(task.resources['tool_build'], settings)['title'],
+                              'project_id': project_id, 'project_name': name, 'state': 'unsubmitted'})
+        return {'tools': tools}
+
     def owned(db, principal, project_id, native_owner_id=None):
         settings = get_settings()
         if not (settings.ai_projects_enabled and settings.ai_trials_enabled and settings.agent_tasks_enabled):

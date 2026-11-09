@@ -159,6 +159,8 @@ def sponsored(versions,monkeypatch):
 
 def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, harness, monkeypatch):
     from control_plane.ai_tool_reviews import review_id
+    from control_plane.ai_trials import Config, config_allowed
+    from control_plane.agent_tasks import seal
     from control_plane.generated_tools import Build, capture, validate_build
     from control_plane.models import AIToolReview, AgentTask
 
@@ -175,6 +177,7 @@ def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, 
     identifier = review_id(project, reference)
     owner = {'native_owner_id': OWNER}
     task_id = str(uuid4())
+    unsubmitted_id = str(uuid4())
     with client.session_factory.begin() as db:
         db.add(AIToolReview(id=identifier, project_id=project, reference=reference, state='pending', revision=1,
             descriptor={'generated': immutable, 'name':build.name, 'title':build.title,
@@ -183,12 +186,31 @@ def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, 
             request_key='test-bound-rules', config={'project_path':'test/rules'}, status='completed',
             encrypted_prompt='unused', encrypted_events='unused',
             resources={'tool_project':project, 'tool_reference':reference}))
+        db.add(AgentTask(id=unsubmitted_id, environment_id=versions[2], conversation_id='tool_'+uuid4().hex,
+            request_key='test-unsubmitted-rule', config={'project_path':'test/rules'}, status='completed',
+            encrypted_prompt='unused', encrypted_events=seal(
+                [{'kind':'file','operation':'write','path':'tool.json','source_digest':'a'*64}], get_settings()),
+            resources={'tool_project':project,'tool_build':seal({'title':'Unsubmitted rule'}, get_settings())}))
+        env = db.get(UserEnvironment, versions[2])
+        from control_plane.user_environments import identity_digest
+        db.add(UserEnvironment(issuer=env.issuer, subject='unrelated-tool-account',
+            identity_hash=identity_digest(env.issuer, 'unrelated-tool-account'), storage_gib=1,
+            first_tenant_id=env.first_tenant_id, status='ready'))
+    catalog_path = PREFIX+'/generated-tools'
+    listed = client.get(catalog_path, headers=auth).json()['tools']
+    assert [(item['id'], item['reference'], item['state']) for item in listed] == [
+        (identifier, reference, 'pending'), (unsubmitted_id, None, 'unsubmitted')]
+    assert all(item['project_id'] == project and item['project_name'] and 'program' not in item for item in listed)
+    assert client.get(catalog_path, headers={**auth,'X-CodeChat-Subject':'unrelated-tool-account'}).json() == {'tools':[]}
     body = {**owner, 'expected_digest':previous['expected_digest'], 'config':{**config,'tool_reference':reference}}
     assert client.post(path+'/draft', headers=auth, json=body).status_code == 409
     _, token = harness
     admin = {'Authorization': 'Bearer '+token('operator', groups=['platform-admins'])}
     review = '/v1/admin/assistant-tool-reviews/'+identifier
     assert client.post(review, headers=admin, json={'revision':1,'state':'approved','acknowledged':True}).status_code == 200
+    with client.session_factory() as db, pytest.raises(HTTPException) as denied:
+        config_allowed(db, Config.model_validate(body['config']), get_settings(), str(uuid4()))
+    assert denied.value.status_code == 409
     draft = client.post(path+'/draft', headers=auth, json=body).json()
     row = client.post(path+'/trials', headers=auth, json={**owner, 'request_id':str(uuid4()),
         'expected_digest':draft['digest']}).json()
@@ -256,6 +278,8 @@ def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, 
         json={'model':'test-model','stream':True,'messages':[{'role':'user','content':'quote'}]})
     assert sponsor.status_code == 200 and denied in sponsor.text and '[DONE]' in sponsor.text
     assert client.post(review, headers=admin, json={'revision':2,'state':'revoked','acknowledged':True}).status_code == 200
+    listed = {item['reference']:item['state'] for item in client.get(catalog_path, headers=auth).json()['tools']}
+    assert listed[reference] == 'revoked' and listed[fixed] == 'approved'
     assert client.post(target+'/tool-admission', headers=auth, json={**run,'arguments':{'units':8}}).status_code == 409
 
 
