@@ -332,9 +332,12 @@ def create_router(principal_dependency):
         if row.chunks == 0:
             return {'revision_id': revision, 'sources': []}
         scope = revision_scope(row)
-        db.commit()
+        from .embedding_admin import runtime_profile
         try:
-            result = KnowledgeClient(settings).call('POST', scope, revision, {'query':body.query,'k':5}, query=True)
+            profile = runtime_profile(db, settings, row.embedding_profile_id)
+            db.commit()
+            result = KnowledgeClient(settings).call('POST', scope, revision,
+                {'query': body.query, 'k': 5, **profile}, query=True)
         except Exception:
             raise HTTPException(503, 'ai_releases_knowledge_unavailable') from None
         db.expire_all()

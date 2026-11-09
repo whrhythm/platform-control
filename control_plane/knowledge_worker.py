@@ -6,6 +6,7 @@ from uuid import uuid4
 from sqlalchemy import select, or_
 
 from .agent_tasks import unseal
+from .embedding_admin import runtime_profile
 from .knowledge import KnowledgeClient, revision_scope
 from .models import AIProjectBinding, ProjectKnowledge, KnowledgeLibrary, UserEnvironment, now
 
@@ -38,6 +39,7 @@ def run_once(sessions, settings, client=None):
         scope, revision, digest = revision_scope(candidate), candidate.id, candidate.digest
         expected = (candidate.source_bytes, candidate.index_bytes, candidate.chunks)
         encrypted = candidate.encrypted_source
+        profile_id = candidate.embedding_profile_id
         db.commit()
     state, code = ('deleting', 'knowledge_cleanup_pending') if deleting else ('failed', 'knowledge_index_failed')
     try:
@@ -52,9 +54,12 @@ def run_once(sessions, settings, client=None):
             try:
                 result = client.call('GET', scope, revision)
             except Exception:
+                with sessions() as db:
+                    profile = runtime_profile(db, settings, profile_id)
                 result = client.call('PUT', scope, revision,
-                    {'digest': digest, 'files': unseal(encrypted, settings)})
+                    {'digest': digest, 'files': unseal(encrypted, settings), **profile})
             if (result.get('digest') != digest or
+                    result.get('embedding_profile_id') != profile_id or
                     tuple(result.get(k) for k in ('source_bytes', 'index_bytes', 'chunks')) != expected):
                 raise ValueError('index_unverified')
             state, code = 'ready', None

@@ -89,6 +89,13 @@ class KnowledgeClient:
     def call(self, method, scope, revision, payload=None, *, query=False):
         # All scopes/identifiers are resolved from owned records, never arbitrary URLs.
         path = '/v1/'+str(UUID(scope))+'/'+str(UUID(revision))+('/query' if query else '')
+        return self.request(method, path, payload, query=query)
+
+    def probe(self, profile):
+        if self.request('POST', '/v1/embedding-probe', profile, query=True) != {'dimensions': 512}:
+            raise ValueError('knowledge_embedding_probe_failed')
+
+    def request(self, method, path, payload, *, query=False):
         with httpx.Client(base_url=self.settings.knowledge_url, trust_env=False,
                 timeout=self.settings.knowledge_query_seconds if query else self.settings.knowledge_request_seconds,
                 headers={'Authorization': 'Bearer '+self.settings.knowledge_service_token}) as client:
@@ -156,8 +163,10 @@ def create_router(principal_dependency):
         library = legacy_library(db, binding)
         if not library or library.state != 'active':
             raise HTTPException(409, 'knowledge_library_not_found')
+        previous = db.get(ProjectKnowledge, library.head_revision_id) if library.head_revision_id else None
         row = ProjectKnowledge(id=str(uuid4()), project_id=str(project_id), environment_id=env.id,
             library_id=library.id, request_id=str(body.request_id), digest=digest, encrypted_source=seal(files, settings),
+            embedding_profile_id=previous.embedding_profile_id if previous else None,
             manifest=[{'name': f['name'], 'bytes': len(f['content'].encode())} for f in files],
             source_bytes=size, index_bytes=index_bytes, chunks=len(chunks), state='queued')
         db.add(row)
@@ -224,9 +233,12 @@ def create_router(principal_dependency):
         if row.chunks == 0:
             return {'revision_id': row.id, 'digest': row.digest, 'sources': []}
         scope, identifier, digest = revision_scope(row), row.id, row.digest
-        db.commit()  # Do not hold an environment lock while embedding a query.
+        from .embedding_admin import runtime_profile
         try:
-            result = KnowledgeClient(settings).call('POST', scope, identifier, {'query': body.query, 'k': 5}, query=True)
+            profile = runtime_profile(db, settings, row.embedding_profile_id)
+            db.commit()  # Do not hold an environment lock while embedding a query.
+            result = KnowledgeClient(settings).call('POST', scope, identifier,
+                {'query': body.query, 'k': 5, **profile}, query=True)
         except Exception:
             raise HTTPException(503, 'knowledge_search_unavailable') from None
         # Deletion/revocation during the query must prevent subsequent disclosure.

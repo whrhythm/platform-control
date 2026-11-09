@@ -8992,6 +8992,116 @@
         }
       }
     },
+    "/v1/admin/knowledge-embedding": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Listing",
+        "operationId": "listing_v1_admin_knowledge_embedding_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Select Profile",
+        "operationId": "select_profile_v1_admin_knowledge_embedding_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Selection"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/knowledge-embedding/profiles": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Create",
+        "operationId": "create_v1_admin_knowledge_embedding_profiles_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExternalInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/internal/v1/workspace/agent/mcp/{identifier}/credential": {
       "put": {
         "tags": [
@@ -11306,9 +11416,22 @@
             "enum": [
               "upsert",
               "rename",
-              "remove"
+              "remove",
+              "rebuild"
             ],
             "title": "Action"
+          },
+          "embedding_profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 36
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Profile"
           },
           "files": {
             "anyOf": [
@@ -11400,6 +11523,46 @@
           "differences"
         ],
         "title": "EvidenceOut"
+      },
+      "ExternalInput": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Url"
+          },
+          "model": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Model"
+          },
+          "secret": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "password",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secret"
+          },
+          "request_dimensions": {
+            "type": "boolean",
+            "title": "Request Dimensions",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "url",
+          "model"
+        ],
+        "title": "ExternalInput"
       },
       "HTTPValidationError": {
         "properties": {
@@ -12545,6 +12708,34 @@
           "policy"
         ],
         "title": "SavePolicy"
+      },
+      "Selection": {
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profile"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Version"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "profile",
+          "version"
+        ],
+        "title": "Selection"
       },
       "ServerInput": {
         "properties": {

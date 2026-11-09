@@ -8,9 +8,10 @@ from sqlalchemy import select, func
 
 from .agent_tasks import seal, unseal
 from .database import get_db
+from .embedding_admin import describe, selected_profile
 from .knowledge import Source, public, reserve_storage
 from .knowledge_format import prepare
-from .models import (KnowledgeLibrary, ProjectKnowledge, AIProjectBinding, AIProjectTrial,
+from .models import (KnowledgeLibrary, ProjectKnowledge, AIProjectBinding, AIProjectTrial, EmbeddingProfile,
                      WorkspaceProject, AuditEvent, now)
 from .settings import get_settings
 from .workspace_gateway import own_environment
@@ -32,7 +33,8 @@ class Edit(BaseModel):
     model_config = ConfigDict(extra='forbid')
     request_id: UUID
     expected_revision_id: UUID | None
-    action: Literal['upsert', 'rename', 'remove']
+    action: Literal['upsert', 'rename', 'remove', 'rebuild']
+    embedding_profile: str | None = Field(default=None, max_length=36)
     files: list[Source] | None = Field(default=None, min_length=1, max_length=10)
     name: str | None = Field(default=None, min_length=1, max_length=124)
     new_name: str | None = Field(default=None, min_length=1, max_length=124)
@@ -96,6 +98,14 @@ def view(db, library, details=False):
         result['limits'] = {'files': settings.knowledge_file_limit, 'file_bytes': settings.knowledge_file_bytes,
                             'revisions': settings.knowledge_revision_limit}
         result['references'] = references(db, library)
+        preference = selected_profile(db)
+        active = db.get(ProjectKnowledge, library.active_revision_id) if library.active_revision_id else None
+        result['embedding'] = {
+            'active': describe(db.get(EmbeddingProfile, active.embedding_profile_id)
+                               if active and active.embedding_profile_id else None),
+            'recommended': describe(db.get(EmbeddingProfile, preference.profile_id)
+                                    if preference and preference.profile_id else None),
+        }
         result['revisions'] = [public(r) for r in db.scalars(select(ProjectKnowledge)
             .where(ProjectKnowledge.library_id == library.id, ProjectKnowledge.state != 'deleted')
             .order_by(ProjectKnowledge.created_at.desc(), ProjectKnowledge.id.desc()))]
@@ -170,7 +180,10 @@ def create_router(principal_dependency):
         env, settings, library = owned(db, principal, library_id)
         # Request digest covers intent, including expected revision; retries never reapply a mutation.
         from hashlib import sha256
-        intent = sha256(body.model_dump_json().encode()).hexdigest()
+        if body.action != 'rebuild' and body.embedding_profile is not None:
+            raise HTTPException(400, 'knowledge_invalid_request')
+        excluded = {'embedding_profile'} if body.action != 'rebuild' else set()
+        intent = sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
         existing = db.scalar(select(ProjectKnowledge).where(ProjectKnowledge.library_id == library.id,
             ProjectKnowledge.request_id == str(body.request_id)))
         if existing:
@@ -180,9 +193,18 @@ def create_router(principal_dependency):
         if library.head_revision_id != (str(body.expected_revision_id) if body.expected_revision_id else None):
             raise HTTPException(409, 'knowledge_version_conflict')
         previous = db.get(ProjectKnowledge, library.head_revision_id) if library.head_revision_id else None
+        profile_id = previous.embedding_profile_id if previous else None
         files = unseal(previous.encrypted_source, settings) if previous else []
         by_name = {f['name']: f for f in files}
-        if body.action == 'upsert' and body.files and not body.name and not body.new_name:
+        if body.action == 'rebuild' and body.files is None and not body.name and not body.new_name:
+            preference = selected_profile(db)
+            recommended = preference.profile_id if preference else None
+            if body.embedding_profile != (recommended or 'local'):
+                raise HTTPException(409, 'knowledge_embedding_selection_changed')
+            if previous and previous.state in ('queued', 'indexing'):
+                raise HTTPException(409, 'knowledge_version_conflict')
+            profile_id = recommended
+        elif body.action == 'upsert' and body.files and not body.name and not body.new_name:
             if len({f.name for f in body.files}) != len(body.files):
                 raise HTTPException(400, 'knowledge_invalid_file')
             by_name.update({f.name: f.model_dump() for f in body.files})
@@ -211,11 +233,12 @@ def create_router(principal_dependency):
         reserve_storage(db, env, principal, settings, size+index)
         row = ProjectKnowledge(id=str(uuid4()), library_id=library.id, environment_id=env.id,
             request_id=str(body.request_id), digest=digest, edit_digest=intent, encrypted_source=seal(files, settings),
+            embedding_profile_id=profile_id,
             manifest=[{'name': f['name'], 'bytes': len(f['content'].encode())} for f in files],
             source_bytes=size, index_bytes=index, chunks=len(chunks), state='queued')
         db.add(row)
         library.head_revision_id, library.updated_at = row.id, now()
-        audit(db, env, principal, 'files_changed', row.id)
+        audit(db, env, principal, 'index_rebuilt' if body.action == 'rebuild' else 'files_changed', row.id)
         db.commit()
         return view(db, library, True)
 

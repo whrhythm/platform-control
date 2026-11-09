@@ -38,7 +38,7 @@ from .capacity import create_router as create_capacity_router
 async def lifespan(_app: FastAPI):
     # Schema changes are an explicit deployment step, never an API side effect.
     with engine.connect() as connection:
-        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0030_code_project_deletion":
+        if connection.scalar(text("SELECT version_num FROM alembic_version")) != "0031_embedding_profiles":
             raise RuntimeError("Database schema is not current; run alembic upgrade head")
     yield
 
@@ -52,7 +52,7 @@ from fastapi.responses import JSONResponse
 
 @app.exception_handler(RequestValidationError)
 async def safe_validation(request: Request, error: RequestValidationError):
-    if request.url.path.startswith('/internal/v1/workspace/knowledge-libraries'):
+    if request.url.path.startswith(('/internal/v1/workspace/knowledge-libraries', '/v1/admin/knowledge-embedding')):
         return JSONResponse(status_code=422, content={'detail': 'knowledge_invalid_request'})
     if request.url.path.startswith('/internal/v1/workspace/ai-projects'):
         return JSONResponse(status_code=422, content={'detail': 'ai_projects_invalid_request'})
@@ -736,6 +736,8 @@ from .ai_policy import admin_router as create_ai_admin_router, public_models
 app.include_router(create_ai_admin_router(platform_admin))
 from .mcp_admin import admin_router as create_mcp_admin_router, credential_router as create_mcp_credential_router
 app.include_router(create_mcp_admin_router(platform_admin))
+from .embedding_admin import create_router as create_embedding_admin_router
+app.include_router(create_embedding_admin_router(platform_admin))
 app.include_router(create_mcp_credential_router(workspace_service_principal))
 app.include_router(create_review_router(platform_admin))
 app.include_router(create_admin_users_router(platform_admin))

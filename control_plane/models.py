@@ -567,6 +567,23 @@ class KnowledgeLibrary(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
 
 
+class EmbeddingProfile(Base):
+    __tablename__ = 'embedding_profiles'
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    url: Mapped[str] = mapped_column(String(500))
+    model: Mapped[str] = mapped_column(String(200))
+    request_dimensions: Mapped[bool] = mapped_column(Boolean)
+    encrypted_secret: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
+class EmbeddingPreference(Base):
+    __tablename__ = 'embedding_preference'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[str | None] = mapped_column(ForeignKey('embedding_profiles.id'))
+    version: Mapped[int] = mapped_column(Integer)
+
+
 class ProjectKnowledge(Base):
     __tablename__ = 'project_knowledge'
     __table_args__ = (UniqueConstraint('project_id', 'request_id', name='uq_knowledge_request'),
@@ -578,6 +595,7 @@ class ProjectKnowledge(Base):
     request_id: Mapped[str] = mapped_column(String(36))
     digest: Mapped[str] = mapped_column(String(64))
     edit_digest: Mapped[str | None] = mapped_column(String(64))
+    embedding_profile_id: Mapped[str | None] = mapped_column(ForeignKey('embedding_profiles.id'))
     encrypted_source: Mapped[str] = mapped_column(Text)
     manifest: Mapped[list] = mapped_column(JSON)
     source_bytes: Mapped[int] = mapped_column(BigInteger)

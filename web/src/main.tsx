@@ -6,6 +6,7 @@ import type { IdentityConfig } from './api';
 import './style.css';
 import AISettings from './AISettings';
 import MCPSettings from './MCPSettings';
+import EmbeddingSettings from './EmbeddingSettings';
 import ReleaseReviews from './ReleaseReviews';
 import AdminUsers from './AdminUsers';
 const pages = {
@@ -14,6 +15,7 @@ const pages = {
   users: {nav:'用户与资源', title:'用户与资源', description:'查看用户的独立空间、实际用量和已生效权益。'},
   reviews: {nav:'待核验', title:'发布核验工作台', description:'对比发布意图与集群状态，核验后恢复任务并保留审计记录。'},
   mcp: {nav:'MCP 服务', title:'MCP 服务', description:'接入、审核和管理可供用户选择的编程工具服务。'},
+  embedding: {nav:'知识库模型', title:'知识库模型', description:'管理知识索引使用的本地与外部 Embedding 模型。'},
 } as const;
 function App() {
   const [manager,setManager]=useState<UserManager>();
@@ -45,7 +47,7 @@ function App() {
     {error&&<div className="error" role="alert">{error}</div>}
     {!signedIn?<section className="panel welcome"><h2>登录管理平台</h2><p>{desktop?'请通过浏览器完成管理员登录。':'使用管理员账号管理用户、套餐与平台服务。'}</p><button disabled={!ready||!manager||busy} onClick={()=>void perform(async()=>manager?.signinRedirect())}>使用 Authentik 登录</button></section>:
     !admin?<section className="panel"><h2>这里是管理员控制台</h2><p>请在 LibreChat 使用聊天、我的空间和应用管理。个人空间会在首次登录时自动准备，无需在此创建。</p></section>:
-    page==='users'?<AdminUsers/>:page==='reviews'?<ReleaseReviews/>:page==='mcp'?<MCPSettings/>:<AISettings key={page} view={page} onDirty={setDirty}/>}
+    page==='users'?<AdminUsers/>:page==='reviews'?<ReleaseReviews/>:page==='mcp'?<MCPSettings/>:page==='embedding'?<EmbeddingSettings/>:<AISettings key={page} view={page} onDirty={setDirty}/>}
     </main></div>;
 }
 createRoot(document.getElementById('root')!).render(<App/>);

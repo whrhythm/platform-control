@@ -65,6 +65,7 @@ def assert_library_backfill_preserves_pinned_data(config, engine):
             assert db.get(AIProjectBinding,p).knowledge_library_id == p
             old = db.get(ProjectKnowledge,first_id)
             assert old.library_id == p and revision_scope(old) == p
+            assert old.embedding_profile_id is None
             assert old.encrypted_source == 'original-encrypted-source' and old.source_bytes == 10
             assert db.get(AIProjectTrial,trial_id).encrypted_snapshot == 'unchanged-trial-snapshot'
             assert db.get(AIProjectTrial,trial_id).knowledge_revision_id == first_id
@@ -114,7 +115,7 @@ def test_versioned_schema_upgrade_matches_models_and_roundtrips(tmp_path, monkey
     try:
         command.upgrade(config, "head")
         with engine.connect() as connection:
-            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0030_code_project_deletion"
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "0031_embedding_profiles"
             assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
         monkeypatch.setattr(main, "engine", engine)
         with TestClient(main.app) as client:
