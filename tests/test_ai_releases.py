@@ -122,6 +122,16 @@ def test_personal_tool_review_consent_and_runtime_are_release_scoped(versions, h
     _, target, run, runtime = launched(client,auth,path)
     assert runtime['personal_tool'] == {'reference': reference, 'owner_native_id': OWNER}
     assert {t['tool_id'] for t in runtime['snapshot']['tools']} == {reference, 'calculator'}
+    sponsor = '/agent/app/v1/chat/completions'
+    sponsor_auth = {'Authorization': 'Bearer '+runtime['credential']}
+    sponsor_payload = {'model':'test-model', 'stream':True, 'messages':[{'role':'user', 'content':'quote'}]}
+    tools = [{'type':'function', 'function':{'name':name}} for name in ('calculator', 'reviewed_tool')]
+    assert client.post(sponsor, headers=sponsor_auth, json={**sponsor_payload, 'tools':tools}).json() == {
+        'detail': 'ai_releases_price_unavailable'}
+    for unexpected in ('file_search', 'other_personal_tool'):
+        assert client.post(sponsor, headers=sponsor_auth, json={**sponsor_payload, 'tools':tools + [
+            {'type':'function', 'function':{'name':unexpected}}]}).json() == {
+                'detail': 'ai_releases_invalid_request'}
     assert client.post(target+'/tool-admission', headers=auth,
         json={**run, 'message_id':str(uuid4())}).status_code == 403
     assert client.post(target+'/tool-admission', headers=auth, json=run).json() == {'allowed': True}

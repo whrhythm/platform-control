@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse, JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-from .ai_releases import entry_access, enabled
+from .ai_releases import entry_access, enabled, release_tool_reference
 from .auth import Principal
 from .database import get_db
 from .models import AIApplication, AIAppRun, AIAppCall, AIAppMember, AIConfiguration, ModelCredential, now
@@ -55,10 +55,16 @@ def admission(db, claims, body, settings):
     tools = body.get('tools', [])
     if not isinstance(tools, list):
         raise HTTPException(400, 'ai_releases_invalid_request')
+    allowed_tools = {tool.tool_id for tool in snap.tools if tool.tool_id == 'calculator'}
+    if snap.knowledge:
+        allowed_tools.add('file_search')
+    if release.tool_review_id and release_tool_reference(snap):
+        allowed_tools.add('reviewed_tool')
     for tool in tools:
         if (not isinstance(tool, dict) or tool.get('type') != 'function' or
                 not isinstance(tool.get('function'), dict) or
-                tool['function'].get('name') != 'file_search' or not snap.knowledge):
+                not isinstance(tool['function'].get('name'), str) or
+                tool['function']['name'] not in allowed_tools):
             raise HTTPException(400, 'ai_releases_invalid_request')
     digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
     if db.scalar(select(AIAppCall.id).where(AIAppCall.run_id == run.id, AIAppCall.request_hash == digest)):
