@@ -8,11 +8,20 @@ from sqlalchemy import select
 from .ai_application_contracts import ToolRevision
 from .mcp_catalog import published, safe_schema
 from .models import MCPServer
+from .generated_tools import GENERATED_REFERENCE, generated_row
 
 
 REFERENCE = r'^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$'
 PERSONAL_REFERENCE = r'^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$'
-TRIAL_REFERENCE = f'(?:{REFERENCE}|{PERSONAL_REFERENCE})'
+RELEASABLE_REFERENCE = f'(?:{PERSONAL_REFERENCE}|{GENERATED_REFERENCE})'
+TRIAL_REFERENCE = f'(?:{REFERENCE}|{RELEASABLE_REFERENCE})'
+
+
+def generated_tool(db, snapshot, project_id):
+    for tool in snapshot.tools:
+        if re.fullmatch(GENERATED_REFERENCE, tool.tool_id):
+            return generated_row(db, project_id, tool.tool_id)
+    return None
 
 
 def descriptors(db, settings):
@@ -75,5 +84,7 @@ def fixed_tool(db, settings, snapshot, project_id):
         raise HTTPException(409, 'ai_trials_tool_unavailable')
     if re.fullmatch(PERSONAL_REFERENCE, tools[0].tool_id):
         # LibreChat owns the action and verifies its author and definition on each trial run.
+        return None
+    if re.fullmatch(GENERATED_REFERENCE, tools[0].tool_id):
         return None
     return find(db, settings, tools[0].tool_id)

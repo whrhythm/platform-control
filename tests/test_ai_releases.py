@@ -157,6 +157,57 @@ def sponsored(versions,monkeypatch):
     return client,claims,payload,runtime
 
 
+def test_generated_tool_requires_approved_fixed_source_and_real_trial(versions, harness, monkeypatch):
+    from control_plane.ai_tool_reviews import review_id
+    from control_plane.generated_tools import Build, capture, validate_build
+    from control_plane.models import AIToolReview
+
+    client, auth, path, previous, config = prepared(versions, monkeypatch)
+    build = Build(request_id=uuid4(), name='service_fee', title='Service fee', requirements='Add two units.',
+        parameters=['units'], cases=[{'inputs': {'units': 2}, 'result': 4}, {'inputs': {'units': 5}, 'result': 7}])
+    validate_build(build)
+    for raw in (b'{"expression":["exec", "units", 2]}', b'{"expression":["add", "units", 3]}'):
+        with pytest.raises(HTTPException):
+            capture(raw, build)
+    reference, immutable = capture(b'{"expression":["add","units",2]}', build)
+    project = path.rsplit('/', 1)[-1]
+    identifier = review_id(project, reference)
+    owner = {'native_owner_id': OWNER}
+    with client.session_factory.begin() as db:
+        db.add(AIToolReview(id=identifier, project_id=project, reference=reference, state='pending', revision=1,
+            descriptor={'generated': immutable, 'name':build.name, 'title':build.title,
+                'description':build.requirements, 'target':'local rules', 'parameters':build.parameters}))
+    body = {**owner, 'expected_digest':previous['expected_digest'], 'config':{**config,'tool_reference':reference}}
+    assert client.post(path+'/draft', headers=auth, json=body).status_code == 409
+    _, token = harness
+    admin = {'Authorization': 'Bearer '+token('operator', groups=['platform-admins'])}
+    review = '/v1/admin/assistant-tool-reviews/'+identifier
+    assert client.post(review, headers=admin, json={'revision':1,'state':'approved','acknowledged':True}).status_code == 200
+    draft = client.post(path+'/draft', headers=auth, json=body).json()
+    row = client.post(path+'/trials', headers=auth, json={**owner, 'request_id':str(uuid4()),
+        'expected_digest':draft['digest']}).json()
+    trial = path+'/trials/'+row['id']
+    assert client.post(trial+'/confirm', headers=auth, json=owner).status_code == 200
+    run = {**owner, 'conversation_id':str(uuid4()),'message_id':str(uuid4())}
+    assert client.post(trial+'/resolve', headers=auth, json=run).json()['reviewed_tool']['reference'] == reference
+    acceptance = {**run, 'outcome':'passed','note':'verified','transcript_digest':'a'*64,
+                  'answer_checked':True,'sources_checked':True}
+    assert client.post(trial+'/acceptance', headers=auth, json=acceptance).status_code == 409
+    invoke = PREFIX+'/trials/'+row['id']+'/tool'
+    assert client.post(invoke, headers=auth, json={**run, 'arguments':{'units':4, 'network':'x'}}).status_code == 422
+    assert client.post(invoke, headers=auth, json={**run, 'arguments':{'units':4}}).json() == {'text':'{"result": 6}'}
+    assert client.post(trial+'/acceptance', headers=auth, json=acceptance).status_code == 200
+    publish = {**previous, 'request_id':str(uuid4()), 'trial_id':row['id'], 'expected_digest':draft['digest']}
+    assert client.post(path+'/releases', headers=auth, json=publish).status_code == 409
+    assert client.post(path+'/releases', headers=auth, json={**publish,'confirm_tool_reference':reference}).status_code == 200
+    _, target, run, runtime = launched(client, auth, path)
+    assert runtime['generated_tool']['reference'] == reference and runtime['personal_tool'] is None
+    assert client.post(target+'/tool-admission', headers=auth, json={**run,'arguments':{'units':8}}).json() == {
+        'allowed':True,'text':'{"result": 10}'}
+    assert client.post(review, headers=admin, json={'revision':2,'state':'revoked','acknowledged':True}).status_code == 200
+    assert client.post(target+'/tool-admission', headers=auth, json={**run,'arguments':{'units':8}}).status_code == 409
+
+
 def test_budget_ledger_duplicate_unknown_and_settlement(versions,monkeypatch):
     client,claims,payload,_=sponsored(versions,monkeypatch)
     with client.session_factory() as db:

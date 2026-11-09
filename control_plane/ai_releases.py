@@ -9,7 +9,8 @@ from sqlalchemy import func, select
 from .accounts import allowed
 from .agent_tasks import seal, unseal
 from .ai_trials import Owner, Resolve, draft_snapshot, usable
-from .ai_trial_tools import PERSONAL_REFERENCE
+from .ai_trial_tools import PERSONAL_REFERENCE, RELEASABLE_REFERENCE
+from .generated_tools import describe as describe_generated, execute
 from .ai_tool_reviews import ReviewDescriptor, require_review, review_id, review_out
 from .auth import Principal
 from .database import get_db
@@ -26,7 +27,7 @@ class Publish(Owner):
     expected_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
     budget_micros: int = Field(ge=1000, le=100000000)
     confirm_sponsor: bool
-    confirm_tool_reference: str | None = Field(default=None, pattern=PERSONAL_REFERENCE)
+    confirm_tool_reference: str | None = Field(default=None, pattern=RELEASABLE_REFERENCE)
 
 
 class SubmitToolReview(Owner):
@@ -55,6 +56,10 @@ class Member(Owner):
 class Search(Owner):
     model_config = ConfigDict(extra='forbid')
     query: str = Field(min_length=1, max_length=2000)
+
+
+class ReleaseToolCall(Resolve):
+    arguments: dict | None = None
 
 
 class Revoke(Owner):
@@ -126,7 +131,7 @@ def release_tool_reference(snapshot):
     external = [tool.tool_id for tool in snapshot.tools if tool.tool_id not in ('file_search', 'calculator')]
     if not external:
         return None
-    if len(external) != 1 or not re.fullmatch(PERSONAL_REFERENCE, external[0]):
+    if len(external) != 1 or not re.fullmatch(RELEASABLE_REFERENCE, external[0]):
         raise HTTPException(409, 'ai_releases_tool_trial_only')
     return external[0]
 
@@ -191,7 +196,7 @@ def create_router(principal_dependency):
         _, config, _ = draft_snapshot(db, binding, settings)
         reference = config.tool_reference
         row = (db.get(AIToolReview, review_id(binding.project_id, reference))
-               if reference and re.fullmatch(PERSONAL_REFERENCE, reference) else None)
+               if reference and re.fullmatch(RELEASABLE_REFERENCE, reference) else None)
         return {'review': review_out(row) if row else None}
 
     @router.post('/{project_id}/releases/tool-review')
@@ -382,13 +387,15 @@ def create_router(principal_dependency):
         token = jwt.encode({'aud':'ai-application', 'sub':actor.subject, 'iss':actor.issuer,
             'run':run.id, 'entry':entry.id, 'exp':expiry}, settings.librechat_service_token, algorithm='HS256')
         tool = release_tool_grant(db, release, snap)
-        binding = db.get(AIProjectBinding, release.project_id) if tool else None
+        personal = tool and re.fullmatch(PERSONAL_REFERENCE, tool.reference)
+        binding = db.get(AIProjectBinding, release.project_id) if personal else None
         return {**entry_out(db, entry, release), 'snapshot':snap.model_dump(mode='json'),
             'knowledge_revision_id':trial.knowledge_revision_id, 'credential':'sbapp_'+token,
-            'personal_tool': {'reference': tool.reference, 'owner_native_id': binding.native_owner_id} if tool else None}
+            'personal_tool': {'reference': tool.reference, 'owner_native_id': binding.native_owner_id} if personal else None,
+            'generated_tool': describe_generated(tool) if tool and not personal else None}
 
     @router.post('/entries/{entry_id}/tool-admission')
-    def tool_admission(entry_id: UUID, body: Resolve, principal=Depends(principal_dependency), db=Depends(get_db)):
+    def tool_admission(entry_id: UUID, body: ReleaseToolCall, principal=Depends(principal_dependency), db=Depends(get_db)):
         _, _, _, _, _, sponsor, _, _ = entry_access(db, principal, entry_id, body.native_owner_id)
         db.refresh(sponsor, with_for_update=True)
         db.expire_all()
@@ -402,9 +409,13 @@ def create_router(principal_dependency):
             AuditEvent.action == 'ai_release.tool_admitted', AuditEvent.target_id == run.id))
         if count >= min(3, settings.agent_mcp_calls):
             raise HTTPException(429, 'ai_releases_tool_limit')
+        generated = grant.descriptor.get('generated')
+        if (generated is None) != (body.arguments is None):
+            raise HTTPException(422, 'ai_releases_invalid_request')
+        output = execute(generated['program'], body.arguments) if generated else None
         audit(db, sponsor, principal, 'tool_admitted', run.id)
         db.commit()
-        return {'allowed': True}
+        return {'allowed': True, 'text': output} if generated else {'allowed': True}
 
     @router.post('/entries/{entry_id}/search')
     def search(entry_id: UUID, body: Search, principal=Depends(principal_dependency), db=Depends(get_db)):

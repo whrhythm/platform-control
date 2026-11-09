@@ -30,6 +30,13 @@ class ProjectResult(Observation):
 CONTEXTS = {}
 
 
+class RuleSourceAction(Action):
+    operation: Literal['list', 'read', 'write']
+    path: Literal['', 'tool.json'] = ''
+    content: str = Field(default='', max_length=4096)
+    etag: str = Field(default='', max_length=128)
+
+
 class ProjectExecutor(ToolExecutor):
     def __init__(self, context):
         self.context = context
@@ -53,6 +60,14 @@ class ProjectExecutor(ToolExecutor):
 class ProjectTool(ToolDefinition):
     @classmethod
     def create(cls, conv_state, task_id, readonly=False, **kwargs):
+        context = CONTEXTS[task_id]
+        with context.sessions() as db:
+            task, _ = context.current(db)
+            if task.config.get('generated_tool'):
+                return [cls(description='Create or read tool.json in the dedicated project directory. '
+                            'Use the read ETag for a replacement. Only this file may be written.',
+                            action_type=RuleSourceAction, observation_type=ProjectResult,
+                            executor=ProjectExecutor(context))]
         return [cls(description=(
             'Operate only inside the selected persistent project. list/read use relative paths. '
             'write replaces a complete UTF-8 file; supply its ETag to avoid overwriting concurrent edits. '
@@ -140,7 +155,8 @@ def run_agent(context, prompt, model, key, settings, *, readonly=False):
         agent = Agent(llm=llm, tools=tools)
         conversation = Conversation(agent=agent, workspace=temporary, visualizer=None,
                                     token_callbacks=[stream],
-                                    max_iteration_per_run=settings.workspace_agent_max_iterations)
+                                    max_iteration_per_run=min(12, settings.workspace_agent_max_iterations)
+                                    if task.config.get('generated_tool') else settings.workspace_agent_max_iterations)
         deadline = time.monotonic() + task.config.get('quota', {}).get('agent_task_seconds', settings.agent_task_seconds)
         def monitor():
             while not finished.wait(1):

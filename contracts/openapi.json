@@ -4749,6 +4749,217 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects/{project_id}/generated-tools": {
+      "post": {
+        "tags": [
+          "generated-tools"
+        ],
+        "summary": "Start",
+        "operationId": "start_internal_v1_workspace_ai_projects__project_id__generated_tools_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BuildRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/{project_id}/generated-tools/{task_id}": {
+      "get": {
+        "tags": [
+          "generated-tools"
+        ],
+        "summary": "Status",
+        "operationId": "status_internal_v1_workspace_ai_projects__project_id__generated_tools__task_id__get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "generated-tools"
+        ],
+        "summary": "Submit",
+        "operationId": "submit_internal_v1_workspace_ai_projects__project_id__generated_tools__task_id__post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Task Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/ai-projects/catalog": {
       "get": {
         "tags": [
@@ -5672,7 +5883,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/Resolve"
+                "$ref": "#/components/schemas/ReleaseToolCall"
               }
             }
           }
@@ -10718,6 +10929,67 @@
         ],
         "title": "BucketSpec"
       },
+      "BuildRequest": {
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Request Id"
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]{0,47}$",
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "requirements": {
+            "type": "string",
+            "maxLength": 1500,
+            "minLength": 1,
+            "title": "Requirements"
+          },
+          "parameters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Parameters"
+          },
+          "cases": {
+            "items": {
+              "$ref": "#/components/schemas/Case"
+            },
+            "type": "array",
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Cases"
+          },
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "request_id",
+          "name",
+          "title",
+          "requirements",
+          "parameters",
+          "cases",
+          "native_owner_id"
+        ],
+        "title": "BuildRequest"
+      },
       "CapacityAccountOut": {
         "properties": {
           "plan": {
@@ -11252,6 +11524,30 @@
         ],
         "title": "CapacityPlanOut"
       },
+      "Case": {
+        "properties": {
+          "inputs": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "maxProperties": 8,
+            "minProperties": 1,
+            "title": "Inputs"
+          },
+          "result": {
+            "type": "integer",
+            "title": "Result"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "inputs",
+          "result"
+        ],
+        "title": "Case"
+      },
       "Cleanup": {
         "properties": {
           "revision_id": {
@@ -11350,7 +11646,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "(?:^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$|^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$)"
+                "pattern": "(?:^mcp:(?:deepwiki|mcp-[0-9a-f]{32}):[A-Za-z0-9_-]{1,64}:[1-9][0-9]{0,8}$|(?:^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$|^projecttool:[a-z][a-z0-9_]{0,47}:[0-9a-f]{64}$))"
               },
               {
                 "type": "null"
@@ -12659,7 +12955,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "pattern": "^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$"
+                "pattern": "(?:^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$|^projecttool:[a-z][a-z0-9_]{0,47}:[0-9a-f]{64}$)"
               },
               {
                 "type": "null"
@@ -12723,6 +13019,46 @@
           "resource_limit"
         ],
         "title": "QuotaInput"
+      },
+      "ReleaseToolCall": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Conversation Id"
+          },
+          "message_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Message Id"
+          },
+          "arguments": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arguments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "conversation_id",
+          "message_id"
+        ],
+        "title": "ReleaseToolCall"
       },
       "Rename": {
         "properties": {

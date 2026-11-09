@@ -13,6 +13,11 @@ type Review = {
   parameters: string[];
   state: State;
   revision: number;
+  generated?: {
+    source_digest: string;
+    program: { expression: unknown };
+    cases: Array<{ inputs: Record<string, number>; result: number }>;
+  };
 };
 const status: Record<State, string> = {
   pending: '待审核', approved: '已通过', rejected: '未通过', revoked: '已撤销',
@@ -66,10 +71,15 @@ export default function AssistantToolReviews() {
       <p>{row.description}</p>
       <dl>
         <dt>项目</dt><dd>{row.project_id}</dd>
-        <dt>查询目标</dt><dd><code>GET {row.target}</code></dd>
+        <dt>执行范围</dt><dd><code>{row.generated ? row.target : 'GET '+row.target}</code></dd>
         <dt>参数</dt><dd>{row.parameters.join('、') || '无'}</dd>
         <dt>工具版本</dt><dd><code>{row.reference}</code></dd>
       </dl>
+      {row.generated && <details>
+        <summary>规则与测试用例（{row.generated.cases.length} 项通过）</summary>
+        <p>源码摘要 <code>{row.generated.source_digest}</code></p>
+        <pre>{JSON.stringify({ expression: row.generated.program.expression, cases: row.generated.cases }, null, 2)}</pre>
+      </details>}
       {row.state === 'pending' && <>
         <label><input type="checkbox" checked={ack === row.id}
           onChange={(e) => setAck(e.target.checked ? row.id : null)} /> 已核对查询用途、数据范围和副作用</label>

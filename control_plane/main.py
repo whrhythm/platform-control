@@ -335,6 +335,8 @@ from .knowledge_libraries import create_router as create_libraries_router
 app.include_router(create_libraries_router(workspace_service_principal))
 from .ai_trials import create_router as create_ai_trials_router
 app.include_router(create_ai_trials_router(workspace_service_principal))
+from .generated_tools import create_router as create_generated_tools_router
+app.include_router(create_generated_tools_router(workspace_service_principal))
 from .ai_releases import create_router as create_ai_releases_router
 from .ai_sponsor import router as ai_sponsor_router
 app.include_router(create_ai_releases_router(workspace_service_principal))

@@ -13,7 +13,8 @@ from sqlalchemy import func, select
 from .agent_tasks import seal, unseal
 from .ai_application_contracts import AgentSnapshot, ModelRevision, KnowledgeRevision, SkillRevision, ToolRevision
 from .ai_policy import effective_policy
-from .ai_trial_tools import TRIAL_REFERENCE, descriptors, describe, find, fixed_tool, snapshot_reference
+from .ai_trial_tools import TRIAL_REFERENCE, descriptors, describe, find, fixed_tool, generated_tool, snapshot_reference
+from .generated_tools import approved_descriptors, describe as describe_generated, execute, generated_row
 from .database import get_db
 from .models import AIProjectBinding, AIProjectDraft, AIProjectTrial, AITrialSession, AITrialRun, AuditEvent, ProjectKnowledge, WorkspaceProject, now
 from .settings import get_settings
@@ -104,13 +105,15 @@ def snapshot(db, binding, config, settings):
         tools=tuple(tools))
 
 
-def config_allowed(db, config, settings):
+def config_allowed(db, config, settings, project_id):
     if config.model not in effective_policy(db, settings)['allowed_models']:
         raise HTTPException(409, 'ai_trials_model_unavailable')
     if config.max_output_tokens > settings.ai_trials_output_limit:
         raise HTTPException(409, 'ai_trials_output_limit')
     if config.tool_reference and config.tool_reference.startswith('mcp:'):
         find(db, settings, config.tool_reference)
+    if config.tool_reference and config.tool_reference.startswith('projecttool:'):
+        generated_row(db, project_id, config.tool_reference)
 
 
 def draft_snapshot(db, binding, settings):
@@ -138,6 +141,7 @@ def usable(db, row, settings):
                 revision.digest != snap.knowledge[0].index_digest):
             raise HTTPException(409, 'ai_trials_knowledge_unavailable')
     fixed_tool(db, settings, snap, row.project_id)
+    generated_tool(db, snap, row.project_id)
     return snap
 
 
@@ -181,7 +185,7 @@ def create_router(principal_dependency):
             config = Config.model_validate(unseal(draft.encrypted_config, settings))
             try:
                 current = snapshot(db, binding, config, settings).digest()
-                config_allowed(db, config, settings)
+                config_allowed(db, config, settings, binding.project_id)
             except HTTPException as problem:
                 error = problem.detail
         rows = db.scalars(select(AIProjectTrial).where(AIProjectTrial.project_id == binding.project_id)
@@ -190,7 +194,7 @@ def create_router(principal_dependency):
             'config': config.model_dump(exclude_none=True) if config else None, 'digest': current,
             'knowledge_revision_id': binding.knowledge_revision_id, 'unavailable_reason': error,
             'models': effective_policy(db, settings)['allowed_models'], 'output_limit': settings.ai_trials_output_limit,
-            'available_tools': list(islice(descriptors(db, settings), 12)),
+            'available_tools': (approved_descriptors(db, binding.project_id) + list(islice(descriptors(db, settings), 12)))[:12],
             'trials': [{**trial_out(row, settings, current if not error else None), 'conversation_ids': list(db.scalars(
                 select(AITrialSession.conversation_id).where(AITrialSession.trial_id == row.id)
                 .order_by(AITrialSession.created_at.desc())))} for row in rows]}
@@ -207,7 +211,7 @@ def create_router(principal_dependency):
                 (str(body.expected_knowledge_revision_id) if body.expected_knowledge_revision_id else None) != binding.knowledge_revision_id):
             raise HTTPException(409, 'ai_trials_draft_changed')
         if not db.get(AIProjectDraft, binding.project_id):
-            config_allowed(db, body.config, settings)
+            config_allowed(db, body.config, settings, binding.project_id)
             db.add(AIProjectDraft(project_id=binding.project_id, encrypted_config=seal(body.config.model_dump(exclude_none=True), settings)))
             audit(db, env, principal, 'draft_initialized', binding.project_id)
             db.commit()
@@ -219,7 +223,7 @@ def create_router(principal_dependency):
         draft, _, current = draft_snapshot(db, binding, settings)
         if current.digest() != body.expected_digest:
             raise HTTPException(409, 'ai_trials_draft_changed')
-        config_allowed(db, body.config, settings)
+        config_allowed(db, body.config, settings, binding.project_id)
         if snapshot(db, binding, body.config, settings).digest() != current.digest():
             draft.encrypted_config = seal(body.config.model_dump(exclude_none=True), settings)
             draft.revision += 1
@@ -240,7 +244,7 @@ def create_router(principal_dependency):
         _, config, current = draft_snapshot(db, binding, settings)
         if current.digest() != body.expected_digest:
             raise HTTPException(409, 'ai_trials_draft_changed')
-        config_allowed(db, config, settings)
+        config_allowed(db, config, settings, binding.project_id)
         count = db.scalar(select(func.count()).select_from(AIProjectTrial).where(AIProjectTrial.project_id == binding.project_id))
         if count >= settings.ai_trials_limit:
             raise HTTPException(409, 'ai_trials_limit')
@@ -299,8 +303,9 @@ def create_router(principal_dependency):
             db.add(AITrialRun(message_id=body.message_id, conversation_id=str(body.conversation_id), trial_id=row.id))
         db.commit()
         selected = fixed_tool(db, settings, snap, row.project_id)
+        generated = generated_tool(db, snap, row.project_id)
         return {**trial_out(row, settings), 'snapshot': snap.model_dump(mode='json'),
-                'reviewed_tool': describe(*selected) if selected else None}
+                'reviewed_tool': describe_generated(generated) if generated else describe(*selected) if selected else None}
 
     @router.post('/trials/{trial_id}/resolve')
     def resolve_by_id(trial_id: UUID, body: Resolve, principal=Depends(principal_dependency), db=Depends(get_db)):
@@ -323,7 +328,8 @@ def create_router(principal_dependency):
                 or run.conversation_id != session.conversation_id):
             raise HTTPException(409, 'ai_trials_session_mismatch')
         selected = fixed_tool(db, settings, snap, row.project_id)
-        if not selected:
+        generated = generated_tool(db, snap, row.project_id)
+        if not selected and not generated:
             raise HTTPException(409, 'ai_trials_tool_unavailable')
         try:
             arguments_size = len(json.dumps(body.arguments, allow_nan=False).encode())
@@ -336,6 +342,13 @@ def create_router(principal_dependency):
             AuditEvent.action == 'ai_trial.tool_started', AuditEvent.target_id == target))
         if count >= min(3, settings.agent_mcp_calls):
             raise HTTPException(409, 'ai_trials_tool_limit')
+        if generated:
+            generated = generated_row(db, row.project_id, generated.reference, lock=True)
+            output = execute(generated.descriptor['generated']['program'], body.arguments)
+            audit(db, env, principal, 'tool_started', target)
+            audit(db, env, principal, 'tool_completed', target)
+            db.commit()
+            return {'text': output}
         server, tool = selected
         config, addresses = server.config, server.addresses
         audit(db, env, principal, 'tool_started', target)
@@ -356,7 +369,7 @@ def create_router(principal_dependency):
     @router.post('/{project_id}/trials/{trial_id}/acceptance')
     def accept(project_id: UUID, trial_id: UUID, body: Acceptance, principal=Depends(principal_dependency), db=Depends(get_db)):
         env, binding, settings, row = trial_owned(db, principal, project_id, trial_id, body.native_owner_id)
-        usable(db, row, settings)
+        snap = usable(db, row, settings)
         session = db.get(AITrialSession, str(body.conversation_id))
         if not session or session.trial_id != row.id or session.environment_id != env.id or row.state != 'ready':
             raise HTTPException(409, 'ai_trials_session_mismatch')
@@ -366,6 +379,11 @@ def create_router(principal_dependency):
         _, _, current = draft_snapshot(db, binding, settings)
         if body.outcome == 'passed' and (current.digest() != row.digest or not body.answer_checked or not body.sources_checked):
             raise HTTPException(409, 'ai_trials_confirmation_required')
+        if body.outcome == 'passed' and generated_tool(db, snap, row.project_id) and not db.scalar(
+            select(AuditEvent.id).where(AuditEvent.action == 'ai_trial.tool_completed',
+                AuditEvent.target_id == row.id + ':' + body.message_id).limit(1)
+        ):
+            raise HTTPException(409, 'ai_trials_answer_required')
         receipt = {**body.model_dump(mode='json', exclude={'native_owner_id'}), 'recorded_at': now().isoformat(), 'digest': row.digest}
         # One immutable decision per preview: further tests use a new preview instead of overwriting evidence.
         if row.encrypted_acceptance:

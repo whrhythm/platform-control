@@ -106,6 +106,10 @@ class TaskTools:
             raise ValueError('agent_file_too_large')
         with self.sessions() as db:
             task, env = self.current(db)
+            if task.config.get('generated_tool') and (
+                    (operation, path) not in (('list', ''), ('read', 'tool.json'), ('write', 'tool.json'))
+                    or len(content.encode()) > 4096):
+                raise TaskStopped('agent_rule_source_only')
             full_path = task.config['project_path'] + ('/' + path if path else '')
             principal = Principal(env.issuer, env.subject)
         if operation in ('write', 'mkdir'):
@@ -129,7 +133,9 @@ class TaskTools:
                                'message': 'Use a bounded command to inspect sections; never replace from partial content.'})
         result = response.json() if operation == 'list' else {'path': path, 'etag': response.headers.get('etag'),
                                                               'content': response.text if operation == 'read' else ''}
-        self.event('file', operation=operation, path=path)
+        self.event('file', operation=operation, path=path, **(
+            {'source_digest': hashlib.sha256(content.encode()).hexdigest()}
+            if operation == 'write' and task.config.get('generated_tool') else {}))
         return json.dumps(result, ensure_ascii=False)
 
     def command(self, command, *, database=False, objects=False):

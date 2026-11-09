@@ -122,18 +122,20 @@ def restore_task_messages(messages, db, environment_id, settings):
     return restored
 
 
-def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *, request_prompt=None, user_request=None):
+def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *,
+                request_prompt=None, user_request=None, tool_build=None, tool_path=None):
     env = own_environment(db, principal)
     if env.status == 'suspended':
         raise HTTPException(403, 'agent_account_suspended')
     key = conversation_key(conversation_id)
-    config = preference(db, env.id, key)
+    config = ({**DEFAULT, 'project_path': tool_path, 'approval': 'workspace_auto', 'generated_tool': True}
+              if tool_build else preference(db, env.id, key))
     if not config['project_path']:
         raise HTTPException(409, 'agent_project_required')
     call_files(db, principal, settings, 'GET', '/v1/directories', config['project_path'])
     db.refresh(env, with_for_update=True)
     db.expire_all()
-    if config != preference(db, env.id, key):
+    if not tool_build and config != preference(db, env.id, key):
         raise HTTPException(409, 'agent_settings_changed')
     config = {**config, 'model': model}
     from .mcp_catalog import snapshot
@@ -152,10 +154,11 @@ def submit_task(db, principal, settings, conversation_id, prompt, model, message
                   row.config['project_path'].startswith(project + '/') for row in active)
     if len(active) >= quotas['agent_concurrency'] or overlap:
         raise HTTPException(409, 'agent_task_active')
-    config['quota'] = quotas
+    config['quota'] = ({**quotas, 'agent_task_seconds': min(240, quotas['agent_task_seconds'])}
+                       if tool_build else quotas)
     task = AgentTask(environment_id=env.id, conversation_id=key, request_key=request_key, config=config,
                      encrypted_prompt=seal(prompt, settings), encrypted_events=seal([], settings),
-                     resources={'user_request': seal(user_request, settings)} if user_request else {})
+                     resources=tool_build or ({'user_request': seal(user_request, settings)} if user_request else {}))
     db.add(task)
     db.flush()
     append_event(db, task, settings, 'queued', text='任务已创建，等待编程执行器。')
