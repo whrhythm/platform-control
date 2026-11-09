@@ -268,3 +268,10 @@
 - 2026-11-09，修复原生构建器选中智能体时二次初始化会话。旧版本先打开新会话，详情查询回包后再次初始化，清除了已提交的首条消息的客户端流状态。受控延迟验收观察到详情回包后正在使用的流连接被中断，服务端回答仍保存。新版只打开一次会话，详情由原查询缓存刷新。
 - LibreChat `933e3e7a0`、GitOps `27e7629` 已同步健康。生产构建、类型及改动静态检查通过，前端 346 项和接口 38 项回归通过。Lighthouse 因容器缺少 openssl 未取得结果。
 - 用真实界面分别新建智能体并选同一合成知识库，正常网络和延迟详情回包两轮均在空白会话发首条消息。持久记录确认实际调用 `file_search` 检索 `guide.md`，回答在当前页面直接显示。延迟轮次中详情回包发生在首条消息发送后、回答显示前，连接未中断。证据见本地 `platform-control/release/p1-native-first-baseline.json`、`p1-native-first-after-normal.json`、`p1-native-first-after-delayed-focus.json` 与同名截图。
+
+### 原生智能体组合内置工具、自定义 Action 和知识库
+
+- 原生 Tool Library 的「Made by you」按 Action 所有者筛选当前智能体的 Action，只有编辑权限的其他所有者 Action 不归入该分类。保持原生 Action 与智能体的绑定及权限。演示工具是独立、只读的内部报价 API，仅含合成数据。GitOps 仅允许 LibreChat 访问指定服务，服务无出站访问权限。
+- 2026-11-09，LibreChat `f0a288ca3`、示例 OpenAPI 地址更正 `c8983a177`、GitOps `f92a817`。已确认 Argo CD 同步健康、两项部署就绪。静态检查、前端类型检查、生产构建、300 项工具库测试及 39 项接口回归通过。额外尝试的项目数据层套件因内存 MongoDB 未启动而未取得结果。
+- 在真实界面创建并索引合成知识库，普通聊天模型根据能力清单生成名称、说明和指令，再在原生构建器保存、绑定知识库并添加计算器。通过原生 Action 编辑器导入报价 API，并确认「Made by you」展示该 Action。该步骤验证了 LLM 生成配置与用户确认保存的流程。
+- 新会话首轮在原页面显示 160 元。持久会话同时记录自定义 `lookup_support_quote` 返回 137 元和 `QUOT-731`、`file_search` 从 `support-policy.md` 查到 23 元和 `POL-SAFFRON-92`、内置 `calculator` 返回 160。本轮只在创建者账号使用，未将演示智能体对外发布。证据见本地 `platform-control/release/p1-tool-combo-ui.json`、`p1-tool-combo-made-by-you.png`、`p1-tool-combo-result.png` 与 `p1-tool-combo-tests.log`。
