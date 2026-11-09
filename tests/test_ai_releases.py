@@ -86,6 +86,50 @@ def test_members_sessions_revocation_and_owner_only_management(versions,monkeypa
     assert client.post(target+'/search',headers=guest,json={'native_owner_id':'b'*24,'query':'x'}).status_code==403
 
 
+def test_personal_tool_review_consent_and_runtime_are_release_scoped(versions, harness, monkeypatch):
+    client, auth, path, previous, config = prepared(versions, monkeypatch)
+    _, token = harness
+    admin = {'Authorization': 'Bearer '+token('operator', groups=['platform-admins'])}
+    owner = {'native_owner_id': OWNER}
+    reference = 'action:quote:'+'a'*64
+    saved = client.post(path+'/draft', headers=auth, json={**owner, 'expected_digest': previous['expected_digest'],
+        'config': {**config, 'tool_reference': reference, 'calculator_enabled': True}}).json()
+    trial = client.post(path+'/trials', headers=auth, json={**owner, 'request_id': str(uuid4()),
+        'expected_digest': saved['digest']}).json()
+    target = path+'/trials/'+trial['id']
+    assert client.post(target+'/confirm', headers=auth, json=owner).status_code == 200
+    run = {**owner, 'conversation_id': str(uuid4()), 'message_id': str(uuid4())}
+    assert client.post(target+'/resolve', headers=auth, json=run).status_code == 200
+    assert client.post(target+'/acceptance', headers=auth, json={**run, 'outcome':'passed', 'note':'verified',
+        'transcript_digest':'a'*64, 'answer_checked':True, 'sources_checked':True}).status_code == 200
+    publish = {**previous, 'request_id': str(uuid4()), 'trial_id': trial['id'], 'expected_digest': saved['digest']}
+    assert client.post(path+'/releases', headers=auth, json=publish).json()['detail'] == 'ai_releases_tool_consent_required'
+    publish['confirm_tool_reference'] = reference
+    assert client.post(path+'/releases', headers=auth, json=publish).json()['detail'] == 'ai_releases_tool_review_required'
+    submitted = client.post(path+'/releases/tool-review', headers=auth, json={**owner,
+        'reference': reference, 'expected_digest': saved['digest'], 'descriptor': {
+            'name':'lookup_quote', 'title':'Quote', 'description':'Read-only quote',
+            'target':'https://quote.example.test/quote', 'parameters':['plan'],
+        }}).json()['review']
+    assert submitted['state'] == 'pending'
+    decision = '/v1/admin/assistant-tool-reviews/'+submitted['id']
+    approval = {'revision': 1, 'state':'approved', 'acknowledged':True}
+    assert client.post(decision, headers=auth, json=approval).status_code in (401, 403)
+    assert client.post(decision, headers=admin, json=approval).status_code == 200
+    published = client.post(path+'/releases', headers=auth, json=publish)
+    assert published.status_code == 200, published.text
+    assert published.json()['releases'][0]['tool_review_id'] == submitted['id']
+    _, target, run, runtime = launched(client,auth,path)
+    assert runtime['personal_tool'] == {'reference': reference, 'owner_native_id': OWNER}
+    assert {t['tool_id'] for t in runtime['snapshot']['tools']} == {reference, 'calculator'}
+    assert client.post(target+'/tool-admission', headers=auth,
+        json={**run, 'message_id':str(uuid4())}).status_code == 403
+    assert client.post(target+'/tool-admission', headers=auth, json=run).json() == {'allowed': True}
+    assert client.post(decision, headers=admin,
+        json={'revision':2,'state':'revoked','acknowledged':True}).status_code == 200
+    assert client.post(target+'/tool-admission', headers=auth, json=run).json()['detail'] == 'ai_releases_tool_review_required'
+
+
 def sponsored(versions,monkeypatch):
     client,auth,path,body,_=prepared(versions,monkeypatch)
     client.post(path+'/releases',headers=auth,json=body)

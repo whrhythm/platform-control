@@ -5072,6 +5072,136 @@
         }
       }
     },
+    "/internal/v1/workspace/ai-projects/{project_id}/releases/tool-review": {
+      "get": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Tool Review",
+        "operationId": "tool_review_internal_v1_workspace_ai_projects__project_id__releases_tool_review_get",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Submit Tool Review",
+        "operationId": "submit_tool_review_internal_v1_workspace_ai_projects__project_id__releases_tool_review_post",
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Project Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitToolReview"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/ai-projects/{project_id}/access": {
       "post": {
         "tags": [
@@ -5434,6 +5564,77 @@
         ],
         "summary": "Resolve",
         "operationId": "resolve_internal_v1_workspace_ai_projects_entries__entry_id__resolve_post",
+        "parameters": [
+          {
+            "name": "entry_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Entry Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Resolve"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/v1/workspace/ai-projects/entries/{entry_id}/tool-admission": {
+      "post": {
+        "tags": [
+          "ai-releases"
+        ],
+        "summary": "Tool Admission",
+        "operationId": "tool_admission_internal_v1_workspace_ai_projects_entries__entry_id__tool_admission_post",
         "parameters": [
           {
             "name": "entry_id",
@@ -9063,6 +9264,86 @@
         }
       }
     },
+    "/v1/admin/assistant-tool-reviews": {
+      "get": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "List Reviews",
+        "operationId": "list_reviews_v1_admin_assistant_tool_reviews_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/admin/assistant-tool-reviews/{identifier}": {
+      "post": {
+        "tags": [
+          "administration"
+        ],
+        "summary": "Decide",
+        "operationId": "decide_v1_admin_assistant_tool_reviews__identifier__post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "identifier",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Identifier"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Decision"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/knowledge-embedding": {
       "get": {
         "tags": [
@@ -11399,6 +11680,37 @@
         ],
         "title": "DatabaseSpec"
       },
+      "Decision": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Revision"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "approved",
+              "rejected",
+              "revoked"
+            ],
+            "title": "State"
+          },
+          "acknowledged": {
+            "type": "boolean",
+            "const": true,
+            "title": "Acknowledged"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "revision",
+          "state",
+          "acknowledged"
+        ],
+        "title": "Decision"
+      },
       "DecisionInput": {
         "properties": {
           "operation_id": {
@@ -12342,6 +12654,18 @@
           "confirm_sponsor": {
             "type": "boolean",
             "title": "Confirm Sponsor"
+          },
+          "confirm_tool_reference": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confirm Tool Reference"
           }
         },
         "additionalProperties": false,
@@ -12615,6 +12939,51 @@
           "created_at"
         ],
         "title": "ReviewAuditOut"
+      },
+      "ReviewDescriptor": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 48,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Description"
+          },
+          "target": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Target"
+          },
+          "parameters": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Parameters"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "title",
+          "description",
+          "target",
+          "parameters"
+        ],
+        "title": "ReviewDescriptor"
       },
       "ReviewOut": {
         "properties": {
@@ -13128,6 +13497,37 @@
           "observed_at"
         ],
         "title": "StorageSampleOut"
+      },
+      "SubmitToolReview": {
+        "properties": {
+          "native_owner_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{24}$",
+            "title": "Native Owner Id"
+          },
+          "reference": {
+            "type": "string",
+            "pattern": "^action:[A-Za-z0-9_-]{1,64}:[0-9a-f]{64}$",
+            "title": "Reference"
+          },
+          "expected_digest": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Expected Digest"
+          },
+          "descriptor": {
+            "$ref": "#/components/schemas/ReviewDescriptor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "native_owner_id",
+          "reference",
+          "expected_digest",
+          "descriptor"
+        ],
+        "title": "SubmitToolReview"
       },
       "TenantCreate": {
         "properties": {

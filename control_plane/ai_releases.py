@@ -1,5 +1,6 @@
 """Fixed AI releases, explicit members and server-only runtime admissions."""
 from datetime import datetime, timezone
+import re
 from uuid import UUID, NAMESPACE_URL, uuid5
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -8,10 +9,12 @@ from sqlalchemy import func, select
 from .accounts import allowed
 from .agent_tasks import seal, unseal
 from .ai_trials import Owner, Resolve, draft_snapshot, usable
+from .ai_trial_tools import PERSONAL_REFERENCE
+from .ai_tool_reviews import ReviewDescriptor, require_review, review_id, review_out
 from .auth import Principal
 from .database import get_db
 from .models import (AIApplication, AIRelease, AIAppMember, AIAppEntry, AIAppRun, AIAppCall,
-    AIProjectBinding, AIProjectTrial, UserEnvironment, AuditEvent, WorkspaceProject, now)
+    AIProjectBinding, AIProjectTrial, AIToolReview, UserEnvironment, AuditEvent, WorkspaceProject, now)
 from .settings import get_settings
 from .workspace_gateway import own_environment
 from .ai_sharing import member_state, member_out, utc, add_routes
@@ -23,6 +26,13 @@ class Publish(Owner):
     expected_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
     budget_micros: int = Field(ge=1000, le=100000000)
     confirm_sponsor: bool
+    confirm_tool_reference: str | None = Field(default=None, pattern=PERSONAL_REFERENCE)
+
+
+class SubmitToolReview(Owner):
+    reference: str = Field(pattern=PERSONAL_REFERENCE)
+    expected_digest: str = Field(pattern=r'^[0-9a-f]{64}$')
+    descriptor: ReviewDescriptor
 
 
 class AccessUpdate(Owner):
@@ -108,7 +118,24 @@ def entry_access(db, principal, entry_id, native_id=None):
         raise HTTPException(403, 'ai_releases_access_denied')
     trial = db.get(AIProjectTrial, release.trial_id)
     snap = usable(db, trial, settings)
+    release_tool_grant(db, release, snap)
     return entry, release, trial, snap, actor, sponsor, app, settings
+
+
+def release_tool_reference(snapshot):
+    external = [tool.tool_id for tool in snapshot.tools if tool.tool_id not in ('file_search', 'calculator')]
+    if not external:
+        return None
+    if len(external) != 1 or not re.fullmatch(PERSONAL_REFERENCE, external[0]):
+        raise HTTPException(409, 'ai_releases_tool_trial_only')
+    return external[0]
+
+
+def release_tool_grant(db, release, snapshot, lock=False):
+    reference = release_tool_reference(snapshot)
+    if reference:
+        return require_review(db, release.project_id, reference, release.tool_review_id, lock)
+    return None
 
 
 def audit(db, env, principal, action, identifier):
@@ -120,6 +147,7 @@ def release_out(db, release):
     trial = db.get(AIProjectTrial, release.trial_id)
     return {'id': release.id, 'project_id': release.project_id, 'number': release.number,
         'trial_id': trial.id, 'digest': trial.digest, 'knowledge_revision_id': trial.knowledge_revision_id,
+        'tool_review_id': release.tool_review_id,
         'created_at': release.created_at.replace(tzinfo=release.created_at.tzinfo or timezone.utc)}
 
 
@@ -156,6 +184,33 @@ def create_router(principal_dependency):
         owner(db, principal, project_id)
         return detail(db, project_id, settings)
 
+    @router.get('/{project_id}/releases/tool-review')
+    def tool_review(project_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
+        settings = enabled()
+        _, binding = owner(db, principal, project_id)
+        _, config, _ = draft_snapshot(db, binding, settings)
+        reference = config.tool_reference
+        row = (db.get(AIToolReview, review_id(binding.project_id, reference))
+               if reference and re.fullmatch(PERSONAL_REFERENCE, reference) else None)
+        return {'review': review_out(row) if row else None}
+
+    @router.post('/{project_id}/releases/tool-review')
+    def submit_tool_review(project_id: UUID, body: SubmitToolReview, principal=Depends(principal_dependency), db=Depends(get_db)):
+        settings = enabled()
+        env, binding = owner(db, principal, project_id, body.native_owner_id)
+        _, config, current = draft_snapshot(db, binding, settings)
+        if config.tool_reference != body.reference or current.digest() != body.expected_digest:
+            raise HTTPException(409, 'ai_releases_changed')
+        identifier = review_id(binding.project_id, body.reference)
+        row = db.get(AIToolReview, identifier)
+        if not row:
+            row = AIToolReview(id=identifier, project_id=binding.project_id, reference=body.reference,
+                               descriptor=body.descriptor.model_dump(), state='pending', revision=1)
+            db.add(row)
+            audit(db, env, principal, 'tool_review_requested', identifier)
+            db.commit()
+        return {'review': review_out(row)}
+
     @router.post('/{project_id}/releases')
     def publish(project_id: UUID, body: Publish, principal=Depends(principal_dependency), db=Depends(get_db)):
         settings = enabled()
@@ -173,13 +228,18 @@ def create_router(principal_dependency):
         if not trial or trial.project_id != binding.project_id or trial.state != 'ready':
             raise HTTPException(409, 'ai_releases_trial_required')
         snap = usable(db, trial, settings)
-        if any(tool.tool_id != 'file_search' for tool in snap.tools):
-            raise HTTPException(409, 'ai_releases_tool_trial_only')
+        reference = release_tool_reference(snap)
         accepted = unseal(trial.encrypted_acceptance, settings) if trial.encrypted_acceptance else {}
         _, _, current = draft_snapshot(db, binding, settings)
         if (accepted.get('outcome') != 'passed' or current.digest() != trial.digest or
                 trial.digest != body.expected_digest):
             raise HTTPException(409, 'ai_releases_trial_required')
+        review = None
+        if reference:
+            if body.confirm_tool_reference != reference:
+                raise HTTPException(409, 'ai_releases_tool_consent_required')
+            review = require_review(db, binding.project_id, reference,
+                                    review_id(binding.project_id, reference), lock=True)
         app = db.get(AIApplication, binding.project_id)
         if not app:
             app = AIApplication(project_id=binding.project_id, budget_micros=body.budget_micros)
@@ -189,12 +249,15 @@ def create_router(principal_dependency):
         if count >= settings.ai_releases_limit:
             raise HTTPException(409, 'ai_releases_limit')
         release = AIRelease(id=identifier, project_id=binding.project_id, trial_id=trial.id,
+            tool_review_id=review.id if review else None,
             request_id=str(body.request_id), number=count+1, name=db.get(WorkspaceProject, binding.project_id).name)
         db.add(release)
         app.active_release_id, app.enabled = identifier, True
         # Publishing never resets accumulated spend or silently changes the existing budget.
         app.revision += 1
         audit(db, env, principal, 'published', identifier)
+        if review:
+            audit(db, env, principal, 'tool_authorized', identifier)
         db.commit()
         return detail(db, project_id, settings)
 
@@ -277,7 +340,8 @@ def create_router(principal_dependency):
         actor, sponsor, app, settings = check_access(db, principal, project_id, body.native_owner_id)
         db.refresh(sponsor, with_for_update=True)
         release = db.get(AIRelease, app.active_release_id)
-        usable(db, db.get(AIProjectTrial, release.trial_id), settings)
+        snap = usable(db, db.get(AIProjectTrial, release.trial_id), settings)
+        release_tool_grant(db, release, snap)
         identifier = str(uuid5(NAMESPACE_URL, release.id+'/'+actor.id))
         entry = db.get(AIAppEntry, identifier)
         if not entry:
@@ -317,8 +381,30 @@ def create_router(principal_dependency):
         expiry = int(run.created_at.replace(tzinfo=run.created_at.tzinfo or timezone.utc).timestamp())+settings.ai_releases_run_seconds
         token = jwt.encode({'aud':'ai-application', 'sub':actor.subject, 'iss':actor.issuer,
             'run':run.id, 'entry':entry.id, 'exp':expiry}, settings.librechat_service_token, algorithm='HS256')
+        tool = release_tool_grant(db, release, snap)
+        binding = db.get(AIProjectBinding, release.project_id) if tool else None
         return {**entry_out(db, entry, release), 'snapshot':snap.model_dump(mode='json'),
-            'knowledge_revision_id':trial.knowledge_revision_id, 'credential':'sbapp_'+token}
+            'knowledge_revision_id':trial.knowledge_revision_id, 'credential':'sbapp_'+token,
+            'personal_tool': {'reference': tool.reference, 'owner_native_id': binding.native_owner_id} if tool else None}
+
+    @router.post('/entries/{entry_id}/tool-admission')
+    def tool_admission(entry_id: UUID, body: Resolve, principal=Depends(principal_dependency), db=Depends(get_db)):
+        _, _, _, _, _, sponsor, _, _ = entry_access(db, principal, entry_id, body.native_owner_id)
+        db.refresh(sponsor, with_for_update=True)
+        db.expire_all()
+        entry, release, _, snap, _, sponsor, _, settings = entry_access(db, principal, entry_id, body.native_owner_id)
+        grant = release_tool_grant(db, release, snap, lock=True)
+        run = db.get(AIAppRun, str(uuid5(NAMESPACE_URL, entry.id+'/'+body.message_id)))
+        if (not grant or not entry.ready or not run or run.conversation_id != str(body.conversation_id)
+                or (now() - utc(run.created_at)).total_seconds() >= settings.ai_releases_run_seconds):
+            raise HTTPException(403, 'ai_releases_access_denied')
+        count = db.scalar(select(func.count()).select_from(AuditEvent).where(
+            AuditEvent.action == 'ai_release.tool_admitted', AuditEvent.target_id == run.id))
+        if count >= min(3, settings.agent_mcp_calls):
+            raise HTTPException(429, 'ai_releases_tool_limit')
+        audit(db, sponsor, principal, 'tool_admitted', run.id)
+        db.commit()
+        return {'allowed': True}
 
     @router.post('/entries/{entry_id}/search')
     def search(entry_id: UUID, body: Search, principal=Depends(principal_dependency), db=Depends(get_db)):

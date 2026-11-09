@@ -452,12 +452,25 @@ class CodeProjectDeletion(Base):
     completed: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class AIToolReview(Base):
+    __tablename__ = 'ai_tool_reviews'
+    __table_args__ = (UniqueConstraint('project_id', 'reference'),)
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey('ai_project_bindings.project_id'), index=True)
+    reference: Mapped[str] = mapped_column(String(140))
+    descriptor: Mapped[dict] = mapped_column(JSON)
+    state: Mapped[str] = mapped_column(String(16), default='pending')
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+
+
 class AIRelease(Base):
     __tablename__ = 'ai_releases'
     __table_args__ = (UniqueConstraint('project_id', 'request_id'), UniqueConstraint('project_id', 'number'))
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid)
     project_id: Mapped[str] = mapped_column(ForeignKey('ai_applications.project_id'), index=True)
     trial_id: Mapped[str] = mapped_column(ForeignKey('ai_project_trials.id'))
+    tool_review_id: Mapped[str | None] = mapped_column(ForeignKey('ai_tool_reviews.id'), nullable=True)
     request_id: Mapped[str] = mapped_column(String(36))
     number: Mapped[int] = mapped_column(Integer)
     name: Mapped[str | None] = mapped_column(String(80), nullable=True)
