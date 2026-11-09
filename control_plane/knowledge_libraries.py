@@ -8,8 +8,8 @@ from sqlalchemy import select, func
 
 from .agent_tasks import seal, unseal
 from .database import get_db
-from .embedding_admin import describe, selected_profile
-from .knowledge import Source, public, reserve_storage
+from .embedding_admin import describe, runtime_profile, selected_profile
+from .knowledge import KnowledgeClient, Source, public, reserve_storage, revision_scope
 from .knowledge_format import prepare
 from .models import (KnowledgeLibrary, ProjectKnowledge, AIProjectBinding, AIProjectTrial, EmbeddingProfile,
                      WorkspaceProject, AuditEvent, now)
@@ -50,6 +50,11 @@ class Bind(BaseModel):
 class Cleanup(BaseModel):
     model_config = ConfigDict(extra='forbid')
     revision_id: UUID
+
+
+class LibrarySearch(BaseModel):
+    model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
+    query: str = Field(min_length=1, max_length=2000)
 
 
 def audit(db, env, principal, action, target):
@@ -164,6 +169,27 @@ def create_router(principal_dependency):
     def detail(library_id: UUID, principal=Depends(principal_dependency), db=Depends(get_db)):
         _, _, row = owned(db, principal, library_id)
         return view(db, row, True)
+
+    @router.post('/knowledge-libraries/{library_id}/search')
+    def search(library_id: UUID, body: LibrarySearch, principal=Depends(principal_dependency), db=Depends(get_db)):
+        env, settings, library = owned(db, principal, library_id)
+        row = db.get(ProjectKnowledge, library.active_revision_id) if library.active_revision_id else None
+        if (not row or row.library_id != library.id or row.environment_id != env.id
+                or row.state != 'ready' or row.chunks == 0):
+            return {'revision_id': None, 'sources': []}
+        scope, identifier = revision_scope(row), row.id
+        try:
+            profile = runtime_profile(db, settings, row.embedding_profile_id)
+            db.commit()
+            result = KnowledgeClient(settings).call('POST', scope, identifier,
+                {'query': body.query, 'k': 5, **profile}, query=True)
+        except Exception:
+            raise HTTPException(503, 'knowledge_search_unavailable') from None
+        db.expire_all()
+        _, _, library = owned(db, principal, library_id)
+        if library.active_revision_id != identifier or row.state != 'ready':
+            raise HTTPException(409, 'knowledge_revision_changed')
+        return {'revision_id': identifier, 'sources': result['sources']}
 
     @router.post('/knowledge-libraries/{library_id}/rename')
     def rename(library_id: UUID, body: Rename, principal=Depends(principal_dependency), db=Depends(get_db)):

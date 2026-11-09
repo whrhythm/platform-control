@@ -3393,6 +3393,77 @@
         }
       }
     },
+    "/internal/v1/workspace/knowledge-libraries/{library_id}/search": {
+      "post": {
+        "tags": [
+          "knowledge-libraries"
+        ],
+        "summary": "Search",
+        "operationId": "search_internal_v1_workspace_knowledge_libraries__library_id__search_post",
+        "parameters": [
+          {
+            "name": "library_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Library Id"
+            }
+          },
+          {
+            "name": "X-CodeChat-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Service-Token"
+            }
+          },
+          {
+            "name": "X-CodeChat-Subject",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Subject"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LibrarySearch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/internal/v1/workspace/knowledge-libraries/{library_id}/rename": {
       "post": {
         "tags": [
@@ -11652,6 +11723,22 @@
           "accept"
         ],
         "title": "InvitationReply"
+      },
+      "LibrarySearch": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Query"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "title": "LibrarySearch"
       },
       "Member": {
         "properties": {

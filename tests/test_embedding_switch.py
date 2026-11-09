@@ -161,6 +161,11 @@ def test_config_rebuild_search_and_published_local_revision(versions, vector_sto
     draft = client.post(project+'/knowledge/search', headers=auth, json={**owner, 'query': '新检索'})
     assert draft.json()['revision_id'] == new and draft.json()['sources'][0]['name'] == 'policy.md'
     assert calls[-1] == '新检索'
+    native = client.post(path+'/search', headers=auth, json={'query': '原生智能体检索'})
+    assert native.json()['revision_id'] == new and native.json()['sources'][0]['name'] == 'policy.md'
+    assert client.post(path+'/search', headers={**auth, 'X-CodeChat-Subject': 'foreign'},
+                       json={'query': 'foreign'}).status_code == 404
+    assert calls[-1] == '原生智能体检索'
     count = len(calls)
     published = client.post(entry+'/search', headers=auth, json={**owner, 'query': '旧检索'})
     assert published.json()['revision_id'] == old and published.json()['sources'][0]['name'] == 'policy.md'
