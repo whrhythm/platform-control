@@ -262,3 +262,9 @@
 - 普通智能体可在「指令」下选择一个本人拥有且就绪的知识库，或选「不使用知识库」。保存验证智能体及库归属，运行时按文件检索权限加载工具。共享使用不继承私有库权限。原生智能体使用当前就绪修订，项目试用和正式发布仍使用固定修订。
 - 2026-11-09，控制面 `2269dea` 与 LibreChat `e237941f8` 通过 GitOps `541c90a`、`52d01ac` 部署并确认同步健康。控制面 27 项与 LibreChat 163 项回归通过，生产构建、四个工作区类型检查与静态检查通过。Lighthouse 因测试容器缺少 openssl 未取得测量结果。
 - 真实界面选库、创建并读取已保存的绑定。普通智能体实际检索合成库 `guide.md` 并回答 `NAV-EDIT-VERIFIED`。首条发送后界面未即时显示，重开会话可看到已保存回答；同一会话追问再次检索并即时显示。证据见本地 `platform-control/release/p1-native-library-ui.json`、`p1-native-library-picker.png` 与 `p1-native-library-followup.png`。
+
+### 原生智能体首条回答连接
+
+- 2026-11-09，修复原生构建器选中智能体时二次初始化会话。旧版本先打开新会话，详情查询回包后再次初始化，清除了已提交的首条消息的客户端流状态。受控延迟验收观察到详情回包后正在使用的流连接被中断，服务端回答仍保存。新版只打开一次会话，详情由原查询缓存刷新。
+- LibreChat `933e3e7a0`、GitOps `27e7629` 已同步健康。生产构建、类型及改动静态检查通过，前端 346 项和接口 38 项回归通过。Lighthouse 因容器缺少 openssl 未取得结果。
+- 用真实界面分别新建智能体并选同一合成知识库，正常网络和延迟详情回包两轮均在空白会话发首条消息。持久记录确认实际调用 `file_search` 检索 `guide.md`，回答在当前页面直接显示。延迟轮次中详情回包发生在首条消息发送后、回答显示前，连接未中断。证据见本地 `platform-control/release/p1-native-first-baseline.json`、`p1-native-first-after-normal.json`、`p1-native-first-after-delayed-focus.json` 与同名截图。
