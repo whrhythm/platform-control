@@ -181,6 +181,7 @@ def models(principal=Depends(model_principal), db=Depends(get_db), settings=Depe
 @router.post('/chat/completions')
 async def completions(request: Request, authorization: str = Header(default=''),
                       x_codechat_conversation: str = Header(default=''), x_codechat_capability: str = Header(default=''),
+                      x_codechat_project: str = Header(default=''),
                       db=Depends(get_db), settings=Depends(get_settings)):
     if not settings.workspace_agent_image or not settings.litellm_url or not settings.litellm_master_key:
         raise HTTPException(503, 'Programming is not configured')
@@ -203,6 +204,7 @@ async def completions(request: Request, authorization: str = Header(default=''),
     capability, actual_model = resolve_capability(model, settings, capability=requested, db=db)
     context = ssl.create_default_context(cafile=settings.workspace_service_ca)
     client = httpx.AsyncClient(verify=context, timeout=httpx.Timeout(600, connect=10), trust_env=False)
+    delegated = False
     try:
         env = None
         original_messages = body.get('messages')
@@ -240,6 +242,12 @@ async def completions(request: Request, authorization: str = Header(default=''),
         else:
             target = settings.litellm_url.rstrip('/') + '/v1/chat/completions'
             payload, headers = {**body, 'model': actual_model}, {'Authorization': authorization}
+            if (settings.project_development_enabled and settings.agent_tasks_enabled and x_codechat_project
+                    and body.get('stream') is True and model != settings.capability_chat_route):
+                from .development import prepare
+                payload = prepare(db, env, x_codechat_project, payload)
+                delegated = True
+                db.rollback()
         upstream = await client.send(client.build_request('POST', target, json=payload, headers=headers), stream=True)
         if upstream.status_code != 200:
             status = upstream.status_code if upstream.status_code in (400, 401, 403, 409, 429) else 503
@@ -254,8 +262,13 @@ async def completions(request: Request, authorization: str = Header(default=''),
 
     async def stream():
         try:
-            async for data in upstream.aiter_bytes():
-                yield data
+            if delegated:
+                from .development import relay
+                async for data in relay(upstream, db, env, settings, x_codechat_project, x_codechat_conversation, body):
+                    yield data
+            else:
+                async for data in upstream.aiter_bytes():
+                    yield data
         finally:
             await upstream.aclose()
             await client.aclose()

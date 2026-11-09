@@ -199,6 +199,16 @@
               "default": "",
               "title": "X-Codechat-Capability"
             }
+          },
+          {
+            "name": "x-codechat-project",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Codechat-Project"
+            }
           }
         ],
         "responses": {
@@ -12857,6 +12867,12 @@
             "type": "array",
             "maxItems": 10,
             "title": "Mcp Servers"
+          },
+          "coding_model": {
+            "type": "string",
+            "maxLength": 200,
+            "title": "Coding Model",
+            "default": ""
           },
           "conversation_id": {
             "type": "string",

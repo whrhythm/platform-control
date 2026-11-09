@@ -40,6 +40,7 @@ class AgentConfig(BaseModel):
     strategy: Literal['implement', 'plan', 'review'] = 'implement'
     approval: Literal['strict', 'workspace_auto'] = 'strict'
     mcp_servers: list[str] = Field(default_factory=list, max_length=10)
+    coding_model: str = Field(default='', max_length=200)
 
     @field_validator('project_path')
     @classmethod
@@ -63,9 +64,30 @@ class DecisionInput(BaseModel):
 def preference(db, environment_id, conversation_id):
     row = db.get(AgentPreference, (environment_id, conversation_id))
     fallback = db.get(AgentPreference, (environment_id, 'default')) if row is None else None
-    return {'conversation_id': conversation_id, 'revision': row.revision if row else 0,
+    result = {'conversation_id': conversation_id, 'revision': row.revision if row else 0,
             'mcp_servers': [],
             **(row.config if row else fallback.config if fallback else DEFAULT)}
+    if conversation_id.startswith('project-'):
+        project = development_project(db, environment_id, conversation_id[8:])
+        # Personal defaults must never carry another project's directory into this one.
+        result['project_path'] = row.config['project_path'] if row else project.project_path
+        require_project_directory(project, result['project_path'])
+    return result
+
+
+def development_project(db, environment_id, identifier):
+    from .models import WorkspaceProject
+    from .workspace_projects import active_workspace_project
+    project = db.scalar(select(WorkspaceProject).where(WorkspaceProject.id == identifier,
+        WorkspaceProject.environment_id == environment_id, active_workspace_project()))
+    if project is None:
+        raise HTTPException(404, 'projects_not_found')
+    return project
+
+
+def require_project_directory(project, path):
+    if path != project.project_path and not path.startswith(project.project_path + '/'):
+        raise HTTPException(403, 'agent_project_directory_required')
 
 
 def append_event(db, task, settings, kind, **payload):
@@ -100,7 +122,8 @@ def restore_task_messages(messages, db, environment_id, settings):
         content = message.get('content')
         if isinstance(content, list) and len(content) == 1 and isinstance(content[0], dict):
             content = content[0].get('text') if content[0].get('type') == 'text' else None
-        match = TASK_REFERENCE.fullmatch(content.strip()) if isinstance(content, str) else None
+        match = next((TASK_REFERENCE.fullmatch(line.strip()) for line in content.splitlines()
+                      if TASK_REFERENCE.fullmatch(line.strip())), None) if isinstance(content, str) else None
         if match:
             references[index] = match.group(1)
     if not references:
@@ -123,20 +146,27 @@ def restore_task_messages(messages, db, environment_id, settings):
 
 
 def submit_task(db, principal, settings, conversation_id, prompt, model, message_id='', *,
-                request_prompt=None, user_request=None, tool_build=None, tool_path=None):
+                request_prompt=None, user_request=None, tool_build=None, tool_path=None, project_id=None):
     env = own_environment(db, principal)
     if env.status == 'suspended':
         raise HTTPException(403, 'agent_account_suspended')
     key = conversation_key(conversation_id)
+    preference_key = 'project-' + project_id if project_id else key
     config = ({**DEFAULT, 'project_path': tool_path, 'approval': 'workspace_auto', 'generated_tool': True}
-              if tool_build else preference(db, env.id, key))
+              if tool_build else preference(db, env.id, preference_key))
     if not config['project_path']:
         raise HTTPException(409, 'agent_project_required')
     call_files(db, principal, settings, 'GET', '/v1/directories', config['project_path'])
     db.refresh(env, with_for_update=True)
     db.expire_all()
-    if not tool_build and config != preference(db, env.id, key):
+    if not tool_build and config != preference(db, env.id, preference_key):
         raise HTTPException(409, 'agent_settings_changed')
+    if project_id:
+        from .ai_policy import effective_policy
+        policy = effective_policy(db, settings)
+        model = config.get('coding_model') or policy['coding_model']
+        if model not in policy['allowed_models']:
+            raise HTTPException(409, 'agent_model_unavailable')
     config = {**config, 'model': model}
     from .mcp_catalog import snapshot
     config['mcp_versions'], config['mcp_credentials'] = snapshot(db, settings, config['mcp_servers'], env.id)
@@ -194,6 +224,12 @@ def create_agent_router(principal_dependency):
         snapshot(db, get_settings(), body.mcp_servers, env.id)
         if env.status == 'suspended':
             raise HTTPException(403, 'agent_account_suspended')
+        if body.conversation_id.startswith('project-'):
+            require_project_directory(development_project(db, env.id, body.conversation_id[8:]), body.project_path)
+        if body.coding_model:
+            from .ai_policy import effective_policy
+            if body.coding_model not in effective_policy(db, get_settings())['allowed_models']:
+                raise HTTPException(400, 'agent_model_unavailable')
         if body.project_path:
             call_files(db, principal, get_settings(), 'GET', '/v1/directories', body.project_path)
         db.refresh(env, with_for_update=True)

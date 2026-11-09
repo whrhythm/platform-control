@@ -79,7 +79,7 @@ def create(workspace, prompt='private prompt'):
 def test_preferences_scope_cas_and_task_idempotency(workspace):
     client, headers, base = workspace
     alice = client.get(base + '/preferences', headers=headers).json()
-    assert set(alice) == {'conversation_id', 'revision', 'project_path', 'strategy', 'approval', 'mcp_servers'}
+    assert set(alice) == {'conversation_id', 'revision', 'project_path', 'strategy', 'approval', 'mcp_servers', 'coding_model'}
     assert alice['revision'] == 1 and alice['project_path'] == 'demo'
     bob = client.get(base + '/preferences', headers={**headers, 'X-CodeChat-Subject': 'bob'}).json()
     assert bob['project_path'] == ''
